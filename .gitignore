@@ -1,0 +1,24 @@
+# Backend (Spring Boot / Gradle)
+backend/.gradle/
+backend/build/
+backend/bin/
+
+# Portal (Angular)
+portal/node_modules/
+portal/dist/
+portal/.angular/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+*.log
