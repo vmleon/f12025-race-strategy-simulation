@@ -19,6 +19,10 @@ portal/.angular/
 .DS_Store
 Thumbs.db
 
+# Telemetry (Gradle)
+telemetry/.gradle/
+telemetry/build/
+
 # Env
 .env
 *.log
