@@ -45,6 +45,16 @@ Multiple fitting methods can produce coefficients for the same knob on the same 
 
 Tempting — the most common analytical pattern is "all data for track X." But `sessions` will have hundreds of rows, not millions. The join `sector_snapshots JOIN sessions USING (session_uid) WHERE track_id = ?` hits the sessions PK, resolves to a set of session_uids, then scans sector_snapshots by PK prefix. Oracle's optimizer handles this trivially. The denormalization would save one cheap join at the cost of an extra column on every row of the highest-volume table, plus an update path if you ever correct a track_id.
 
+### 10. `outlier` flag on `sector_snapshots`
+
+The calibration pipeline applies hard filters (invalid laps, pit laps, safety car, lap 1) but these miss **performance anomalies** — lock-ups, spins, and traffic incidents that produce valid but statistically unusual sector times. An `outlier NUMBER(1) DEFAULT 0` column marks these rows so calibration excludes them (`AND outlier = 0`) while driver feedback views retain them with the flag highlighted.
+
+The flag is recomputed each calibration run via per-driver IQR analysis (see `CALIBRATION.md` — Outlier Detection). It is not set during ingestion — the ingestion pipeline writes `outlier = 0` (the default) and calibration updates it in batch.
+
+### 11. Separate `driver_ratings` table for skill ratings
+
+A per-driver skill rating (0–100) used as a cold-start prior for outlier detection before enough data exists to compute IQR. This is a separate table rather than a column on `participants` because ratings are a cross-session concept — the same driver appears across many sessions, and the rating is set once globally (with optional per-track overrides). Keeping it separate avoids modifying the high-volume participant data path and keeps the rating lifecycle independent of session ingestion.
+
 ## DDL
 
 ```sql
@@ -337,6 +347,29 @@ CREATE TABLE calibration_coefficients (
 );
 
 -- =============================================================
+-- 8. DRIVER_RATINGS — per-driver skill rating for outlier detection cold start
+-- =============================================================
+CREATE TABLE driver_ratings (
+    driver_name      VARCHAR2(48)  NOT NULL,
+    track_id         NUMBER(3)     DEFAULT -1 NOT NULL,  -- -1 = global default, real track_id = per-track override
+    skill_rating     NUMBER(3)     NOT NULL,             -- 0 (inconsistent) to 100 (alien consistency)
+    updated_at       TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+
+    CONSTRAINT pk_driver_ratings PRIMARY KEY (driver_name, track_id),
+    CONSTRAINT chk_skill_range CHECK (skill_rating BETWEEN 0 AND 100)
+);
+
+-- =============================================================
+-- SCHEMA ADDITIONS (applied via ALTER after initial DDL)
+-- =============================================================
+
+-- Outlier flag on sector_snapshots (recomputed each calibration run)
+ALTER TABLE sector_snapshots ADD (
+    outlier  NUMBER(1)  DEFAULT 0 NOT NULL
+    CONSTRAINT chk_outlier CHECK (outlier IN (0, 1))
+);
+
+-- =============================================================
 -- INDEXES
 -- =============================================================
 
@@ -352,6 +385,10 @@ CREATE INDEX idx_sector_compound_valid
 -- Sector snapshots: dirty air / DRS analysis (gap-based queries)
 CREATE INDEX idx_sector_gap_ahead
     ON sector_snapshots (gap_to_car_ahead_ms);
+
+-- Sector snapshots: outlier-aware calibration queries
+CREATE INDEX idx_sector_outlier
+    ON sector_snapshots (outlier, lap_invalid, safety_car_status, pit_status);
 
 -- Calibration coefficients: lookup by track + knob + regime + method
 CREATE INDEX idx_calib_lookup
@@ -376,6 +413,8 @@ CREATE INDEX idx_calib_lookup
 | Car damage effect on pace       | `sector_snapshots` damage columns correlated with `sector_time_ms`, filtered by `car_damage_setting`            | Flat damage columns per snapshot; game settings in `sessions` for conditioning               |
 | Tyre temperature effect         | `sector_snapshots` tyre temp columns vs `sector_time_ms`, grouped by compound and weather                       | Surface + inner temps per wheel, denormalized alongside wear/damage                          |
 | Calibration coefficient lookup  | `calibration_coefficients` filtered by `track_id`, `knob_name`, `calibration_regime`                            | `idx_calib_lookup` covers the query; `method_name` + `score` enable method comparison        |
+| Outlier-clean calibration data  | All calibration queries add `AND outlier = 0` alongside existing hard filters                                   | `idx_sector_outlier` covers the filter; `outlier` column recomputed each calibration run     |
+| Driver skill rating lookup      | `driver_ratings` filtered by `driver_name`, with `track_id` fallback (`-1` = global)                            | PK lookup; small table, always in buffer cache                                               |
 
 ## What Was Deliberately Left Out
 

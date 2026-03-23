@@ -333,6 +333,71 @@ Before fitting any knob, filter the sector_snapshots dataset:
 - **Exclude lap 1** — first lap is an outlier (standing start, cold tyres, contact)
 - **Filter by game settings** — only include sessions with matching AI difficulty, damage mode, tyre wear mode
 
+### Outlier Detection (Per-Driver IQR)
+
+After applying the hard filters above, the dataset still contains **performance anomalies** — sectors that are technically valid but statistically unusual. A driver locking up into turn 1, getting punted, or encountering unexpected traffic can produce sector times that don't trigger `currentLapInvalid` but would distort calibration coefficients if included.
+
+These anomalous sectors must be **marked, not deleted**. They're excluded from calibration (`WHERE outlier = 0`) but remain visible in driver feedback views — a 1.8s loss in sector 2 on lap 14 is valuable feedback even if it shouldn't train the model.
+
+#### Why Per-Driver, Not Global
+
+Drivers have fundamentally different pace. A 25.1s sector for a top AI car is normal; for a backmarker, it's a personal best. A global IQR across all drivers would either miss slow-driver outliers or flag fast-driver normal laps. The IQR must be computed **per driver**.
+
+#### Grouping Key
+
+`(driver_name, track_id, sector_number, tyre_compound_actual)`
+
+Grouping by compound is essential — a sector on worn softs vs fresh hards would inflate the IQR and mask real outliers. Tyre age and fuel load are **not** part of the grouping key because they are continuous variables that would fragment the data into too-small groups. The calibration regression handles those factors separately.
+
+#### Algorithm
+
+The outlier detection runs as **Step 0 of Tier 1 batch calibration**, after hard filters but before any knob fitting. It is recomputed each calibration run — the `outlier` column is overwritten, not append-only. As more data accumulates, the IQR boundaries refine.
+
+1. **Group** the hard-filtered working set by `(driver_name, track_id, sector_number, tyre_compound_actual)`
+2. **Check sample size** per group:
+   - N ≥ 10 → IQR path (step 3)
+   - N < 10 → cold-start fallback (step 4)
+3. **IQR computation** (sufficient data):
+   - Compute Q1 (25th percentile) and Q3 (75th percentile) of `sector_time_ms`
+   - IQR = Q3 − Q1
+   - If IQR = 0 (all identical times), skip — no outliers to detect
+   - Multiplier: **1.5** for AI drivers (`ai_controlled = 1`), **2.0** for human drivers (humans are more variable lap-to-lap)
+   - Lower fence = Q1 − multiplier × IQR
+   - Upper fence = Q3 + multiplier × IQR
+   - Flag `outlier = 1` for any `sector_time_ms` outside [lower fence, upper fence]
+4. **Cold-start fallback** (insufficient data) — uses the driver skill rating as a prior:
+   - Look up `skill_rating` from the `driver_ratings` table (track-specific first, then global fallback, then default 50)
+   - Compute `reference_median` = median `sector_time_ms` across **all drivers** for the same (track, sector, compound) — a cross-driver reference point
+   - `tolerance_ms = 1500 × (110 − skill_rating) / 60`
+     - Rating 95 → 375ms tolerance (tight — consistent driver)
+     - Rating 80 → 750ms tolerance
+     - Rating 50 → 1500ms tolerance (wide — rarely flags anything)
+   - Flag `outlier = 1` if `sector_time_ms > reference_median + tolerance_ms`
+   - Once the driver accumulates 10+ sectors in the group, the IQR method takes over completely (no blending)
+5. **Batch UPDATE** — idempotent update of `sector_snapshots.outlier` for all rows in the working set
+
+#### AI vs Player Thresholds
+
+AI cars use a simplified physics model and are highly deterministic — their sector times for identical conditions are nearly identical. A 1.5× IQR multiplier (standard Tukey fence) is appropriate.
+
+Human players are inherently more variable. A 2.0× multiplier avoids false positives from normal lap-to-lap variation while still catching genuine mistakes. Both multipliers are hardcoded for the POC.
+
+#### Driver Skill Rating (Cold-Start Prior)
+
+A per-driver numeric rating (0–100) stored in the `driver_ratings` table (see `DATABASE_DESIGN.md`). The rating is set through the portal and serves as a prior for outlier detection before enough data exists to compute a meaningful IQR.
+
+- **100** = alien-level consistency (very tight expected range)
+- **50** = average driver (wide expected range, default when no rating exists)
+- **0** = wildly inconsistent (very wide expected range)
+
+As real per-driver data accumulates and the sample size threshold (N ≥ 10) is met, the statistical IQR replaces the skill-rating-based estimate entirely. No weighted transition — a clean cutover.
+
+The skill rating also connects to base pace calibration (Knob 1): a driver's rating provides context for interpreting their sector times during the cold-start phase of base pace fitting.
+
+#### Minimum Sample Size
+
+IQR requires **N ≥ 10** sectors per group before it is computed. Below ~8–10 data points, Q1 and Q3 estimates become unstable. The threshold of 10 is a pragmatic minimum for the POC.
+
 ### Variable Isolation
 
 The main challenge is that all variables change simultaneously. A car on lap 20 has older tyres AND less fuel AND possibly more damage than on lap 5. Naive fitting will confound these effects.
