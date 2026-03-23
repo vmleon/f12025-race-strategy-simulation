@@ -4,7 +4,9 @@ import { webSocket } from 'rxjs/webSocket';
 
 @Injectable({ providedIn: 'root' })
 export class HealthService {
-  readonly heartbeat$ = webSocket<{ ts: number }>('ws://localhost:8080/ws/heartbeat');
+  readonly heartbeat$ = webSocket<{ ts: number }>(
+    `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/heartbeat`
+  );
 
   constructor(private http: HttpClient) {}
 
