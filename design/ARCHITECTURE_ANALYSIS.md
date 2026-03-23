@@ -3,7 +3,7 @@
 ## Context
 
 The project is a POC/TFG with 3 future components that scale differently:
-1. **Ingestion** — Real-time UDP listener → parse → write to Oracle (~60 rows/lap, continuous)
+1. **Ingestion** — Real-time UDP listener → parse → write to Oracle AI Database 26ai (~60 rows/lap, continuous)
 2. **Calibration** — Offline batch regression after each session (infrequent, CPU-bound)
 3. **Monte Carlo** — On-demand simulation, 1K-10K iterations (burst, CPU-bound)
 
@@ -29,7 +29,7 @@ Current state: ~350 lines of plain Java, only header parsing done. 0/7 DB tables
 - Each component is just a `main()` — deploy as separate JARs or processes trivially
 
 **Cons:**
-- Manual connection pooling (or add HikariCP, ~1 dependency)
+- Manual connection pooling (or add Oracle UCP, ~1 dependency)
 - Manual wiring of dependencies (constructor injection by hand)
 - No built-in health checks, metrics, or HTTP endpoints if you ever want observability
 - If the project grows past POC, refactoring to a framework later costs more
@@ -74,12 +74,12 @@ Current state: ~350 lines of plain Java, only header parsing done. 0/7 DB tables
 
 **What it looks like:**
 - Keep plain Java structure
-- Add **HikariCP** for connection pooling (1 dependency, ~130KB)
+- Add **Oracle UCP** (Universal Connection Pool) for connection pooling
 - Add **Oracle JDBC driver** (required regardless)
 - Use raw JDBC with prepared statements (the 7 tables are well-defined, ORM is overkill)
 - 3 independent Gradle submodules sharing a `common` module:
   ```
-  common/       — PacketHeader, PacketType, DB schema constants, Oracle connection factory
+  common/       — PacketHeader, PacketType, DB schema constants, Oracle UCP connection factory
   ingestion/    — UDP server + packet parsers + DB writers
   calibration/  — Reads sector_snapshots, fits coefficients, writes calibration_coefficients
   simulation/   — Loads coefficients, runs Monte Carlo, outputs results
@@ -88,7 +88,7 @@ Current state: ~350 lines of plain Java, only header parsing done. 0/7 DB tables
 - Config via `.properties` files (already working)
 
 **Pros:**
-- Minimal new dependencies (HikariCP + Oracle JDBC)
+- Minimal new dependencies (Oracle UCP + Oracle JDBC)
 - Components are truly independent (separate JARs, separate processes)
 - Shared code in `common` avoids duplication without a framework
 - No framework overhead, instant startup
@@ -98,10 +98,10 @@ Current state: ~350 lines of plain Java, only header parsing done. 0/7 DB tables
 
 **Cons:**
 - Manual dependency wiring (but for a POC with 3-5 classes per module, this is trivial)
-- No auto-config for datasource (but `HikariDataSource` setup is ~5 lines)
+- No auto-config for datasource (but `PoolDataSource` setup is ~5 lines)
 - No built-in HTTP (add Javalin or similar later if needed, ~1 more dependency)
 
-**Effort:** Low-Medium. Restructure to multi-module, add 2 dependencies.
+**Effort:** Low-Medium. Restructure to multi-module, add Oracle UCP + JDBC dependencies.
 
 ---
 
@@ -110,10 +110,10 @@ Current state: ~350 lines of plain Java, only header parsing done. 0/7 DB tables
 | Criteria | Plain Java | Spring Boot | Plain Java + Libs |
 |----------|-----------|-------------|-------------------|
 | Time to first DB write | **Fast** | Slow (setup) | **Fast** |
-| Oracle connectivity | Manual JDBC | Auto-config | HikariCP + JDBC |
+| Oracle connectivity | Manual JDBC | Auto-config | Oracle UCP + JDBC |
 | UDP server fit | **Native** | Awkward | **Native** |
 | Component independence | 3 main() classes | 3 apps or profiles | **3 Gradle modules** |
-| Dependency count | +1 (JDBC) | +30-50 | +2 (JDBC + Hikari) |
+| Dependency count | +1 (JDBC) | +30-50 | +2 (JDBC + UCP) |
 | Startup time | **Instant** | 2-4s | **Instant** |
 | Future HTTP API | Add later | **Built-in** | Add Javalin later |
 | DI complexity | Manual (fine for POC) | **Auto** | Manual (fine for POC) |

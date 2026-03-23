@@ -2,7 +2,7 @@
 
 ## The Question
 
-The telemetry ingestion component is a real-time UDP listener that receives F1 2025 game packets at ~80-100 packets/second, parses binary headers, and will eventually write snapshots to an Oracle database. Should this be built with Spring Boot or plain Java?
+The telemetry ingestion component is a real-time UDP listener that receives F1 2025 game packets at ~80-100 packets/second, parses binary headers, and will eventually write snapshots to an Oracle AI Database 26ai. Should this be built with Spring Boot or plain Java?
 
 ## Three Options Evaluated
 
@@ -24,7 +24,7 @@ Spring Boot app with `spring-boot-starter-data-jpa` or `spring-boot-starter-jdbc
 
 ### Option C: Plain Java + Lightweight Libraries (chosen)
 
-Keep plain Java structure. Add HikariCP (~130KB) for connection pooling and Oracle JDBC driver. Use raw JDBC with prepared statements. Split into Gradle submodules sharing a `common` module.
+Keep plain Java structure. Add Oracle UCP (Universal Connection Pool) for connection pooling and Oracle JDBC driver. Use raw JDBC with prepared statements. Split into Gradle submodules sharing a `common` module.
 
 ## Why Spring Boot Lost
 
@@ -32,7 +32,7 @@ Keep plain Java structure. Add HikariCP (~130KB) for connection pooling and Orac
 
 **Spring doesn't provide UDP abstractions.** You'd still write raw `DatagramSocket` code inside a Spring bean. Spring Integration has UDP channel adapters, but that's adding another layer of framework complexity for a problem already solved in ~20 lines of plain Java.
 
-**Dependency overhead.** Spring Boot pulls in 30-50 transitive dependencies. The current server needs zero dependencies beyond the JDK. Adding HikariCP and Oracle JDBC (required regardless) brings the total to 2.
+**Dependency overhead.** Spring Boot pulls in 30-50 transitive dependencies. The current server needs zero dependencies beyond the JDK. Adding Oracle UCP and Oracle JDBC (required regardless) brings the total to 2.
 
 **Startup cost.** Spring Boot takes 2-4 seconds to initialize (scanning, context creation, auto-configuration). Plain Java starts instantly. For a service that should be ready to receive packets the moment the game starts, this matters.
 

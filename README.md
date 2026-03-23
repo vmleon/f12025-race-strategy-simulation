@@ -1,6 +1,6 @@
 # F1 2025 Race Strategy Simulation
 
-A proof-of-concept system that ingests real-time telemetry from the F1 2025 game, stores per-sector snapshots in Oracle, calibrates physics models from accumulated data, and runs Monte Carlo simulations to predict race outcomes under different pit strategy choices.
+A proof-of-concept system that ingests real-time telemetry from the F1 2025 game, stores per-sector snapshots in Oracle AI Database 26ai, calibrates physics models from accumulated data, and runs Monte Carlo simulations to predict race outcomes under different pit strategy choices.
 
 ## Architecture
 
@@ -8,7 +8,7 @@ A proof-of-concept system that ingests real-time telemetry from the F1 2025 game
 graph LR
     Game["F1 2025 Game<br/><i>UDP @ 100 Hz</i>"]
     Ingest["Telemetry Server<br/><i>Plain Java</i>"]
-    DB[(Oracle DB<br/><i>7 tables</i>)]
+    DB[(Oracle AI DB 26ai<br/><i>7 tables</i>)]
     Calib["Calibration<br/><i>Batch regression</i>"]
     Sim["Monte Carlo<br/><i>Simulation Engine</i>"]
     Backend["Backend API<br/><i>Spring Boot</i>"]
@@ -73,16 +73,16 @@ graph TD
 
 | Module | Role | Tech |
 |--------|------|------|
-| `telemetry/` | UDP server: receives F1 2025 packets, maintains in-memory state, snapshots on sector transitions | Plain Java 21, HikariCP, Oracle JDBC |
+| `telemetry/` | UDP server: receives F1 2025 packets, maintains in-memory state, snapshots on sector transitions | Plain Java 21, Oracle UCP, Oracle JDBC |
 | `backend/` | HTTP/WS API: bridges portal and iOS client with database and simulation engine | Spring Boot 3.5.3, Java 23 |
 | `portal/` | Web UI: session setup, live telemetry dashboard, strategy simulation results | Angular 21 |
 | `simulator/` | Calibration pipeline and Monte Carlo simulation engine | TBD |
-| `database/` | Oracle schema (7 tables), migrations | TBD |
+| `database/` | Oracle AI Database 26ai schema (7 tables), migrations | TBD |
 | `client/` | iOS app: real-time race engineer display for the driver | TBD |
 
 ### Key Design Choices
 
-- **Plain Java for ingestion** — No HTTP needed; a blocking UDP socket loop with 2 dependencies (HikariCP + Oracle JDBC) starts instantly and handles the packet rate with minimal overhead.
+- **Plain Java for ingestion** — No HTTP needed; a blocking UDP socket loop with 2 dependencies (Oracle UCP + Oracle JDBC) starts instantly and handles the packet rate with minimal overhead.
 - **Raw JDBC over ORM** — 99% inserts into flat, denormalized tables. Batch `addBatch()`/`executeBatch()` outperforms entity lifecycle management; analytical reads are aggregates (`AVG`, `GROUP BY`), not object graphs.
 - **Per-sector granularity** — Captures sector-specific overtakes, DRS zones, and dirty air effects that per-lap resolution would miss. 3× more rows but still manageable (~60/lap).
 - **Snapshot-on-transition** — Instead of storing every packet, the server keeps the latest state in memory and writes only when a sector boundary is crossed. Reduces DB volume by ~99%.
