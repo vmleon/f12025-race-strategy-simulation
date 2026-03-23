@@ -180,7 +180,7 @@ A car defending position uses more fuel, takes sub-optimal lines, and wears tyre
 2. **Model as a modifier** — add a "being followed closely" variable (gap to car behind) that increases predicted tyre wear. Tricky because defending and being slow look similar in the data
 3. **Skip for POC** — defending effects are likely small compared to tyre deg, fuel, and dirty air
 
-**Decision for POC:** Option 3. Note as a potential missing variable if residuals are large for cars in defensive positions.
+**Decision for POC:** Option 3. The gap-to-car-behind is derivable from the following car's `deltaToCarInFront` (a self-join on `sector_snapshots`), so no additional telemetry capture is needed if this is revisited. However, the core problem remains: defending and "being slow" are indistinguishable in sector time data without driver input signals (steering angles, racing line deviation) that are not captured. The defending-induced slowness is absorbed into `residual_noise`, which Monte Carlo samples from — so it contributes to variance rather than being silently dropped. Revisit if residual analysis after initial calibration shows systematic patterns (e.g., consistently large positive residuals) for cars with a close follower.
 
 ### 7. Weather and Temperature Effects
 
