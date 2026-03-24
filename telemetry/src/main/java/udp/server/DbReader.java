@@ -162,6 +162,22 @@ public class DbReader {
         return rows;
     }
 
+    // ── cold start check ───────────────────────────────────────────────
+
+    private static final String COUNT_DEFAULTS_FOR_TRACK = """
+            SELECT COUNT(*) FROM calibration_coefficients
+            WHERE track_id = ? AND is_default = 1
+            """;
+
+    public boolean hasDefaultCoefficients(Connection conn, int trackId) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(COUNT_DEFAULTS_FOR_TRACK)) {
+            ps.setInt(1, trackId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        }
+    }
+
     // ── final classifications ───────────────────────────────────────────
 
     private static final String SELECT_FINAL_CLASSIFICATIONS = """
