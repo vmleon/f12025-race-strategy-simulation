@@ -4,7 +4,9 @@ import java.io.InputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -31,6 +33,10 @@ public class App {
         SectorTransitionDetector sectorDetector = new SectorTransitionDetector();
         SessionHistoryBuffer historyBuffer = new SessionHistoryBuffer();
 
+        ConnectionFactory connFactory = new ConnectionFactory(config);
+        DbWriter dbWriter = new DbWriter();
+        LifecycleDispatcher lifecycle = new LifecycleDispatcher(connFactory, dbWriter);
+
         BlockingQueue<ReceivedPacket> queue = new ArrayBlockingQueue<>(10_000);
 
         Thread worker = new Thread(() -> {
@@ -52,16 +58,20 @@ public class App {
                                 SessionData session = SessionData.parse(received.data(), received.length());
                                 if (session != null) {
                                     carState.updateSession(session);
+                                    lifecycle.onSession(header.sessionUID, session);
                                 }
                             }
                             case 2 -> { // LapData
                                 LapData[] laps = LapData.parseAll(received.data(), received.length());
                                 if (laps != null) {
                                     carState.updateLapData(laps);
+                                    lifecycle.detectPitStops(laps);
                                     var transitions = sectorDetector.detect(laps, historyBuffer);
+                                    List<DbWriter.SectorSnapshot> snapshots = new ArrayList<>();
                                     for (var t : transitions) {
                                         DbWriter.SectorSnapshot snapshot = SectorTransitionDetector.captureSnapshot(
                                                 header.sessionUID, t, carState, historyBuffer, header.frameIdentifier);
+                                        snapshots.add(snapshot);
                                         String tierLabel = switch (t.recovered()) {
                                             case 0 -> "PRIMARY";
                                             case 1 -> "TIER1";
@@ -72,13 +82,20 @@ public class App {
                                                 tierLabel, t.carIndex(), t.completedSector(), t.lapNumber(),
                                                 snapshot.sectorTimeMs());
                                     }
+                                    lifecycle.onSectorSnapshots(snapshots);
                                 }
                             }
                             case 3 -> { // Event
-                                EventData.parse(received.data(), received.length());
+                                EventData event = EventData.parse(received.data(), received.length());
+                                if (event != null) {
+                                    lifecycle.onEvent(header.sessionUID, header.frameIdentifier, event);
+                                }
                             }
                             case 4 -> { // Participants
-                                ParticipantData.parseAll(received.data(), received.length());
+                                ParticipantData[] participants = ParticipantData.parseAll(received.data(), received.length());
+                                if (participants != null) {
+                                    lifecycle.onParticipants(header.sessionUID, participants);
+                                }
                             }
                             case 6 -> { // CarTelemetry
                                 CarTelemetryData[] telemetry = CarTelemetryData.parseAll(received.data(), received.length());
@@ -98,10 +115,22 @@ public class App {
                                     carState.updateDamage(damage);
                                 }
                             }
+                            case 8 -> { // FinalClassification
+                                FinalClassificationData[] classifications = FinalClassificationData.parseAll(received.data(), received.length());
+                                if (classifications != null) {
+                                    lifecycle.onFinalClassification(header.sessionUID, classifications);
+                                }
+                            }
                             case 11 -> { // SessionHistory
                                 SessionHistoryData history = SessionHistoryData.parse(received.data(), received.length());
                                 if (history != null) {
                                     historyBuffer.update(history);
+                                }
+                            }
+                            case 12 -> { // TyreSets
+                                TyreSetData.TyreSetPacket tyrePacket = TyreSetData.parse(received.data(), received.length());
+                                if (tyrePacket != null) {
+                                    lifecycle.onTyreSets(header.sessionUID, tyrePacket);
                                 }
                             }
                             default -> {}
