@@ -118,6 +118,27 @@ All components that access the database connect to the same Oracle AI Database 2
 - **Concurrent access:** Telemetry writes continuously; backend reads on demand; calibration reads/writes after sessions. No write conflicts — telemetry owns data ingestion, calibration owns coefficient updates, simulation results are written by the backend/simulator
 - **Schema ownership:** A single DB user owns all tables. No per-component users for the POC
 
+## 8. Build Independence & Interface Versioning
+
+Backend and telemetry are kept as independent Gradle projects — no root multi-project build, no shared `common` module.
+
+**Rationale:**
+- They scale differently (telemetry is high-throughput plain Java; backend is Spring Boot)
+- They have different lifecycles (telemetry may be redeployed independently of backend)
+- Sharing compiled code creates coupling that outweighs the convenience for a PoC
+
+**Interface between telemetry and backend:**
+The only runtime interface is the TCP push socket (section 2 above). Both sides must agree on the JSON-lines message schema. To allow independent evolution:
+
+- **Message versioning:** Each JSON message includes a `version` field (integer, starting at `1`). The producer (telemetry) sets the version; the consumer (backend) must handle all supported versions.
+- **Backward compatibility rule:** New fields may be added without bumping the version. Removing or renaming a field requires a version bump. The consumer ignores unknown fields.
+- **Schema definition:** The canonical message schemas are documented in `design/INTEGRATION.md` (this file) and updated when the interface changes. There is no shared code artifact — each side implements its own serialization/deserialization.
+
+**Interface between backend and database:**
+Both telemetry and backend connect to the same Oracle schema (section 7 above). The database schema (managed by Liquibase, see todo 05) is the shared contract. Both sides depend on the table definitions, not on each other's code.
+
+**Duplicate dependencies are accepted:** Both projects independently declare their JDBC driver and other shared dependencies. This is a conscious trade-off for build isolation.
+
 ## Summary of Protocols
 
 | From | To | Protocol | Direction | Data Format | Frequency |
