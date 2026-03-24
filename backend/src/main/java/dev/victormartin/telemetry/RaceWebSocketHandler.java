@@ -27,7 +27,14 @@ public class RaceWebSocketHandler extends TextWebSocketHandler {
         System.out.println("Race WebSocket client disconnected: " + session.getId());
     }
 
+    private volatile String latestState;
+
+    public String getLatestState() {
+        return latestState;
+    }
+
     public void broadcast(String jsonLine) {
+        latestState = jsonLine;
         TextMessage message = new TextMessage(jsonLine);
         for (WebSocketSession session : sessions) {
             if (session.isOpen()) {

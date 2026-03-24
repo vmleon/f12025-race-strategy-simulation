@@ -7,6 +7,9 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
@@ -15,12 +18,15 @@ import org.springframework.stereotype.Component;
 public class TelemetryTcpServer implements CommandLineRunner {
 
     private final RaceWebSocketHandler raceWebSocketHandler;
+    private final SessionStateHolder sessionStateHolder;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${telemetry.tcp.port:9090}")
     private int port;
 
-    public TelemetryTcpServer(RaceWebSocketHandler raceWebSocketHandler) {
+    public TelemetryTcpServer(RaceWebSocketHandler raceWebSocketHandler, SessionStateHolder sessionStateHolder) {
         this.raceWebSocketHandler = raceWebSocketHandler;
+        this.sessionStateHolder = sessionStateHolder;
     }
 
     @Override
@@ -51,12 +57,29 @@ public class TelemetryTcpServer implements CommandLineRunner {
             String line;
             while ((line = reader.readLine()) != null) {
                 if (line.isEmpty()) continue;
-
-                // Forward all messages to WebSocket broadcast
-                raceWebSocketHandler.broadcast(line);
+                routeMessage(line);
             }
         } catch (IOException e) {
             System.err.println("Error reading from telemetry client: " + e.getMessage());
+        }
+    }
+
+    private void routeMessage(String line) {
+        try {
+            JsonNode node = objectMapper.readTree(line);
+            String type = node.has("type") ? node.get("type").asText() : "";
+
+            switch (type) {
+                case "sessionStarted" -> sessionStateHolder.onSessionStarted(
+                        node.get("sessionUid").asText(),
+                        node.get("trackId").asInt());
+                case "sessionEnded" -> sessionStateHolder.onSessionEnded(
+                        node.get("sessionUid").asText());
+                default -> raceWebSocketHandler.broadcast(line);
+            }
+        } catch (Exception e) {
+            // If parsing fails, forward as-is
+            raceWebSocketHandler.broadcast(line);
         }
     }
 }
