@@ -1,0 +1,190 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-01-sector-snapshots
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE sector_snapshots (
+                  session_uid          NUMBER(20)    NOT NULL,
+                  car_index            NUMBER(2)     NOT NULL,
+                  lap_number           NUMBER(3)     NOT NULL,
+                  sector_number        NUMBER(1)     NOT NULL,
+                  sector_time_ms       NUMBER(10),
+                  lap_time_ms          NUMBER(10),
+                  car_position         NUMBER(2),
+                  gap_to_car_ahead_ms  NUMBER(10),
+                  gap_to_leader_ms     NUMBER(10),
+                  pit_status           NUMBER(1),
+                  num_pit_stops        NUMBER(2),
+                  penalties_sec        NUMBER(3),
+                  lap_invalid          NUMBER(1),
+                  corner_cutting_warnings NUMBER(2),
+                  driver_status        NUMBER(1),
+                  speed_trap_kmh       NUMBER(5,1),
+                  tyre_compound_actual NUMBER(2),
+                  tyre_compound_visual NUMBER(2),
+                  tyre_age_laps        NUMBER(3),
+                  tyre_wear_rl         NUMBER(5,1),
+                  tyre_wear_rr         NUMBER(5,1),
+                  tyre_wear_fl         NUMBER(5,1),
+                  tyre_wear_fr         NUMBER(5,1),
+                  tyre_damage_rl       NUMBER(3),
+                  tyre_damage_rr       NUMBER(3),
+                  tyre_damage_fl       NUMBER(3),
+                  tyre_damage_fr       NUMBER(3),
+                  tyre_blisters_rl     NUMBER(3),
+                  tyre_blisters_rr     NUMBER(3),
+                  tyre_blisters_fl     NUMBER(3),
+                  tyre_blisters_fr     NUMBER(3),
+                  front_wing_damage_l    NUMBER(3),
+                  front_wing_damage_r    NUMBER(3),
+                  rear_wing_damage       NUMBER(3),
+                  floor_damage           NUMBER(3),
+                  diffuser_damage        NUMBER(3),
+                  sidepod_damage         NUMBER(3),
+                  engine_damage          NUMBER(3),
+                  gearbox_damage         NUMBER(3),
+                  tyre_surface_temp_rl   NUMBER(3),
+                  tyre_surface_temp_rr   NUMBER(3),
+                  tyre_surface_temp_fl   NUMBER(3),
+                  tyre_surface_temp_fr   NUMBER(3),
+                  tyre_inner_temp_rl     NUMBER(3),
+                  tyre_inner_temp_rr     NUMBER(3),
+                  tyre_inner_temp_fl     NUMBER(3),
+                  tyre_inner_temp_fr     NUMBER(3),
+                  brake_temp_rl          NUMBER(5),
+                  brake_temp_rr          NUMBER(5),
+                  brake_temp_fl          NUMBER(5),
+                  brake_temp_fr          NUMBER(5),
+                  engine_temp            NUMBER(5),
+                  fuel_in_tank_kg      NUMBER(5,2),
+                  fuel_remaining_laps  NUMBER(5,2),
+                  ers_deploy_mode      NUMBER(1),
+                  drs_allowed          NUMBER(1),
+                  drs_activation_dist  NUMBER(6,1),
+                  weather              NUMBER(1),
+                  track_temp           NUMBER(3),
+                  air_temp             NUMBER(3),
+                  safety_car_status    NUMBER(1),
+                  recovered            NUMBER(1)     DEFAULT 0 NOT NULL,
+                  frame_identifier     NUMBER(10),
+                  created_at           TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+                  CONSTRAINT pk_sector_snapshots
+                      PRIMARY KEY (session_uid, car_index, lap_number, sector_number),
+                  CONSTRAINT fk_sector_session
+                      FOREIGN KEY (session_uid) REFERENCES sessions (session_uid),
+                  CONSTRAINT fk_sector_participant
+                      FOREIGN KEY (session_uid, car_index) REFERENCES participants (session_uid, car_index),
+                  CONSTRAINT chk_sector_number
+                      CHECK (sector_number IN (0, 1, 2)),
+                  CONSTRAINT chk_recovered
+                      CHECK (recovered IN (0, 1, 2, 3))
+              )
+
+  - changeSet:
+      id: 002-02-seq-session-events
+      author: victormartin
+      changes:
+        - sql:
+            sql: CREATE SEQUENCE seq_session_events START WITH 1 INCREMENT BY 1
+
+  - changeSet:
+      id: 002-03-session-events
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE session_events (
+                  event_id         NUMBER(12)    NOT NULL,
+                  session_uid      NUMBER(20)    NOT NULL,
+                  frame_identifier NUMBER(10)    NOT NULL,
+                  event_code       VARCHAR2(4)   NOT NULL,
+                  car_index        NUMBER(2),
+                  penalty_seconds  NUMBER(3),
+                  other_car_index  NUMBER(2),
+                  lap_number       NUMBER(3),
+                  created_at       TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+                  CONSTRAINT pk_session_events PRIMARY KEY (event_id),
+                  CONSTRAINT fk_event_session
+                      FOREIGN KEY (session_uid) REFERENCES sessions (session_uid)
+              )
+
+  - changeSet:
+      id: 002-04-tyre-sets
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE tyre_sets (
+                  session_uid          NUMBER(20)    NOT NULL,
+                  car_index            NUMBER(2)     NOT NULL,
+                  set_index            NUMBER(2)     NOT NULL,
+                  tyre_compound_actual NUMBER(2)     NOT NULL,
+                  tyre_compound_visual NUMBER(2)     NOT NULL,
+                  wear                 NUMBER(5,1),
+                  available            NUMBER(1),
+                  life_span            NUMBER(3),
+                  usable_life          NUMBER(3),
+                  lap_delta_time_ms    NUMBER(10),
+                  fitted               NUMBER(1),
+                  created_at           TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+                  CONSTRAINT pk_tyre_sets PRIMARY KEY (session_uid, car_index, set_index),
+                  CONSTRAINT fk_tyreset_session FOREIGN KEY (session_uid)
+                      REFERENCES sessions (session_uid),
+                  CONSTRAINT fk_tyreset_participant FOREIGN KEY (session_uid, car_index)
+                      REFERENCES participants (session_uid, car_index)
+              )
+
+  - changeSet:
+      id: 002-05-final-classifications
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE final_classifications (
+                  session_uid            NUMBER(20)    NOT NULL,
+                  car_index              NUMBER(2)     NOT NULL,
+                  position               NUMBER(2)     NOT NULL,
+                  grid_position          NUMBER(2),
+                  num_laps               NUMBER(3),
+                  points                 NUMBER(2),
+                  num_pit_stops          NUMBER(2),
+                  result_status          NUMBER(1)     NOT NULL,
+                  result_reason          NUMBER(2),
+                  best_lap_time_ms       NUMBER(10),
+                  total_race_time_s      NUMBER(12,3),
+                  penalties_time_sec     NUMBER(3),
+                  num_penalties          NUMBER(2),
+                  num_tyre_stints        NUMBER(1),
+                  stint1_actual          NUMBER(2),
+                  stint1_visual          NUMBER(2),
+                  stint1_end_lap         NUMBER(3),
+                  stint2_actual          NUMBER(2),
+                  stint2_visual          NUMBER(2),
+                  stint2_end_lap         NUMBER(3),
+                  stint3_actual          NUMBER(2),
+                  stint3_visual          NUMBER(2),
+                  stint3_end_lap         NUMBER(3),
+                  stint4_actual          NUMBER(2),
+                  stint4_visual          NUMBER(2),
+                  stint4_end_lap         NUMBER(3),
+                  stint5_actual          NUMBER(2),
+                  stint5_visual          NUMBER(2),
+                  stint5_end_lap         NUMBER(3),
+                  stint6_actual          NUMBER(2),
+                  stint6_visual          NUMBER(2),
+                  stint6_end_lap         NUMBER(3),
+                  stint7_actual          NUMBER(2),
+                  stint7_visual          NUMBER(2),
+                  stint7_end_lap         NUMBER(3),
+                  stint8_actual          NUMBER(2),
+                  stint8_visual          NUMBER(2),
+                  stint8_end_lap         NUMBER(3),
+                  created_at             TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+                  CONSTRAINT pk_final_class PRIMARY KEY (session_uid, car_index),
+                  CONSTRAINT fk_fclass_session FOREIGN KEY (session_uid)
+                      REFERENCES sessions (session_uid),
+                  CONSTRAINT fk_fclass_participant FOREIGN KEY (session_uid, car_index)
+                      REFERENCES participants (session_uid, car_index)
+              )

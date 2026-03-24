@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - include:
+      file: 001-core-schema.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 002-telemetry-data.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 003-calibration.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 004-indexes.yaml
+      relativeToChangelogFile: true

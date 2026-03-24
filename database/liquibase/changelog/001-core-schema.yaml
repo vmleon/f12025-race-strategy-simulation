@@ -1,0 +1,43 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-01-sessions
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE sessions (
+                  session_uid          NUMBER(20)    NOT NULL,
+                  track_id             NUMBER(3)     NOT NULL,
+                  track_length_m       NUMBER(6,1),
+                  session_type         NUMBER(2)     NOT NULL,
+                  total_laps           NUMBER(3),
+                  formula              NUMBER(1),
+                  sector2_start_dist   NUMBER(10,2),
+                  sector3_start_dist   NUMBER(10,2),
+                  ai_difficulty        NUMBER(3),
+                  safety_car_setting   NUMBER(1),
+                  car_damage_setting   NUMBER(1),
+                  car_damage_rate      NUMBER(1),
+                  low_fuel_mode        NUMBER(1),
+                  created_at           TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+                  CONSTRAINT pk_sessions PRIMARY KEY (session_uid)
+              )
+
+  - changeSet:
+      id: 001-02-participants
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE participants (
+                  session_uid    NUMBER(20)    NOT NULL,
+                  car_index      NUMBER(2)     NOT NULL,
+                  driver_name    VARCHAR2(48),
+                  team_id        NUMBER(3),
+                  race_number    NUMBER(3),
+                  nationality    NUMBER(3),
+                  ai_controlled  NUMBER(1),
+                  CONSTRAINT pk_participants PRIMARY KEY (session_uid, car_index),
+                  CONSTRAINT fk_part_session FOREIGN KEY (session_uid)
+                      REFERENCES sessions (session_uid)
+              )

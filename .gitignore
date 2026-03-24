@@ -23,6 +23,13 @@ Thumbs.db
 telemetry/.gradle/
 telemetry/build/
 
+# iOS (Xcode)
+*.xcuserstate
+xcuserdata/
+
+# Database
+database/db_data/
+
 # Env
 .env
 *.log
