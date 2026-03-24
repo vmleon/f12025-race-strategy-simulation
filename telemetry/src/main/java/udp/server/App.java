@@ -29,6 +29,7 @@ public class App {
         PacketTracker tracker = new InMemoryPacketTracker();
         CarStateTracker carState = new CarStateTracker();
         SectorTransitionDetector sectorDetector = new SectorTransitionDetector();
+        SessionHistoryBuffer historyBuffer = new SessionHistoryBuffer();
 
         BlockingQueue<ReceivedPacket> queue = new ArrayBlockingQueue<>(10_000);
 
@@ -57,12 +58,18 @@ public class App {
                                 LapData[] laps = LapData.parseAll(received.data(), received.length());
                                 if (laps != null) {
                                     carState.updateLapData(laps);
-                                    var transitions = sectorDetector.detect(laps);
+                                    var transitions = sectorDetector.detect(laps, historyBuffer);
                                     for (var t : transitions) {
                                         DbWriter.SectorSnapshot snapshot = SectorTransitionDetector.captureSnapshot(
-                                                header.sessionUID, t, carState, header.frameIdentifier);
-                                        System.out.printf("  SECTOR car=%d sector=%d lap=%d time=%dms%n",
-                                                t.carIndex(), t.completedSector(), t.lapNumber(),
+                                                header.sessionUID, t, carState, historyBuffer, header.frameIdentifier);
+                                        String tierLabel = switch (t.recovered()) {
+                                            case 0 -> "PRIMARY";
+                                            case 1 -> "TIER1";
+                                            case 2 -> "TIER2";
+                                            default -> "GAP";
+                                        };
+                                        System.out.printf("  SECTOR [%s] car=%d sector=%d lap=%d time=%dms%n",
+                                                tierLabel, t.carIndex(), t.completedSector(), t.lapNumber(),
                                                 snapshot.sectorTimeMs());
                                     }
                                 }
@@ -89,6 +96,12 @@ public class App {
                                 CarDamageData[] damage = CarDamageData.parseAll(received.data(), received.length());
                                 if (damage != null) {
                                     carState.updateDamage(damage);
+                                }
+                            }
+                            case 11 -> { // SessionHistory
+                                SessionHistoryData history = SessionHistoryData.parse(received.data(), received.length());
+                                if (history != null) {
+                                    historyBuffer.update(history);
                                 }
                             }
                             default -> {}
