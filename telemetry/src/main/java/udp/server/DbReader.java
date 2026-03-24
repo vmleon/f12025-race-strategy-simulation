@@ -234,6 +234,105 @@ public class DbReader {
         return rows;
     }
 
+    // ── calibration data ───────────────────────────────────────────────
+
+    private static final String SELECT_CALIBRATION_DATA = """
+            SELECT ss.session_uid, ss.car_index, ss.lap_number, ss.sector_number,
+                   ss.sector_time_ms,
+                   ss.tyre_compound_actual, ss.tyre_age_laps,
+                   ss.fuel_in_tank_kg,
+                   ss.gap_to_car_ahead_ms,
+                   ss.drs_allowed,
+                   ss.weather, ss.track_temp, ss.air_temp,
+                   ss.front_wing_damage_l, ss.front_wing_damage_r, ss.rear_wing_damage,
+                   ss.floor_damage, ss.diffuser_damage, ss.sidepod_damage,
+                   ss.engine_damage, ss.gearbox_damage,
+                   ss.tyre_surface_temp_rl, ss.tyre_surface_temp_rr,
+                   ss.tyre_surface_temp_fl, ss.tyre_surface_temp_fr,
+                   ss.tyre_inner_temp_rl, ss.tyre_inner_temp_rr,
+                   ss.tyre_inner_temp_fl, ss.tyre_inner_temp_fr,
+                   s.ai_difficulty, s.car_damage_setting, s.car_damage_rate, s.low_fuel_mode
+            FROM sector_snapshots ss
+            JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index
+            JOIN sessions s ON s.session_uid = ss.session_uid
+            WHERE s.track_id = ?
+              AND p.ai_controlled = ?
+              AND ss.lap_invalid = 0
+              AND ss.corner_cutting_warnings = 0
+              AND ss.pit_status = 0
+              AND ss.safety_car_status = 0
+              AND ss.lap_number > 1
+              AND ss.outlier = 0
+              AND ss.sector_time_ms > 0
+            ORDER BY ss.car_index, ss.lap_number, ss.sector_number
+            """;
+
+    public record CalibrationRow(
+            long sessionUid, int carIndex, int lapNumber, int sectorNumber,
+            long sectorTimeMs,
+            int tyreCompoundActual, int tyreAgeLaps,
+            double fuelInTankKg,
+            long gapToCarAheadMs,
+            int drsAllowed,
+            int weather, int trackTemp, int airTemp,
+            int frontWingDamageL, int frontWingDamageR, int rearWingDamage,
+            int floorDamage, int diffuserDamage, int sidepodDamage,
+            int engineDamage, int gearboxDamage,
+            int tyreSurfaceTempRl, int tyreSurfaceTempRr,
+            int tyreSurfaceTempFl, int tyreSurfaceTempFr,
+            int tyreInnerTempRl, int tyreInnerTempRr,
+            int tyreInnerTempFl, int tyreInnerTempFr,
+            int aiDifficulty, int carDamageSetting, int carDamageRate, int lowFuelMode) {}
+
+    public List<CalibrationRow> getCalibrationData(Connection conn, int trackId, String regime) throws SQLException {
+        int aiControlled = regime.equals("AI") ? 1 : 0;
+        List<CalibrationRow> rows = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(SELECT_CALIBRATION_DATA)) {
+            ps.setInt(1, trackId);
+            ps.setInt(2, aiControlled);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(new CalibrationRow(
+                            rs.getLong("session_uid"), rs.getInt("car_index"),
+                            rs.getInt("lap_number"), rs.getInt("sector_number"),
+                            rs.getLong("sector_time_ms"),
+                            rs.getInt("tyre_compound_actual"), rs.getInt("tyre_age_laps"),
+                            rs.getDouble("fuel_in_tank_kg"),
+                            rs.getLong("gap_to_car_ahead_ms"),
+                            rs.getInt("drs_allowed"),
+                            rs.getInt("weather"), rs.getInt("track_temp"), rs.getInt("air_temp"),
+                            rs.getInt("front_wing_damage_l"), rs.getInt("front_wing_damage_r"),
+                            rs.getInt("rear_wing_damage"),
+                            rs.getInt("floor_damage"), rs.getInt("diffuser_damage"),
+                            rs.getInt("sidepod_damage"),
+                            rs.getInt("engine_damage"), rs.getInt("gearbox_damage"),
+                            rs.getInt("tyre_surface_temp_rl"), rs.getInt("tyre_surface_temp_rr"),
+                            rs.getInt("tyre_surface_temp_fl"), rs.getInt("tyre_surface_temp_fr"),
+                            rs.getInt("tyre_inner_temp_rl"), rs.getInt("tyre_inner_temp_rr"),
+                            rs.getInt("tyre_inner_temp_fl"), rs.getInt("tyre_inner_temp_fr"),
+                            rs.getInt("ai_difficulty"), rs.getInt("car_damage_setting"),
+                            rs.getInt("car_damage_rate"), rs.getInt("low_fuel_mode")));
+                }
+            }
+        }
+        return rows;
+    }
+
+    // ── session count for track ──────────────────────────────────────────
+
+    private static final String COUNT_SESSIONS_FOR_TRACK = """
+            SELECT COUNT(DISTINCT session_uid) FROM sessions WHERE track_id = ?
+            """;
+
+    public int getSessionCountForTrack(Connection conn, int trackId) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(COUNT_SESSIONS_FOR_TRACK)) {
+            ps.setInt(1, trackId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        }
+    }
+
     // ── final classifications ───────────────────────────────────────────
 
     private static final String SELECT_FINAL_CLASSIFICATIONS = """

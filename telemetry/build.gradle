@@ -31,3 +31,8 @@ tasks.register('runClient', JavaExec) {
     mainClass = 'udp.server.Client'
     classpath = sourceSets.main.runtimeClasspath
 }
+
+tasks.register('runCalibration', JavaExec) {
+    mainClass = 'udp.server.CalibrationPipeline'
+    classpath = sourceSets.main.runtimeClasspath
+}
