@@ -132,12 +132,14 @@ public class Client {
         buf.put((byte) 255);              // secondaryPlayerCarIndex
 
         // Fill payload with realistic synthetic data
-        if (packetId == 2) {
-            fillLapData(buf, frameId);
-        } else if (packetId == 6) {
-            fillCarTelemetry(buf, frameId);
+        switch (packetId) {
+            case 1 -> fillSessionData(buf);
+            case 2 -> fillLapData(buf, frameId);
+            case 4 -> fillParticipants(buf);
+            case 6 -> fillCarTelemetry(buf, frameId);
+            case 7 -> fillCarStatus(buf, frameId);
+            case 10 -> fillCarDamage(buf, frameId);
         }
-        // Other packet types remain zero-filled
 
         return buf.array();
     }
@@ -210,6 +212,105 @@ public class Client {
             for (int i = 0; i < 4; i++) buf.putFloat(21.0f + rng.nextFloat() * 4);
             // surfaceType[4]
             for (int i = 0; i < 4; i++) buf.put((byte) 0);
+        }
+    }
+
+    private static void fillSessionData(ByteBuffer buf) {
+        buf.put((byte) 0);       // weather (clear)
+        buf.put((byte) 28);      // trackTemperature
+        buf.put((byte) 22);      // airTemperature
+        buf.put((byte) 57);      // totalLaps
+        buf.putShort((short) 5303); // trackLength
+        buf.put((byte) 10);      // sessionType (race)
+        buf.put((byte) 5);       // trackId (Barcelona)
+        buf.put((byte) 0);       // formula (F1 Modern)
+        // Remaining fields are zero-filled by ByteBuffer.allocate
+    }
+
+    private static void fillParticipants(ByteBuffer buf) {
+        String[] names = {"Max Verstappen", "Lewis Hamilton", "Charles Leclerc", "Lando Norris",
+                "Carlos Sainz", "Oscar Piastri", "George Russell", "Fernando Alonso",
+                "Pierre Gasly", "Esteban Ocon", "Lance Stroll", "Yuki Tsunoda",
+                "Daniel Ricciardo", "Nico Hulkenberg", "Kevin Magnussen", "Alex Albon",
+                "Logan Sargeant", "Valtteri Bottas", "Zhou Guanyu", "Nyck De Vries",
+                "AI Driver 21", "AI Driver 22"};
+        buf.put((byte) 20); // numActiveCars
+        for (int car = 0; car < 22; car++) {
+            buf.put((byte) (car == 0 ? 0 : 1)); // aiControlled
+            buf.put((byte) car);                  // driverId
+            buf.put((byte) 0);                    // networkId
+            buf.put((byte) (car % 11));           // teamId
+            buf.put((byte) 0);                    // myTeam
+            buf.put((byte) (car + 1));            // raceNumber
+            buf.put((byte) (car + 1));            // nationality
+            byte[] nameBytes = names[car].getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            buf.put(nameBytes);
+            buf.position(buf.position() + (32 - nameBytes.length)); // pad name
+            buf.put((byte) 1);  // yourTelemetry
+            buf.put((byte) 1);  // showOnlineNames
+            buf.putShort((short) 0); // techLevel
+            buf.put((byte) 1);  // platform
+            buf.put((byte) 0);  // numColours
+            buf.position(buf.position() + 12); // liveryColours
+        }
+    }
+
+    private static void fillCarStatus(ByteBuffer buf, int frameId) {
+        Random rng = new Random(frameId);
+        for (int car = 0; car < 22; car++) {
+            buf.put((byte) 0);           // tractionControl
+            buf.put((byte) 1);           // antiLockBrakes
+            buf.put((byte) 1);           // fuelMix
+            buf.put((byte) 56);          // frontBrakeBias
+            buf.put((byte) 0);           // pitLimiterStatus
+            buf.putFloat(40.0f + rng.nextFloat() * 70); // fuelInTank
+            buf.putFloat(110.0f);        // fuelCapacity
+            buf.putFloat(1.0f + rng.nextFloat() * 3);   // fuelRemainingLaps
+            buf.putShort((short) 12500); // maxRPM
+            buf.putShort((short) 4000);  // idleRPM
+            buf.put((byte) 8);           // maxGears
+            buf.put((byte) (rng.nextInt(2))); // drsAllowed
+            buf.putShort((short) (rng.nextInt(300))); // drsActivationDistance
+            buf.put((byte) (16 + rng.nextInt(5))); // actualTyreCompound
+            buf.put((byte) (16 + rng.nextInt(3))); // visualTyreCompound
+            buf.put((byte) (rng.nextInt(20)));     // tyresAgeLaps
+            buf.put((byte) 0);           // vehicleFIAFlags
+            buf.putFloat(500000.0f);     // enginePowerICE
+            buf.putFloat(120000.0f);     // enginePowerMGUK
+            buf.putFloat(4000000.0f);    // ersStoreEnergy
+            buf.put((byte) (rng.nextInt(4))); // ersDeployMode
+            buf.putFloat(100000.0f);     // ersHarvestedThisLapMGUK
+            buf.putFloat(200000.0f);     // ersHarvestedThisLapMGUH
+            buf.putFloat(150000.0f);     // ersDeployedThisLap
+            buf.put((byte) 0);           // networkPaused
+        }
+    }
+
+    private static void fillCarDamage(ByteBuffer buf, int frameId) {
+        Random rng = new Random(frameId);
+        for (int car = 0; car < 22; car++) {
+            // tyresWear[4]
+            for (int i = 0; i < 4; i++) buf.putFloat(rng.nextFloat() * 30);
+            // tyresDamage[4]
+            for (int i = 0; i < 4; i++) buf.put((byte) rng.nextInt(10));
+            // brakesDamage[4]
+            for (int i = 0; i < 4; i++) buf.put((byte) rng.nextInt(5));
+            // tyreBlisters[4]
+            for (int i = 0; i < 4; i++) buf.put((byte) rng.nextInt(20));
+            buf.put((byte) rng.nextInt(10)); // frontLeftWingDamage
+            buf.put((byte) rng.nextInt(10)); // frontRightWingDamage
+            buf.put((byte) 0);              // rearWingDamage
+            buf.put((byte) 0);              // floorDamage
+            buf.put((byte) 0);              // diffuserDamage
+            buf.put((byte) 0);              // sidepodDamage
+            buf.put((byte) 0);              // drsFault
+            buf.put((byte) 0);              // ersFault
+            buf.put((byte) rng.nextInt(5)); // gearBoxDamage
+            buf.put((byte) rng.nextInt(5)); // engineDamage
+            // engine component wear
+            for (int i = 0; i < 6; i++) buf.put((byte) rng.nextInt(20));
+            buf.put((byte) 0); // engineBlown
+            buf.put((byte) 0); // engineSeized
         }
     }
 }
