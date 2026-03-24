@@ -27,6 +27,8 @@ public class App {
         DatagramSocket socket = new DatagramSocket(port, address);
 
         PacketTracker tracker = new InMemoryPacketTracker();
+        CarStateTracker carState = new CarStateTracker();
+        SectorTransitionDetector sectorDetector = new SectorTransitionDetector();
 
         BlockingQueue<ReceivedPacket> queue = new ArrayBlockingQueue<>(10_000);
 
@@ -44,77 +46,53 @@ public class App {
 
                         tracker.onPacketReceived(header, received.length());
 
-                        System.out.printf("[%s] size=%d type=%s(%d) sessionUID=0x%X frame=%d%n",
-                                received.sender(), received.length(),
-                                header.packetTypeName(), header.packetId,
-                                header.sessionUID, header.frameIdentifier);
-
                         switch (header.packetId) {
                             case 1 -> { // Session
                                 SessionData session = SessionData.parse(received.data(), received.length());
                                 if (session != null) {
-                                    System.out.printf("  Session: track=%d weather=%d trackTemp=%d airTemp=%d laps=%d safety=%d%n",
-                                            session.trackId, session.weather, session.trackTemperature,
-                                            session.airTemperature, session.totalLaps, session.safetyCarStatus);
+                                    carState.updateSession(session);
                                 }
                             }
                             case 2 -> { // LapData
                                 LapData[] laps = LapData.parseAll(received.data(), received.length());
                                 if (laps != null) {
-                                    LapData player = laps[header.playerCarIndex];
-                                    System.out.printf("  LapData[P%d]: lap=%d sector=%d lapTime=%dms pitStatus=%d driverStatus=%d%n",
-                                            header.playerCarIndex, player.currentLapNum, player.sector,
-                                            player.currentLapTimeInMS, player.pitStatus, player.driverStatus);
+                                    carState.updateLapData(laps);
+                                    var transitions = sectorDetector.detect(laps);
+                                    for (var t : transitions) {
+                                        DbWriter.SectorSnapshot snapshot = SectorTransitionDetector.captureSnapshot(
+                                                header.sessionUID, t, carState, header.frameIdentifier);
+                                        System.out.printf("  SECTOR car=%d sector=%d lap=%d time=%dms%n",
+                                                t.carIndex(), t.completedSector(), t.lapNumber(),
+                                                snapshot.sectorTimeMs());
+                                    }
                                 }
                             }
                             case 3 -> { // Event
-                                EventData event = EventData.parse(received.data(), received.length());
-                                if (event != null) {
-                                    System.out.printf("  Event: %s vehicleIdx=%d%n", event.eventCode, event.vehicleIdx);
-                                }
+                                EventData.parse(received.data(), received.length());
                             }
                             case 4 -> { // Participants
-                                ParticipantData[] parts = ParticipantData.parseAll(received.data(), received.length());
-                                if (parts != null) {
-                                    int active = ParticipantData.parseNumActiveCars(received.data(), received.length());
-                                    System.out.printf("  Participants: %d active, P0=%s (ai=%d)%n",
-                                            active, parts[0].name, parts[0].aiControlled);
-                                }
+                                ParticipantData.parseAll(received.data(), received.length());
                             }
                             case 6 -> { // CarTelemetry
                                 CarTelemetryData[] telemetry = CarTelemetryData.parseAll(received.data(), received.length());
                                 if (telemetry != null) {
-                                    CarTelemetryData player = telemetry[header.playerCarIndex];
-                                    System.out.printf("  Telemetry[P%d]: speed=%dkph gear=%d rpm=%d tyreSurf=[%d,%d,%d,%d]%n",
-                                            header.playerCarIndex, player.speed, player.gear, player.engineRPM,
-                                            player.tyresSurfaceTemperature[0], player.tyresSurfaceTemperature[1],
-                                            player.tyresSurfaceTemperature[2], player.tyresSurfaceTemperature[3]);
+                                    carState.updateTelemetry(telemetry);
                                 }
                             }
                             case 7 -> { // CarStatus
                                 CarStatusData[] status = CarStatusData.parseAll(received.data(), received.length());
                                 if (status != null) {
-                                    CarStatusData player = status[header.playerCarIndex];
-                                    System.out.printf("  Status[P%d]: fuel=%.1fkg compound=%d tyreAge=%d ers=%d drs=%d%n",
-                                            header.playerCarIndex, player.fuelInTank, player.actualTyreCompound,
-                                            player.tyresAgeLaps, player.ersDeployMode, player.drsAllowed);
+                                    carState.updateStatus(status);
                                 }
                             }
                             case 10 -> { // CarDamage
                                 CarDamageData[] damage = CarDamageData.parseAll(received.data(), received.length());
                                 if (damage != null) {
-                                    CarDamageData player = damage[header.playerCarIndex];
-                                    System.out.printf("  Damage[P%d]: tyreWear=[%.1f,%.1f,%.1f,%.1f] engine=%d gearbox=%d%n",
-                                            header.playerCarIndex, player.tyresWear[0], player.tyresWear[1],
-                                            player.tyresWear[2], player.tyresWear[3],
-                                            player.engineDamage, player.gearBoxDamage);
+                                    carState.updateDamage(damage);
                                 }
                             }
-                            default -> {} // Other packet types not yet handled
+                            default -> {}
                         }
-                    } else {
-                        System.out.printf("[%s] size=%d (too small for F1 header)%n",
-                                received.sender(), received.length());
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
