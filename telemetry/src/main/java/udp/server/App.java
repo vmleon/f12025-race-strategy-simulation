@@ -48,6 +48,25 @@ public class App {
                                 received.sender(), received.length(),
                                 header.packetTypeName(), header.packetId,
                                 header.sessionUID, header.frameIdentifier);
+
+                        if (header.packetId == 2) { // LapData
+                            LapData[] laps = LapData.parseAll(received.data(), received.length());
+                            if (laps != null) {
+                                LapData player = laps[header.playerCarIndex];
+                                System.out.printf("  LapData[P%d]: lap=%d sector=%d lapTime=%dms pitStatus=%d driverStatus=%d%n",
+                                        header.playerCarIndex, player.currentLapNum, player.sector,
+                                        player.currentLapTimeInMS, player.pitStatus, player.driverStatus);
+                            }
+                        } else if (header.packetId == 6) { // CarTelemetry
+                            CarTelemetryData[] telemetry = CarTelemetryData.parseAll(received.data(), received.length());
+                            if (telemetry != null) {
+                                CarTelemetryData player = telemetry[header.playerCarIndex];
+                                System.out.printf("  Telemetry[P%d]: speed=%dkph gear=%d rpm=%d tyreSurf=[%d,%d,%d,%d]%n",
+                                        header.playerCarIndex, player.speed, player.gear, player.engineRPM,
+                                        player.tyresSurfaceTemperature[0], player.tyresSurfaceTemperature[1],
+                                        player.tyresSurfaceTemperature[2], player.tyresSurfaceTemperature[3]);
+                            }
+                        }
                     } else {
                         System.out.printf("[%s] size=%d (too small for F1 header)%n",
                                 received.sender(), received.length());

@@ -131,7 +131,85 @@ public class Client {
         buf.put((byte) 0);                // playerCarIndex
         buf.put((byte) 255);              // secondaryPlayerCarIndex
 
-        // Rest is zero-filled (body not implemented yet)
+        // Fill payload with realistic synthetic data
+        if (packetId == 2) {
+            fillLapData(buf, frameId);
+        } else if (packetId == 6) {
+            fillCarTelemetry(buf, frameId);
+        }
+        // Other packet types remain zero-filled
+
         return buf.array();
+    }
+
+    private static void fillLapData(ByteBuffer buf, int frameId) {
+        Random rng = new Random(frameId);
+        for (int car = 0; car < 22; car++) {
+            int lapNum = 1 + (frameId / (60 * 90)); // new lap roughly every 90s
+            int sector = (frameId / (60 * 30)) % 3; // rotate sectors every ~30s
+            long lapTimeMs = (frameId % (60 * 90)) * (1000 / 60);
+
+            buf.putInt((int) (85000 + rng.nextInt(10000)));  // lastLapTimeInMS
+            buf.putInt((int) lapTimeMs);                      // currentLapTimeInMS
+            buf.putShort((short) (28000 + rng.nextInt(4000))); // sector1TimeMSPart
+            buf.put((byte) 0);                                 // sector1TimeMinutesPart
+            buf.putShort((short) (30000 + rng.nextInt(4000))); // sector2TimeMSPart
+            buf.put((byte) 0);                                 // sector2TimeMinutesPart
+            buf.putShort((short) rng.nextInt(2000));           // deltaToCarInFrontMSPart
+            buf.put((byte) 0);                                 // deltaToCarInFrontMinutesPart
+            buf.putShort((short) rng.nextInt(5000));           // deltaToRaceLeaderMSPart
+            buf.put((byte) 0);                                 // deltaToRaceLeaderMinutesPart
+            buf.putFloat(rng.nextFloat() * 5000);              // lapDistance
+            buf.putFloat(rng.nextFloat() * 50000);             // totalDistance
+            buf.putFloat(0.0f);                                // safetyCarDelta
+            buf.put((byte) (car + 1));                         // carPosition
+            buf.put((byte) lapNum);                            // currentLapNum
+            buf.put((byte) 0);                                 // pitStatus
+            buf.put((byte) 0);                                 // numPitStops
+            buf.put((byte) sector);                            // sector
+            buf.put((byte) 0);                                 // currentLapInvalid
+            buf.put((byte) 0);                                 // penalties
+            buf.put((byte) 0);                                 // totalWarnings
+            buf.put((byte) 0);                                 // cornerCuttingWarnings
+            buf.put((byte) 0);                                 // numUnservedDriveThroughPens
+            buf.put((byte) 0);                                 // numUnservedStopGoPens
+            buf.put((byte) (car + 1));                         // gridPosition
+            buf.put((byte) 4);                                 // driverStatus (on track)
+            buf.put((byte) 2);                                 // resultStatus (active)
+            buf.put((byte) 0);                                 // pitLaneTimerActive
+            buf.putShort((short) 0);                           // pitLaneTimeInLaneInMS
+            buf.putShort((short) 0);                           // pitStopTimerInMS
+            buf.put((byte) 0);                                 // pitStopShouldServePen
+            buf.putFloat(300.0f + rng.nextFloat() * 30);       // speedTrapFastestSpeed
+            buf.put((byte) (1 + rng.nextInt(lapNum)));         // speedTrapFastestLap
+        }
+    }
+
+    private static void fillCarTelemetry(ByteBuffer buf, int frameId) {
+        Random rng = new Random(frameId);
+        for (int car = 0; car < 22; car++) {
+            buf.putShort((short) (180 + rng.nextInt(160)));    // speed (180-340 kph)
+            buf.putFloat(rng.nextFloat());                     // throttle
+            buf.putFloat(rng.nextFloat() * 2 - 1);            // steer (-1 to 1)
+            buf.putFloat(rng.nextFloat() * 0.3f);             // brake
+            buf.put((byte) 0);                                 // clutch
+            buf.put((byte) (3 + rng.nextInt(5)));              // gear (3-7)
+            buf.putShort((short) (8000 + rng.nextInt(4000)));  // engineRPM
+            buf.put((byte) (rng.nextInt(2)));                  // drs
+            buf.put((byte) (50 + rng.nextInt(50)));            // revLightsPercent
+            buf.putShort((short) 0);                           // revLightsBitValue
+            // brakesTemperature[4]
+            for (int i = 0; i < 4; i++) buf.putShort((short) (600 + rng.nextInt(400)));
+            // tyresSurfaceTemperature[4] (uint8)
+            for (int i = 0; i < 4; i++) buf.put((byte) (80 + rng.nextInt(40)));
+            // tyresInnerTemperature[4] (uint8)
+            for (int i = 0; i < 4; i++) buf.put((byte) (85 + rng.nextInt(40)));
+            // engineTemperature
+            buf.putShort((short) (100 + rng.nextInt(20)));
+            // tyresPressure[4]
+            for (int i = 0; i < 4; i++) buf.putFloat(21.0f + rng.nextFloat() * 4);
+            // surfaceType[4]
+            for (int i = 0; i < 4; i++) buf.put((byte) 0);
+        }
     }
 }
