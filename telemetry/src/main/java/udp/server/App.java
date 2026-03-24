@@ -37,6 +37,14 @@ public class App {
         DbWriter dbWriter = new DbWriter();
         LifecycleDispatcher lifecycle = new LifecycleDispatcher(connFactory, dbWriter);
 
+        RaceState raceState = new RaceState();
+
+        String tcpHost = config.getProperty("tcp.backend.host", "localhost");
+        int tcpPort = Integer.parseInt(config.getProperty("tcp.backend.port", "9090"));
+        Thread tcpSender = new Thread(new TcpSender(raceState, tcpHost, tcpPort), "tcp-sender");
+        tcpSender.setDaemon(true);
+        tcpSender.start();
+
         BlockingQueue<ReceivedPacket> queue = new ArrayBlockingQueue<>(10_000);
 
         Thread worker = new Thread(() -> {
@@ -59,12 +67,14 @@ public class App {
                                 if (session != null) {
                                     carState.updateSession(session);
                                     lifecycle.onSession(header.sessionUID, session);
+                                    raceState.updateFromSession(header.sessionUID, session);
                                 }
                             }
                             case 2 -> { // LapData
                                 LapData[] laps = LapData.parseAll(received.data(), received.length());
                                 if (laps != null) {
                                     carState.updateLapData(laps);
+                                    raceState.updateFromLapData(laps);
                                     lifecycle.detectPitStops(laps);
                                     var transitions = sectorDetector.detect(laps, historyBuffer);
                                     List<DbWriter.SectorSnapshot> snapshots = new ArrayList<>();
@@ -107,6 +117,7 @@ public class App {
                                 CarStatusData[] status = CarStatusData.parseAll(received.data(), received.length());
                                 if (status != null) {
                                     carState.updateStatus(status);
+                                    raceState.updateFromStatus(status);
                                 }
                             }
                             case 10 -> { // CarDamage
@@ -119,6 +130,7 @@ public class App {
                                 FinalClassificationData[] classifications = FinalClassificationData.parseAll(received.data(), received.length());
                                 if (classifications != null) {
                                     lifecycle.onFinalClassification(header.sessionUID, classifications);
+                                    raceState.markSessionEnded();
                                 }
                             }
                             case 11 -> { // SessionHistory

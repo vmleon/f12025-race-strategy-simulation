@@ -9,9 +9,17 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer {
 
+    private final RaceWebSocketHandler raceWebSocketHandler;
+
+    public WebSocketConfig(RaceWebSocketHandler raceWebSocketHandler) {
+        this.raceWebSocketHandler = raceWebSocketHandler;
+    }
+
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(new HeartbeatWebSocketHandler(), "/ws/heartbeat")
+                .setAllowedOrigins("*");
+        registry.addHandler(raceWebSocketHandler, "/ws/race")
                 .setAllowedOrigins("*");
     }
 }
