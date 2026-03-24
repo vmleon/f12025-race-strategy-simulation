@@ -30,6 +30,9 @@ xcuserdata/
 # Database
 database/db_data/
 
+# Python
+__pycache__/
+
 # Env
 .env
 *.log
