@@ -20,9 +20,12 @@ import dev.victormartin.telemetry.simulation.SimulationResult;
 public class SimulationController {
 
     private final CoefficientRepository coefficientRepository;
+    private final SimulationOrchestrator orchestrator;
 
-    public SimulationController(CoefficientRepository coefficientRepository) {
+    public SimulationController(CoefficientRepository coefficientRepository,
+                                SimulationOrchestrator orchestrator) {
         this.coefficientRepository = coefficientRepository;
+        this.orchestrator = orchestrator;
     }
 
     @PostMapping("/run")
@@ -33,11 +36,26 @@ public class SimulationController {
     }
 
     @GetMapping("/results/{jobId}")
-    public ResponseEntity<Map<String, String>> results(@PathVariable String jobId) {
-        // Async job management is implemented in todo 23 (Simulation Trigger Orchestration).
-        // This endpoint will return stored results once async jobs are in place.
-        return ResponseEntity.status(501)
-                .body(Map.of("error", "Async simulation jobs not yet implemented (see todo 23)",
-                             "jobId", jobId));
+    public ResponseEntity<?> results(@PathVariable String jobId) {
+        var job = orchestrator.getJob(jobId);
+        if (job == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (job.result() == null) {
+            return ResponseEntity.status(202)
+                    .body(Map.of("jobId", jobId, "status", "running"));
+        }
+        return ResponseEntity.ok(job.result());
+    }
+
+    @PostMapping("/trigger")
+    public ResponseEntity<Map<String, String>> trigger() {
+        String jobId = orchestrator.triggerNow();
+        if (jobId == null) {
+            return ResponseEntity.status(409)
+                    .body(Map.of("error", "No live race state available"));
+        }
+        return ResponseEntity.accepted()
+                .body(Map.of("jobId", jobId, "status", "started"));
     }
 }

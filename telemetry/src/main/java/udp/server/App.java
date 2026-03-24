@@ -99,12 +99,26 @@ public class App {
                                 EventData event = EventData.parse(received.data(), received.length());
                                 if (event != null) {
                                     lifecycle.onEvent(header.sessionUID, header.frameIdentifier, event);
+                                    // Forward disruptive events to backend via TCP
+                                    switch (event.eventCode) {
+                                        case "SCAR" -> raceState.queueEvent(
+                                                "{\"type\":\"event\",\"event\":\"SCAR\",\"safetyCarType\":"
+                                                + event.safetyCarType + ",\"eventType\":" + event.eventType + "}");
+                                        case "RTMT" -> raceState.queueEvent(
+                                                "{\"type\":\"event\",\"event\":\"RTMT\",\"carIndex\":"
+                                                + event.vehicleIdx + "}");
+                                        case "COLL" -> raceState.queueEvent(
+                                                "{\"type\":\"event\",\"event\":\"COLL\",\"car1\":"
+                                                + event.vehicle1Idx + ",\"car2\":" + event.vehicle2Idx + "}");
+                                        default -> {}
+                                    }
                                 }
                             }
                             case 4 -> { // Participants
                                 ParticipantData[] participants = ParticipantData.parseAll(received.data(), received.length());
                                 if (participants != null) {
                                     lifecycle.onParticipants(header.sessionUID, participants);
+                                    raceState.updateFromParticipants(participants);
                                 }
                             }
                             case 6 -> { // CarTelemetry
@@ -124,6 +138,7 @@ public class App {
                                 CarDamageData[] damage = CarDamageData.parseAll(received.data(), received.length());
                                 if (damage != null) {
                                     carState.updateDamage(damage);
+                                    raceState.updateFromDamage(damage);
                                 }
                             }
                             case 8 -> { // FinalClassification

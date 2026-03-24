@@ -12,6 +12,7 @@ import dev.victormartin.telemetry.simulation.CoefficientRepository;
 import dev.victormartin.telemetry.simulation.Coefficients;
 
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -25,6 +26,9 @@ class SimulationControllerTest {
 
     @MockBean
     private CoefficientRepository coefficientRepository;
+
+    @MockBean
+    private SimulationOrchestrator orchestrator;
 
     @MockBean
     private JdbcTemplate jdbc;
@@ -91,9 +95,20 @@ class SimulationControllerTest {
     }
 
     @Test
-    void resultsReturns501() throws Exception {
+    void resultsReturns404ForUnknownJob() throws Exception {
+        when(orchestrator.getJob(anyString())).thenReturn(null);
+
         mockMvc.perform(get("/api/simulation/results/some-job-id"))
-                .andExpect(status().isNotImplemented())
-                .andExpect(jsonPath("$.error").exists());
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void resultsReturns202ForRunningJob() throws Exception {
+        when(orchestrator.getJob("abc123")).thenReturn(
+                new SimulationOrchestrator.SimulationJob("abc123", System.currentTimeMillis(), null));
+
+        mockMvc.perform(get("/api/simulation/results/abc123"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("running"));
     }
 }

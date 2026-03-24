@@ -12,6 +12,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -24,6 +25,9 @@ class CalibrationControllerTest {
 
     @MockBean
     private JdbcTemplate jdbc;
+
+    @MockBean
+    private CalibrationService calibrationService;
 
     @SuppressWarnings("unchecked")
     @Test
@@ -42,9 +46,20 @@ class CalibrationControllerTest {
     }
 
     @Test
-    void runReturns501() throws Exception {
+    void runReturnsAccepted() throws Exception {
+        when(calibrationService.triggerCalibration(5)).thenReturn(true);
+
         mockMvc.perform(post("/api/calibration/run?trackId=5"))
-                .andExpect(status().isNotImplemented())
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("started"));
+    }
+
+    @Test
+    void runReturns409WhenAlreadyRunning() throws Exception {
+        when(calibrationService.isRunning()).thenReturn(true);
+
+        mockMvc.perform(post("/api/calibration/run?trackId=5"))
+                .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").exists());
     }
 }

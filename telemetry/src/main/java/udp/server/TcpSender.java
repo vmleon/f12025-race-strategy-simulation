@@ -53,6 +53,14 @@ public class TcpSender implements Runnable {
                         writer.flush();
                     }
 
+                    // Send queued events
+                    String event;
+                    while ((event = raceState.pollEvent()) != null) {
+                        writer.write(event);
+                        writer.newLine();
+                        writer.flush();
+                    }
+
                     // Send state snapshot
                     String line = raceState.toJsonLine();
                     if (line != null) {

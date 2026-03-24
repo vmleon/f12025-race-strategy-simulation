@@ -1,5 +1,8 @@
 package udp.server;
 
+import java.util.ArrayDeque;
+import java.util.Queue;
+
 /**
  * Mutable holder for the latest race snapshot.
  * Updated by the packet-processor thread, read by the tcp-sender thread.
@@ -16,6 +19,7 @@ public class RaceState {
     private int trackTemp;
     private int airTemp;
     private int safetyCarStatus;
+    private int totalLaps;
 
     // Per-car state
     private final CarState[] cars = new CarState[NUM_CARS];
@@ -24,6 +28,9 @@ public class RaceState {
     private boolean sessionActive;
     private boolean sessionStartSent;
     private boolean sessionEndSent;
+
+    // Event queue for forwarding to backend
+    private final Queue<String> eventQueue = new ArrayDeque<>();
 
     public RaceState() {
         for (int i = 0; i < NUM_CARS; i++) {
@@ -39,6 +46,14 @@ public class RaceState {
         String tyreCompound = "M";
         int tyreAge;
         int pitStatus;
+        float fuelInTank;
+        int numPitStops;
+        int frontWingDamage;
+        int floorDamage;
+        int engineDamage;
+        String driverName = "";
+        boolean aiControlled = true;
+        int resultStatus;
     }
 
     public synchronized void updateFromSession(long sessionUid, SessionData session) {
@@ -48,6 +63,7 @@ public class RaceState {
         this.trackTemp = session.trackTemperature;
         this.airTemp = session.airTemperature;
         this.safetyCarStatus = session.safetyCarStatus;
+        this.totalLaps = session.totalLaps;
         this.sessionActive = true;
     }
 
@@ -61,6 +77,8 @@ public class RaceState {
             cars[i].lastSectorMs[1] = lap.sector2TimeInMS();
             cars[i].lastSectorMs[2] = 0; // sector 3 not directly available
             cars[i].pitStatus = lap.pitStatus;
+            cars[i].numPitStops = lap.numPitStops;
+            cars[i].resultStatus = lap.resultStatus;
         }
     }
 
@@ -68,7 +86,31 @@ public class RaceState {
         for (int i = 0; i < Math.min(status.length, NUM_CARS); i++) {
             cars[i].tyreCompound = mapTyreCompound(status[i].visualTyreCompound);
             cars[i].tyreAge = status[i].tyresAgeLaps;
+            cars[i].fuelInTank = status[i].fuelInTank;
         }
+    }
+
+    public synchronized void updateFromDamage(CarDamageData[] damage) {
+        for (int i = 0; i < Math.min(damage.length, NUM_CARS); i++) {
+            cars[i].frontWingDamage = Math.max(damage[i].frontLeftWingDamage, damage[i].frontRightWingDamage);
+            cars[i].floorDamage = damage[i].floorDamage;
+            cars[i].engineDamage = damage[i].engineDamage;
+        }
+    }
+
+    public synchronized void updateFromParticipants(ParticipantData[] participants) {
+        for (int i = 0; i < Math.min(participants.length, NUM_CARS); i++) {
+            cars[i].driverName = participants[i].name;
+            cars[i].aiControlled = participants[i].aiControlled == 1;
+        }
+    }
+
+    public synchronized void queueEvent(String eventJson) {
+        eventQueue.add(eventJson);
+    }
+
+    public synchronized String pollEvent() {
+        return eventQueue.poll();
     }
 
     public synchronized void markSessionEnded() {
@@ -111,6 +153,7 @@ public class RaceState {
         StringBuilder sb = new StringBuilder(2048);
         sb.append("{\"type\":\"state\",\"sessionUid\":\"").append(Long.toHexString(sessionUid))
           .append("\",\"trackId\":").append(trackId)
+          .append(",\"totalLaps\":").append(totalLaps)
           .append(",\"weather\":").append(weather)
           .append(",\"trackTemp\":").append(trackTemp)
           .append(",\"airTemp\":").append(airTemp)
@@ -130,6 +173,14 @@ public class RaceState {
               .append("],\"tyre\":\"").append(c.tyreCompound)
               .append("\",\"tyreAge\":").append(c.tyreAge)
               .append(",\"pitStatus\":").append(c.pitStatus)
+              .append(",\"fuel\":").append(String.format("%.1f", c.fuelInTank))
+              .append(",\"pits\":").append(c.numPitStops)
+              .append(",\"fwDmg\":").append(c.frontWingDamage)
+              .append(",\"flDmg\":").append(c.floorDamage)
+              .append(",\"engDmg\":").append(c.engineDamage)
+              .append(",\"name\":\"").append(escapeJson(c.driverName))
+              .append("\",\"ai\":").append(c.aiControlled)
+              .append(",\"resultStatus\":").append(c.resultStatus)
               .append('}');
         }
 
@@ -147,9 +198,15 @@ public class RaceState {
         this.trackTemp = 32;
         this.airTemp = 24;
         this.safetyCarStatus = 0;
+        this.totalLaps = 50;
         this.sessionActive = true;
 
         String[] compounds = {"S", "M", "H", "S", "M"};
+        String[] names = {"Player", "Verstappen", "Hamilton", "Leclerc", "Norris",
+                          "Sainz", "Russell", "Piastri", "Alonso", "Stroll",
+                          "Gasly", "Ocon", "Albon", "Sargeant", "Bottas",
+                          "Zhou", "Tsunoda", "Ricciardo", "Magnussen", "Hulkenberg",
+                          "Perez", "Lawson"};
         for (int i = 0; i < NUM_CARS; i++) {
             cars[i].position = i + 1;
             cars[i].lap = 15;
@@ -160,7 +217,20 @@ public class RaceState {
             cars[i].tyreCompound = compounds[i % compounds.length];
             cars[i].tyreAge = 7 + i;
             cars[i].pitStatus = 0;
+            cars[i].fuelInTank = 50.0f - i * 1.5f;
+            cars[i].numPitStops = 0;
+            cars[i].frontWingDamage = 0;
+            cars[i].floorDamage = 0;
+            cars[i].engineDamage = 0;
+            cars[i].driverName = names[i];
+            cars[i].aiControlled = i > 0;
+            cars[i].resultStatus = 2; // active
         }
+    }
+
+    private static String escapeJson(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private static String mapTyreCompound(int visual) {

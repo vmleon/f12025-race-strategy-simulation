@@ -16,9 +16,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class CalibrationController {
 
     private final JdbcTemplate jdbc;
+    private final CalibrationService calibrationService;
 
-    public CalibrationController(JdbcTemplate jdbc) {
+    public CalibrationController(JdbcTemplate jdbc, CalibrationService calibrationService) {
         this.jdbc = jdbc;
+        this.calibrationService = calibrationService;
     }
 
     public record CalibrationStatusDto(String knobName, String calibrationRegime,
@@ -96,10 +98,19 @@ public class CalibrationController {
 
     @PostMapping("/run")
     public ResponseEntity<Map<String, String>> run(@RequestParam int trackId) {
-        // Calibration auto-trigger is implemented in todo 23 (Simulation Trigger Orchestration).
-        // This endpoint will be wired to the calibration pipeline once orchestration is in place.
-        return ResponseEntity.status(501)
-                .body(Map.of("error", "Calibration trigger not yet wired (see todo 23)",
+        if (calibrationService.isRunning()) {
+            return ResponseEntity.status(409)
+                    .body(Map.of("error", "Calibration already running",
+                                 "trackId", String.valueOf(trackId)));
+        }
+        boolean started = calibrationService.triggerCalibration(trackId);
+        if (!started) {
+            return ResponseEntity.status(409)
+                    .body(Map.of("error", "Calibration already running",
+                                 "trackId", String.valueOf(trackId)));
+        }
+        return ResponseEntity.accepted()
+                .body(Map.of("status", "started",
                              "trackId", String.valueOf(trackId)));
     }
 }

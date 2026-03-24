@@ -19,14 +19,18 @@ public class TelemetryTcpServer implements CommandLineRunner {
 
     private final RaceWebSocketHandler raceWebSocketHandler;
     private final SessionStateHolder sessionStateHolder;
+    private final SimulationOrchestrator simulationOrchestrator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${telemetry.tcp.port:9090}")
     private int port;
 
-    public TelemetryTcpServer(RaceWebSocketHandler raceWebSocketHandler, SessionStateHolder sessionStateHolder) {
+    public TelemetryTcpServer(RaceWebSocketHandler raceWebSocketHandler,
+                              SessionStateHolder sessionStateHolder,
+                              SimulationOrchestrator simulationOrchestrator) {
         this.raceWebSocketHandler = raceWebSocketHandler;
         this.sessionStateHolder = sessionStateHolder;
+        this.simulationOrchestrator = simulationOrchestrator;
     }
 
     @Override
@@ -70,11 +74,22 @@ public class TelemetryTcpServer implements CommandLineRunner {
             String type = node.has("type") ? node.get("type").asText() : "";
 
             switch (type) {
-                case "sessionStarted" -> sessionStateHolder.onSessionStarted(
-                        node.get("sessionUid").asText(),
-                        node.get("trackId").asInt());
+                case "sessionStarted" -> {
+                    simulationOrchestrator.reset();
+                    sessionStateHolder.onSessionStarted(
+                            node.get("sessionUid").asText(),
+                            node.get("trackId").asInt());
+                }
                 case "sessionEnded" -> sessionStateHolder.onSessionEnded(
                         node.get("sessionUid").asText());
+                case "state" -> {
+                    raceWebSocketHandler.broadcast(line);
+                    simulationOrchestrator.onStateUpdate(line);
+                }
+                case "event" -> {
+                    raceWebSocketHandler.broadcast(line);
+                    simulationOrchestrator.onEvent(line);
+                }
                 default -> raceWebSocketHandler.broadcast(line);
             }
         } catch (Exception e) {
