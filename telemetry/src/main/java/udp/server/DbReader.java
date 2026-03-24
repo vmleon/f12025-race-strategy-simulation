@@ -178,6 +178,62 @@ public class DbReader {
         }
     }
 
+    // ── sector snapshots for outlier detection ─────────────────────────
+
+    private static final String SELECT_SECTORS_FOR_OUTLIER_DETECTION = """
+            SELECT ss.session_uid, ss.car_index, ss.lap_number, ss.sector_number,
+                   ss.sector_time_ms, p.driver_name, s.track_id,
+                   ss.tyre_compound_actual, p.ai_controlled
+            FROM sector_snapshots ss
+            JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index
+            JOIN sessions s ON s.session_uid = ss.session_uid
+            WHERE s.track_id = ?
+              AND ss.lap_invalid = 0
+              AND ss.pit_status = 0
+              AND ss.safety_car_status = 0
+              AND ss.lap_number > 1
+              AND ss.sector_time_ms > 0
+            ORDER BY p.driver_name, ss.sector_number, ss.tyre_compound_actual
+            """;
+
+    public List<OutlierDetector.SectorEntry> getSectorsForOutlierDetection(Connection conn, int trackId) throws SQLException {
+        List<OutlierDetector.SectorEntry> rows = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(SELECT_SECTORS_FOR_OUTLIER_DETECTION)) {
+            ps.setInt(1, trackId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(new OutlierDetector.SectorEntry(
+                            rs.getLong("session_uid"), rs.getInt("car_index"),
+                            rs.getInt("lap_number"), rs.getInt("sector_number"),
+                            rs.getLong("sector_time_ms"), rs.getString("driver_name"),
+                            rs.getInt("track_id"), rs.getInt("tyre_compound_actual"),
+                            rs.getInt("ai_controlled") == 1));
+                }
+            }
+        }
+        return rows;
+    }
+
+    // ── driver ratings ───────────────────────────────────────────────────
+
+    private static final String SELECT_DRIVER_RATINGS = """
+            SELECT driver_name, track_id, skill_rating
+            FROM driver_ratings
+            """;
+
+    public List<OutlierDetector.DriverRating> getDriverRatings(Connection conn) throws SQLException {
+        List<OutlierDetector.DriverRating> rows = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(SELECT_DRIVER_RATINGS);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                rows.add(new OutlierDetector.DriverRating(
+                        rs.getString("driver_name"), rs.getInt("track_id"),
+                        rs.getInt("skill_rating")));
+            }
+        }
+        return rows;
+    }
+
     // ── final classifications ───────────────────────────────────────────
 
     private static final String SELECT_FINAL_CLASSIFICATIONS = """

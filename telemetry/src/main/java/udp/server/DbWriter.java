@@ -426,6 +426,63 @@ public class DbWriter {
         }
     }
 
+    // ── outlier flag updates ────────────────────────────────────────────
+
+    private static final String RESET_OUTLIER_FLAGS = """
+            UPDATE sector_snapshots SET outlier = 0
+            WHERE session_uid IN (SELECT session_uid FROM sessions WHERE track_id = ?)
+              AND outlier = 1
+            """;
+
+    private static final String SET_OUTLIER_FLAG = """
+            UPDATE sector_snapshots SET outlier = 1
+            WHERE session_uid = ? AND car_index = ? AND lap_number = ? AND sector_number = ?
+            """;
+
+    public void updateOutlierFlags(Connection conn, int trackId, List<OutlierDetector.SectorKey> outliers) throws SQLException {
+        // Reset all outlier flags for this track (idempotent recompute)
+        try (PreparedStatement ps = conn.prepareStatement(RESET_OUTLIER_FLAGS)) {
+            ps.setInt(1, trackId);
+            ps.executeUpdate();
+        }
+        // Set outlier = 1 for detected outliers
+        if (!outliers.isEmpty()) {
+            try (PreparedStatement ps = conn.prepareStatement(SET_OUTLIER_FLAG)) {
+                for (OutlierDetector.SectorKey key : outliers) {
+                    ps.setLong(1, key.sessionUid());
+                    ps.setInt(2, key.carIndex());
+                    ps.setInt(3, key.lapNumber());
+                    ps.setInt(4, key.sectorNumber());
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+        }
+    }
+
+    // ── driver ratings ───────────────────────────────────────────────────
+
+    private static final String UPSERT_DRIVER_RATING = """
+            MERGE INTO driver_ratings dr
+            USING (SELECT ? driver_name, ? track_id FROM dual) v
+            ON (dr.driver_name = v.driver_name AND dr.track_id = v.track_id)
+            WHEN NOT MATCHED THEN INSERT (driver_name, track_id, skill_rating)
+                VALUES (?, ?, ?)
+            WHEN MATCHED THEN UPDATE SET skill_rating = ?, updated_at = SYSTIMESTAMP
+            """;
+
+    public void upsertDriverRating(Connection conn, String driverName, int trackId, int skillRating) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(UPSERT_DRIVER_RATING)) {
+            ps.setString(1, driverName);
+            ps.setInt(2, trackId);
+            ps.setString(3, driverName);
+            ps.setInt(4, trackId);
+            ps.setInt(5, skillRating);
+            ps.setInt(6, skillRating);
+            ps.executeUpdate();
+        }
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────
 
     private static void setNullableInt(PreparedStatement ps, int index, Integer value) throws SQLException {
