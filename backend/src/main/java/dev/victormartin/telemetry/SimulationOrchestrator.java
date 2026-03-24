@@ -14,10 +14,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
 
-import dev.victormartin.telemetry.simulation.CoefficientRepository;
-import dev.victormartin.telemetry.simulation.MonteCarloEngine;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 import dev.victormartin.telemetry.simulation.SimulationResult;
 
@@ -32,7 +32,7 @@ public class SimulationOrchestrator {
     private static final long DEBOUNCE_MS = 3_000;
     private static final int MAX_STORED_RESULTS = 50;
 
-    private final CoefficientRepository coefficientRepository;
+    private final RestClient restClient;
     private final RaceWebSocketHandler raceWebSocketHandler;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -56,9 +56,9 @@ public class SimulationOrchestrator {
     private int previousSafetyCarStatus = 0;
     private final int[] previousPitStatus = new int[22];
 
-    public SimulationOrchestrator(CoefficientRepository coefficientRepository,
+    public SimulationOrchestrator(@Value("${simulator.base-url}") String simulatorBaseUrl,
                                   RaceWebSocketHandler raceWebSocketHandler) {
-        this.coefficientRepository = coefficientRepository;
+        this.restClient = RestClient.builder().baseUrl(simulatorBaseUrl).build();
         this.raceWebSocketHandler = raceWebSocketHandler;
     }
 
@@ -214,9 +214,11 @@ public class SimulationOrchestrator {
                     return;
                 }
 
-                var coefficients = coefficientRepository.loadForTrack(snapshot.trackId());
-                var engine = new MonteCarloEngine(coefficients);
-                SimulationResult result = engine.simulate(snapshot);
+                SimulationResult result = restClient.post()
+                        .uri("/simulate")
+                        .body(snapshot)
+                        .retrieve()
+                        .body(SimulationResult.class);
 
                 jobs.put(jobId, new SimulationJob(jobId, jobs.get(jobId).startedAt(), result));
                 System.out.println("SimulationOrchestrator: job " + jobId + " completed in "

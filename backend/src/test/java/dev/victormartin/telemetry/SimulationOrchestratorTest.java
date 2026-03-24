@@ -6,28 +6,20 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import dev.victormartin.telemetry.simulation.CoefficientRepository;
-import dev.victormartin.telemetry.simulation.Coefficients;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class SimulationOrchestratorTest {
 
     private SimulationOrchestrator orchestrator;
-    private CoefficientRepository coefficientRepository;
     private RaceWebSocketHandler handler;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
-        coefficientRepository = mock(CoefficientRepository.class);
-        when(coefficientRepository.loadForTrack(anyInt())).thenReturn(Coefficients.defaults());
         handler = new RaceWebSocketHandler();
-        orchestrator = new SimulationOrchestrator(coefficientRepository, handler);
+        orchestrator = new SimulationOrchestrator("http://localhost:8081", handler);
     }
 
     private String buildStateJson(int leaderLap, int safetyCarStatus, int car0PitStatus) {

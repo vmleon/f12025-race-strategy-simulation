@@ -2,6 +2,7 @@ package dev.victormartin.telemetry;
 
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -9,9 +10,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestClient;
 
-import dev.victormartin.telemetry.simulation.CoefficientRepository;
-import dev.victormartin.telemetry.simulation.MonteCarloEngine;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 import dev.victormartin.telemetry.simulation.SimulationResult;
 
@@ -19,20 +19,22 @@ import dev.victormartin.telemetry.simulation.SimulationResult;
 @RequestMapping("/api/simulation")
 public class SimulationController {
 
-    private final CoefficientRepository coefficientRepository;
+    private final RestClient restClient;
     private final SimulationOrchestrator orchestrator;
 
-    public SimulationController(CoefficientRepository coefficientRepository,
+    public SimulationController(@Value("${simulator.base-url}") String simulatorBaseUrl,
                                 SimulationOrchestrator orchestrator) {
-        this.coefficientRepository = coefficientRepository;
+        this.restClient = RestClient.builder().baseUrl(simulatorBaseUrl).build();
         this.orchestrator = orchestrator;
     }
 
     @PostMapping("/run")
     public SimulationResult run(@RequestBody RaceSnapshot snapshot) {
-        var coefficients = coefficientRepository.loadForTrack(snapshot.trackId());
-        var engine = new MonteCarloEngine(coefficients);
-        return engine.simulate(snapshot);
+        return restClient.post()
+                .uri("/simulate")
+                .body(snapshot)
+                .retrieve()
+                .body(SimulationResult.class);
     }
 
     @GetMapping("/results/{jobId}")
