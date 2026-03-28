@@ -14,12 +14,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
+import dev.victormartin.telemetry.engineer.RaceEngineerService;
+
 @Component
 public class TelemetryTcpServer implements CommandLineRunner {
 
     private final RaceWebSocketHandler raceWebSocketHandler;
     private final SessionStateHolder sessionStateHolder;
     private final SimulationOrchestrator simulationOrchestrator;
+    private final RaceEngineerService raceEngineerService;
     private final QueueService queueService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -29,10 +32,12 @@ public class TelemetryTcpServer implements CommandLineRunner {
     public TelemetryTcpServer(RaceWebSocketHandler raceWebSocketHandler,
                               SessionStateHolder sessionStateHolder,
                               SimulationOrchestrator simulationOrchestrator,
+                              RaceEngineerService raceEngineerService,
                               QueueService queueService) {
         this.raceWebSocketHandler = raceWebSocketHandler;
         this.sessionStateHolder = sessionStateHolder;
         this.simulationOrchestrator = simulationOrchestrator;
+        this.raceEngineerService = raceEngineerService;
         this.queueService = queueService;
     }
 
@@ -79,23 +84,27 @@ public class TelemetryTcpServer implements CommandLineRunner {
             switch (type) {
                 case "sessionStarted" -> {
                     simulationOrchestrator.reset();
-                    sessionStateHolder.onSessionStarted(
-                            node.get("sessionUid").asText(),
-                            node.get("trackId").asInt());
+                    String sessionUid = node.get("sessionUid").asText();
+                    int trackId = node.get("trackId").asInt();
+                    sessionStateHolder.onSessionStarted(sessionUid, trackId);
+                    raceEngineerService.onSessionStarted(sessionUid, trackId);
                     queueService.enqueue("PDBADMIN.SESSION_LIFECYCLE", line);
                 }
                 case "sessionEnded" -> {
-                    sessionStateHolder.onSessionEnded(
-                            node.get("sessionUid").asText());
+                    String endedUid = node.get("sessionUid").asText();
+                    sessionStateHolder.onSessionEnded(endedUid);
+                    raceEngineerService.onSessionEnded(endedUid);
                     queueService.enqueue("PDBADMIN.SESSION_LIFECYCLE", line);
                 }
                 case "state" -> {
                     raceWebSocketHandler.broadcast(line);
                     simulationOrchestrator.onStateUpdate(line);
+                    raceEngineerService.onStateUpdate(line);
                 }
                 case "event" -> {
                     raceWebSocketHandler.broadcast(line);
                     simulationOrchestrator.onEvent(line);
+                    raceEngineerService.onEvent(line);
                 }
                 default -> raceWebSocketHandler.broadcast(line);
             }

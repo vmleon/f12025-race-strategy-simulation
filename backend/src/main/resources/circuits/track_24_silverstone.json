@@ -1,0 +1,11 @@
+{
+  "trackId": 24,
+  "name": "Silverstone",
+  "totalLapDistanceMetres": 5891.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 400, "label": "Wellington straight" },
+    { "fromMetres": 1700, "toMetres": 2100, "label": "Hangar straight" },
+    { "fromMetres": 3600, "toMetres": 4000, "label": "Straight before Stowe" },
+    { "fromMetres": 5200, "toMetres": 5600, "label": "International Pits straight" }
+  ]
+}

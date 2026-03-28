@@ -1,0 +1,11 @@
+{
+  "trackId": 21,
+  "name": "Spa-Francorchamps",
+  "totalLapDistanceMetres": 7004.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 350, "label": "Start/finish straight" },
+    { "fromMetres": 1900, "toMetres": 2300, "label": "Kemmel straight" },
+    { "fromMetres": 4100, "toMetres": 4500, "label": "Blanchimont approach" },
+    { "fromMetres": 5800, "toMetres": 6200, "label": "Straight before Bus Stop" }
+  ]
+}

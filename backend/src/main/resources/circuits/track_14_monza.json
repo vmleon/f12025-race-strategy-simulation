@@ -1,0 +1,12 @@
+{
+  "trackId": 14,
+  "name": "Monza",
+  "totalLapDistanceMetres": 5793.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 400, "label": "Start/finish straight" },
+    { "fromMetres": 700, "toMetres": 1100, "label": "Curva Grande straight" },
+    { "fromMetres": 1800, "toMetres": 2200, "label": "Straight to Lesmo" },
+    { "fromMetres": 3200, "toMetres": 3800, "label": "Back straight" },
+    { "fromMetres": 4700, "toMetres": 5200, "label": "Main straight approach" }
+  ]
+}
