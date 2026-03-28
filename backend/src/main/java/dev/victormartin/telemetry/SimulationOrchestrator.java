@@ -9,14 +9,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 import dev.victormartin.telemetry.simulation.SimulationResult;
@@ -32,8 +29,7 @@ public class SimulationOrchestrator {
     private static final long DEBOUNCE_MS = 3_000;
     private static final int MAX_STORED_RESULTS = 50;
 
-    private final RestClient restClient;
-    private final RaceWebSocketHandler raceWebSocketHandler;
+    private final QueueService queueService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -47,19 +43,15 @@ public class SimulationOrchestrator {
 
     // Debounce state
     private ScheduledFuture<?> pendingRun;
-    private final AtomicBoolean simulationRunning = new AtomicBoolean(false);
     private volatile JsonNode latestState;
-    private volatile boolean rerunRequested;
 
     // Trigger detection state
     private int previousLeaderLap = -1;
     private int previousSafetyCarStatus = 0;
     private final int[] previousPitStatus = new int[22];
 
-    public SimulationOrchestrator(@Value("${simulator.base-url}") String simulatorBaseUrl,
-                                  RaceWebSocketHandler raceWebSocketHandler) {
-        this.restClient = RestClient.builder().baseUrl(simulatorBaseUrl).build();
-        this.raceWebSocketHandler = raceWebSocketHandler;
+    public SimulationOrchestrator(QueueService queueService) {
+        this.queueService = queueService;
     }
 
     /**
@@ -121,7 +113,17 @@ public class SimulationOrchestrator {
         previousSafetyCarStatus = 0;
         for (int i = 0; i < previousPitStatus.length; i++) previousPitStatus[i] = 0;
         latestState = null;
-        rerunRequested = false;
+    }
+
+    /**
+     * Called by SimulationResultConsumer when a result arrives from the queue.
+     */
+    public void completeJob(String jobId, SimulationResult result) {
+        SimulationJob existing = jobs.get(jobId);
+        if (existing != null) {
+            jobs.put(jobId, new SimulationJob(jobId, existing.startedAt(), result));
+            System.out.println("SimulationOrchestrator: job " + jobId + " completed");
+        }
     }
 
     // ── trigger detection ─────────────────────────────────────────────
@@ -183,13 +185,7 @@ public class SimulationOrchestrator {
     private void runOrQueue() {
         JsonNode state = latestState;
         if (state == null) return;
-
-        if (simulationRunning.compareAndSet(false, true)) {
-            executeSimulation(state);
-        } else {
-            // A simulation is already running; mark for re-run with latest state
-            rerunRequested = true;
-        }
+        executeSimulation(state);
     }
 
     private String executeSimulation(JsonNode state) {
@@ -205,44 +201,23 @@ public class SimulationOrchestrator {
                     .forEach(e -> jobs.remove(e.getKey()));
         }
 
-        scheduler.execute(() -> {
-            try {
-                RaceSnapshot snapshot = assembleSnapshot(state);
-                if (snapshot == null) {
-                    System.err.println("SimulationOrchestrator: failed to assemble snapshot for job " + jobId);
-                    jobs.remove(jobId);
-                    return;
-                }
-
-                SimulationResult result = restClient.post()
-                        .uri("/simulate")
-                        .body(snapshot)
-                        .retrieve()
-                        .body(SimulationResult.class);
-
-                jobs.put(jobId, new SimulationJob(jobId, jobs.get(jobId).startedAt(), result));
-                System.out.println("SimulationOrchestrator: job " + jobId + " completed in "
-                        + result.wallClockMs() + "ms (" + result.iterations() + " iterations)");
-
-                // Push result to portal
-                String resultJson = objectMapper.writeValueAsString(Map.of(
-                        "type", "simulationResult",
-                        "jobId", jobId,
-                        "result", result));
-                raceWebSocketHandler.broadcast(resultJson);
-            } catch (Exception e) {
-                System.err.println("SimulationOrchestrator: job " + jobId + " failed: " + e.getMessage());
+        try {
+            RaceSnapshot snapshot = assembleSnapshot(state);
+            if (snapshot == null) {
+                System.err.println("SimulationOrchestrator: failed to assemble snapshot for job " + jobId);
                 jobs.remove(jobId);
-            } finally {
-                simulationRunning.set(false);
-
-                // If another trigger fired while we were running, re-run with latest state
-                if (rerunRequested) {
-                    rerunRequested = false;
-                    runOrQueue();
-                }
+                return jobId;
             }
-        });
+
+            String payload = objectMapper.writeValueAsString(Map.of(
+                    "jobId", jobId,
+                    "raceSnapshot", snapshot));
+            queueService.enqueue("PDBADMIN.SIMULATION_REQUEST", payload);
+            System.out.println("SimulationOrchestrator: enqueued simulation request " + jobId);
+        } catch (Exception e) {
+            System.err.println("SimulationOrchestrator: job " + jobId + " failed to enqueue: " + e.getMessage());
+            jobs.remove(jobId);
+        }
 
         return jobId;
     }

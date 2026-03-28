@@ -13,13 +13,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class SimulationOrchestratorTest {
 
     private SimulationOrchestrator orchestrator;
-    private RaceWebSocketHandler handler;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
-        handler = new RaceWebSocketHandler();
-        orchestrator = new SimulationOrchestrator("http://localhost:8081", handler);
+        QueueService queueService = new QueueService(null);
+        orchestrator = new SimulationOrchestrator(queueService);
     }
 
     private String buildStateJson(int leaderLap, int safetyCarStatus, int car0PitStatus) {

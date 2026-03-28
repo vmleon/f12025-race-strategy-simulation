@@ -2,7 +2,8 @@ package dev.victormartin.telemetry;
 
 import java.util.Map;
 
-import org.springframework.beans.factory.annotation.Value;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -10,31 +11,37 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.client.RestClient;
 
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
-import dev.victormartin.telemetry.simulation.SimulationResult;
 
 @RestController
 @RequestMapping("/api/simulation")
 public class SimulationController {
 
-    private final RestClient restClient;
+    private final QueueService queueService;
     private final SimulationOrchestrator orchestrator;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public SimulationController(@Value("${simulator.base-url}") String simulatorBaseUrl,
+    public SimulationController(QueueService queueService,
                                 SimulationOrchestrator orchestrator) {
-        this.restClient = RestClient.builder().baseUrl(simulatorBaseUrl).build();
+        this.queueService = queueService;
         this.orchestrator = orchestrator;
     }
 
     @PostMapping("/run")
-    public SimulationResult run(@RequestBody RaceSnapshot snapshot) {
-        return restClient.post()
-                .uri("/simulate")
-                .body(snapshot)
-                .retrieve()
-                .body(SimulationResult.class);
+    public ResponseEntity<Map<String, String>> run(@RequestBody RaceSnapshot snapshot) {
+        try {
+            String jobId = java.util.UUID.randomUUID().toString().substring(0, 8);
+            String payload = objectMapper.writeValueAsString(Map.of(
+                    "jobId", jobId,
+                    "raceSnapshot", snapshot));
+            queueService.enqueue("PDBADMIN.SIMULATION_REQUEST", payload);
+            return ResponseEntity.accepted()
+                    .body(Map.of("jobId", jobId, "status", "accepted"));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", e.getMessage()));
+        }
     }
 
     @GetMapping("/results/{jobId}")

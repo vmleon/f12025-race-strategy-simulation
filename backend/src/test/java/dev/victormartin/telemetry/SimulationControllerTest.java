@@ -4,9 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.anyString;
@@ -15,7 +13,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(SimulationController.class)
-@TestPropertySource(properties = "simulator.base-url=http://localhost:8081")
 class SimulationControllerTest {
 
     @Autowired
@@ -23,6 +20,9 @@ class SimulationControllerTest {
 
     @MockBean
     private SimulationOrchestrator orchestrator;
+
+    @MockBean
+    private QueueService queueService;
 
     @MockBean
     private JdbcTemplate jdbc;

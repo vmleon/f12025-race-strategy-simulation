@@ -11,3 +11,6 @@ databaseChangeLog:
   - include:
       file: 004-indexes.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 005-txeventq.yaml
+      relativeToChangelogFile: true

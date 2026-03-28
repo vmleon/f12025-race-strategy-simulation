@@ -20,6 +20,7 @@ public class TelemetryTcpServer implements CommandLineRunner {
     private final RaceWebSocketHandler raceWebSocketHandler;
     private final SessionStateHolder sessionStateHolder;
     private final SimulationOrchestrator simulationOrchestrator;
+    private final QueueService queueService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${telemetry.tcp.port:9090}")
@@ -27,10 +28,12 @@ public class TelemetryTcpServer implements CommandLineRunner {
 
     public TelemetryTcpServer(RaceWebSocketHandler raceWebSocketHandler,
                               SessionStateHolder sessionStateHolder,
-                              SimulationOrchestrator simulationOrchestrator) {
+                              SimulationOrchestrator simulationOrchestrator,
+                              QueueService queueService) {
         this.raceWebSocketHandler = raceWebSocketHandler;
         this.sessionStateHolder = sessionStateHolder;
         this.simulationOrchestrator = simulationOrchestrator;
+        this.queueService = queueService;
     }
 
     @Override
@@ -79,9 +82,13 @@ public class TelemetryTcpServer implements CommandLineRunner {
                     sessionStateHolder.onSessionStarted(
                             node.get("sessionUid").asText(),
                             node.get("trackId").asInt());
+                    queueService.enqueue("PDBADMIN.SESSION_LIFECYCLE", line);
                 }
-                case "sessionEnded" -> sessionStateHolder.onSessionEnded(
-                        node.get("sessionUid").asText());
+                case "sessionEnded" -> {
+                    sessionStateHolder.onSessionEnded(
+                            node.get("sessionUid").asText());
+                    queueService.enqueue("PDBADMIN.SESSION_LIFECYCLE", line);
+                }
                 case "state" -> {
                     raceWebSocketHandler.broadcast(line);
                     simulationOrchestrator.onStateUpdate(line);

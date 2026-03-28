@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 public class SessionStateHolder {
 
     private final RaceWebSocketHandler raceWebSocketHandler;
-    private final CalibrationService calibrationService;
+    private final QueueService queueService;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
     private String sessionUid;
@@ -16,9 +16,9 @@ public class SessionStateHolder {
     private boolean active;
 
     public SessionStateHolder(RaceWebSocketHandler raceWebSocketHandler,
-                              CalibrationService calibrationService) {
+                              QueueService queueService) {
         this.raceWebSocketHandler = raceWebSocketHandler;
-        this.calibrationService = calibrationService;
+        this.queueService = queueService;
     }
 
     public void onSessionStarted(String sessionUid, int trackId) {
@@ -46,9 +46,10 @@ public class SessionStateHolder {
 
         raceWebSocketHandler.broadcast("{\"type\":\"sessionEnded\",\"sessionUid\":\"" + sessionUid + "\"}");
 
-        // Auto-trigger calibration for the track
-        System.out.println("Triggering calibration for track " + endedTrackId + " after session " + sessionUid);
-        calibrationService.triggerCalibration(endedTrackId);
+        // Enqueue calibration request for the track
+        System.out.println("Enqueuing calibration request for track " + endedTrackId + " after session " + sessionUid);
+        queueService.enqueue("PDBADMIN.CALIBRATION_REQUEST",
+                "{\"trackId\":" + endedTrackId + ",\"sessionUid\":\"" + sessionUid + "\",\"trigger\":\"sessionEnded\"}");
     }
 
     public SessionInfo getActiveSession() {

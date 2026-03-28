@@ -1,0 +1,113 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005-01-session-lifecycle-queue
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              BEGIN
+                BEGIN
+                  DBMS_AQADM.CREATE_SHARDED_QUEUE(
+                    queue_name     => 'PDBADMIN.SESSION_LIFECYCLE',
+                    multiple_consumers => TRUE
+                  );
+                EXCEPTION
+                  WHEN OTHERS THEN
+                    IF SQLCODE != -24006 THEN RAISE; END IF;
+                END;
+                DBMS_AQADM.START_QUEUE(queue_name => 'PDBADMIN.SESSION_LIFECYCLE');
+                BEGIN
+                  DBMS_AQADM.ADD_SUBSCRIBER(
+                    queue_name => 'PDBADMIN.SESSION_LIFECYCLE',
+                    subscriber => SYS.AQ$_AGENT('CALIBRATION_SUB', NULL, NULL)
+                  );
+                EXCEPTION
+                  WHEN OTHERS THEN
+                    IF SQLCODE != -24034 THEN RAISE; END IF;
+                END;
+              END;
+      rollback:
+        - sql:
+            sql: |
+              BEGIN
+                DBMS_AQADM.STOP_QUEUE(queue_name => 'PDBADMIN.SESSION_LIFECYCLE');
+                DBMS_AQADM.DROP_SHARDED_QUEUE(queue_name => 'PDBADMIN.SESSION_LIFECYCLE');
+              END;
+
+  - changeSet:
+      id: 005-02-calibration-request-queue
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              BEGIN
+                BEGIN
+                  DBMS_AQADM.CREATE_SHARDED_QUEUE(
+                    queue_name     => 'PDBADMIN.CALIBRATION_REQUEST',
+                    multiple_consumers => FALSE
+                  );
+                EXCEPTION
+                  WHEN OTHERS THEN
+                    IF SQLCODE != -24006 THEN RAISE; END IF;
+                END;
+                DBMS_AQADM.START_QUEUE(queue_name => 'PDBADMIN.CALIBRATION_REQUEST');
+              END;
+      rollback:
+        - sql:
+            sql: |
+              BEGIN
+                DBMS_AQADM.STOP_QUEUE(queue_name => 'PDBADMIN.CALIBRATION_REQUEST');
+                DBMS_AQADM.DROP_SHARDED_QUEUE(queue_name => 'PDBADMIN.CALIBRATION_REQUEST');
+              END;
+
+  - changeSet:
+      id: 005-03-simulation-request-queue
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              BEGIN
+                BEGIN
+                  DBMS_AQADM.CREATE_SHARDED_QUEUE(
+                    queue_name     => 'PDBADMIN.SIMULATION_REQUEST',
+                    multiple_consumers => FALSE
+                  );
+                EXCEPTION
+                  WHEN OTHERS THEN
+                    IF SQLCODE != -24006 THEN RAISE; END IF;
+                END;
+                DBMS_AQADM.START_QUEUE(queue_name => 'PDBADMIN.SIMULATION_REQUEST');
+              END;
+      rollback:
+        - sql:
+            sql: |
+              BEGIN
+                DBMS_AQADM.STOP_QUEUE(queue_name => 'PDBADMIN.SIMULATION_REQUEST');
+                DBMS_AQADM.DROP_SHARDED_QUEUE(queue_name => 'PDBADMIN.SIMULATION_REQUEST');
+              END;
+
+  - changeSet:
+      id: 005-04-simulation-result-queue
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              BEGIN
+                BEGIN
+                  DBMS_AQADM.CREATE_SHARDED_QUEUE(
+                    queue_name     => 'PDBADMIN.SIMULATION_RESULT',
+                    multiple_consumers => FALSE
+                  );
+                EXCEPTION
+                  WHEN OTHERS THEN
+                    IF SQLCODE != -24006 THEN RAISE; END IF;
+                END;
+                DBMS_AQADM.START_QUEUE(queue_name => 'PDBADMIN.SIMULATION_RESULT');
+              END;
+      rollback:
+        - sql:
+            sql: |
+              BEGIN
+                DBMS_AQADM.STOP_QUEUE(queue_name => 'PDBADMIN.SIMULATION_RESULT');
+                DBMS_AQADM.DROP_SHARDED_QUEUE(queue_name => 'PDBADMIN.SIMULATION_RESULT');
+              END;

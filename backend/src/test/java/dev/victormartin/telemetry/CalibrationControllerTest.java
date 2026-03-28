@@ -27,7 +27,7 @@ class CalibrationControllerTest {
     private JdbcTemplate jdbc;
 
     @MockBean
-    private CalibrationService calibrationService;
+    private QueueService queueService;
 
     @SuppressWarnings("unchecked")
     @Test
@@ -47,19 +47,8 @@ class CalibrationControllerTest {
 
     @Test
     void runReturnsAccepted() throws Exception {
-        when(calibrationService.triggerCalibration(5)).thenReturn(true);
-
         mockMvc.perform(post("/api/calibration/run?trackId=5"))
                 .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.status").value("started"));
-    }
-
-    @Test
-    void runReturns409WhenAlreadyRunning() throws Exception {
-        when(calibrationService.isRunning()).thenReturn(true);
-
-        mockMvc.perform(post("/api/calibration/run?trackId=5"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error").exists());
+                .andExpect(jsonPath("$.status").value("accepted"));
     }
 }

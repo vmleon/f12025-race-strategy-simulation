@@ -9,13 +9,13 @@ class SessionStateHolderTest {
 
     private SessionStateHolder holder;
     private RaceWebSocketHandler handler;
-    private CalibrationService calibrationService;
+    private QueueService queueService;
 
     @BeforeEach
     void setUp() {
         handler = new RaceWebSocketHandler();
-        calibrationService = new CalibrationService(handler);
-        holder = new SessionStateHolder(handler, calibrationService);
+        queueService = new QueueService(null);
+        holder = new SessionStateHolder(handler, queueService);
     }
 
     @Test

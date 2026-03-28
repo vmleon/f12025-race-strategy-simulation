@@ -16,11 +16,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class CalibrationController {
 
     private final JdbcTemplate jdbc;
-    private final CalibrationService calibrationService;
+    private final QueueService queueService;
 
-    public CalibrationController(JdbcTemplate jdbc, CalibrationService calibrationService) {
+    public CalibrationController(JdbcTemplate jdbc, QueueService queueService) {
         this.jdbc = jdbc;
-        this.calibrationService = calibrationService;
+        this.queueService = queueService;
     }
 
     public record CalibrationStatusDto(String knobName, String calibrationRegime,
@@ -98,19 +98,10 @@ public class CalibrationController {
 
     @PostMapping("/run")
     public ResponseEntity<Map<String, String>> run(@RequestParam int trackId) {
-        if (calibrationService.isRunning()) {
-            return ResponseEntity.status(409)
-                    .body(Map.of("error", "Calibration already running",
-                                 "trackId", String.valueOf(trackId)));
-        }
-        boolean started = calibrationService.triggerCalibration(trackId);
-        if (!started) {
-            return ResponseEntity.status(409)
-                    .body(Map.of("error", "Calibration already running",
-                                 "trackId", String.valueOf(trackId)));
-        }
+        queueService.enqueue("PDBADMIN.CALIBRATION_REQUEST",
+                "{\"trackId\":" + trackId + ",\"trigger\":\"manual\"}");
         return ResponseEntity.accepted()
-                .body(Map.of("status", "started",
+                .body(Map.of("status", "accepted",
                              "trackId", String.valueOf(trackId)));
     }
 }
