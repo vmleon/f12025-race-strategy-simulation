@@ -1,24 +1,30 @@
-//
-//  ContentView.swift
-//  Virtual Race Engineer
-//
-//  Created by Victor Martin Alvarez  on 24/3/26.
-//
-
 import SwiftUI
 
 struct ContentView: View {
-    var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
-    }
-}
+    @State private var isConnected = false
+    @State private var showSettings = false
 
-#Preview {
-    ContentView()
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isConnected {
+                    LiveView(onDisconnect: { isConnected = false })
+                } else {
+                    ConnectView(onConnected: { isConnected = true })
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
+        }
+    }
 }
