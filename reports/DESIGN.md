@@ -12,7 +12,7 @@ A working system requires three distinct pipelines:
 
 2. **Calibration** — Fit model coefficients ("knobs") from the accumulated historical data. The lap time model has ~10 knobs (tyre degradation, fuel effect, dirty air, DRS advantage, damage effects, weather, etc.), each requiring enough observed data points to produce reliable fitted values. Without calibration, the simulation would rely on hardcoded guesses with wide, uninformed distributions.
 
-3. **Simulation** — The Monte Carlo engine itself. It takes the fitted coefficients from calibration and runs thousands of iterations, sampling from residual noise distributions, to project sector-by-sector race outcomes under different strategy choices.
+3. **Simulation** — The Monte Carlo engine itself. It takes the fitted coefficients from calibration and runs thousands of iterations. Each iteration simulates all remaining laps sector-by-sector for all 20 cars, drawing fresh residual noise (from the calibration regression residual variance) at every sector step. Stochastic events (safety cars, DNFs, overtake outcomes) are also sampled per iteration. Aggregating across iterations produces probability distributions of finishing positions and race times under different strategy choices.
 
 ```
 [Game UDP] → [Ingestion] → [Database] → [Calibration] → [Fitted Coefficients] → [Monte Carlo]

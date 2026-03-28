@@ -20,7 +20,41 @@ A lap time is a function of:
 lap_time = f(base_pace, tyre_compound, tyre_age, tyre_wear, tyre_temp, fuel_load, weather, track_temp, air_temp, track, car_damage, valid_lap)
 ```
 
-The simulation runs thousands of iterations, each sampling from historical distributions of these relationships, projecting sector-by-sector to the finish. The required iteration count depends on convergence — see Convergence and Iteration Count above.
+### How a Single Iteration Works
+
+Each iteration simulates the remainder of the race from the current state, sector by sector:
+
+```
+For each remaining lap:
+  For each sector (0, 1, 2):
+    For each car:
+      sector_time = base_pace + tyre_deg + fuel_effect + damage_effect
+                  + dirty_air + drs + residual_noise
+      where residual_noise = gauss(0, sqrt(residual_variance))
+    Resolve interactions (overtakes, position changes)
+    Update car states (tyre_age++, fuel--, DRS eligibility, gaps)
+```
+
+Every sector step draws a fresh residual noise value per car. This noise represents the unexplained variance from calibration — the gap between the model's prediction and observed sector times. Stochastic events (safety car deployment, mechanical DNF, overtake success/failure) are also sampled independently each iteration.
+
+At the end of one iteration, all remaining laps have been simulated and a complete predicted finishing order and race times exist for all cars.
+
+### Aggregation Across Iterations
+
+The simulation runs thousands of iterations (1,000–10,000), each producing a different race outcome because the random draws differ. Aggregating across iterations produces probability distributions:
+
+- **Position distributions** — "Car X finishes P1 in 45% of iterations, P2 in 30%, P3 in 20%..."
+- **Strategy comparison** — "Strategy A (pit lap 20, soft→hard) wins in 60% of iterations vs Strategy B (pit lap 15, soft→medium)"
+
+### Strategy Evaluation
+
+To compare strategies, the simulation runs a full Monte Carlo batch for each candidate strategy independently. Each candidate defines a pit stop plan (which lap to pit, which compound to switch to). The simulation injects the candidate's pit plan for the player car while AI cars follow their own heuristic pit logic.
+
+After all candidates have been simulated, results are ranked by mean finishing position and expected championship points. Each ranked strategy includes position distribution, confidence intervals, DNF probability, and top-3 / points-finish probabilities — giving the player a complete picture of each option's risk/reward profile.
+
+The candidate strategies themselves are provided by the caller (the Backend). Strategy generation (e.g. exploring different pit windows and compound permutations) is the Backend's responsibility; the Simulator only evaluates what it receives. This separation keeps the simulation engine focused on a single concern: running Monte Carlo iterations.
+
+The residual variance controls how spread out the outcomes are — tight residuals (well-calibrated model) produce consistent predictions, wide residuals (poor calibration or genuinely noisy game physics) produce uncertain outcomes. The required iteration count depends on convergence — see Convergence and Iteration Count above.
 
 **Important:** Monte Carlo does not self-calibrate. The quality of the simulation depends entirely on the quality of the model coefficients ("knobs") fitted from historical data. See `CALIBRATION.md` for the calibration pipeline that transforms raw telemetry into fitted coefficients for each term in the lap time function.
 
@@ -262,6 +296,8 @@ A faster car stuck behind a slower car loses time until it overtakes. The simula
 - Gap size (smaller = more DRS benefit but harder to pass)
 - Track overtaking difficulty (Monaco vs Monza)
 - Tyre compound difference (fresh vs worn)
+
+Factors like tyre age, fuel load, and car damage affect overtake probability **indirectly** — they change the pace of each car, which changes the pace delta, which is the primary input to the overtake model. This is a deliberate design choice: rather than making tyre age a direct input to the overtake probability function, the simulation lets the pace model translate all performance factors into a single pace delta that drives overtake likelihood. This avoids double-counting effects and keeps the overtake model simple (fewer coefficients to fit from limited position-change data). See `CALIBRATION.md` §9 for the logistic regression fitting approach.
 
 Since we capture all active cars' lap data, the simulation can identify when a faster car is stuck behind a slower one (same lap time despite better pace on clear track) and model this correctly.
 

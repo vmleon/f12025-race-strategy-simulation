@@ -148,8 +148,8 @@ class MonteCarloEngine:
         if safety_car:
             return base_pace * 1.4
 
-        # Residual noise from base pace variance
-        variance = coeff.get("base_pace_variance", regime, sector)
+        # Residual noise (regression residual variance from calibration)
+        variance = coeff.get("residual_variance", regime, sector)
         noise = (
             self.rng.gauss(0, math.sqrt(variance))
             if variance > 0
