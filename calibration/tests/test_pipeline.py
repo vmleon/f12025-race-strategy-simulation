@@ -1,8 +1,8 @@
 from calibration import db
 from calibration.pipeline import (
-    _compute_settings_hash, _group_by_sector, _has_no_damage,
+    _compute_settings_hash, _group_by_sector, _group_pit_stops, _has_no_damage,
     COMPOUND_KNOB_NAMES, MIN_BASE_PACE_SAMPLES, MIN_TYRE_DEG_SAMPLES, MIN_FUEL_SAMPLES,
-    MAX_TYRE_AGE_CLEAN, MIN_GAP_CLEAN_AIR_MS,
+    MIN_PIT_STOP_SAMPLES, MAX_TYRE_AGE_CLEAN, MIN_GAP_CLEAN_AIR_MS,
 )
 
 
@@ -107,3 +107,68 @@ class TestConstants:
         assert MIN_BASE_PACE_SAMPLES == 5
         assert MIN_TYRE_DEG_SAMPLES == 10
         assert MIN_FUEL_SAMPLES == 5
+        assert MIN_PIT_STOP_SAMPLES == 3
+
+
+def _make_pit_sector(session_uid=1, car_index=0, lap_number=10, sector_number=2,
+                     sector_time_ms=45000, pit_status=1, tyre_compound_actual=16,
+                     ai_controlled=0):
+    """Build a tuple matching the column order of _SELECT_PIT_STOP_SECTORS."""
+    return (session_uid, car_index, lap_number, sector_number,
+            sector_time_ms, pit_status, tyre_compound_actual, ai_controlled)
+
+
+class TestGroupPitStops:
+
+    def test_single_stop_two_sectors(self):
+        sectors = [
+            _make_pit_sector(lap_number=10, sector_number=2, pit_status=1),
+            _make_pit_sector(lap_number=11, sector_number=0, pit_status=2),
+        ]
+        stops = _group_pit_stops(sectors)
+        assert len(stops) == 1
+        assert len(stops[0]) == 2
+
+    def test_two_stops_same_car(self):
+        sectors = [
+            _make_pit_sector(lap_number=10, sector_number=2, pit_status=1),
+            _make_pit_sector(lap_number=11, sector_number=0, pit_status=2),
+            _make_pit_sector(lap_number=25, sector_number=2, pit_status=1),
+            _make_pit_sector(lap_number=26, sector_number=0, pit_status=2),
+        ]
+        stops = _group_pit_stops(sectors)
+        assert len(stops) == 2
+        assert len(stops[0]) == 2
+        assert len(stops[1]) == 2
+
+    def test_different_cars(self):
+        sectors = [
+            _make_pit_sector(car_index=0, lap_number=10, pit_status=1),
+            _make_pit_sector(car_index=0, lap_number=11, pit_status=2),
+            _make_pit_sector(car_index=1, lap_number=12, pit_status=1),
+            _make_pit_sector(car_index=1, lap_number=13, pit_status=2),
+        ]
+        stops = _group_pit_stops(sectors)
+        assert len(stops) == 2
+
+    def test_single_sector_stop(self):
+        """A pit stop with only a pit_status=1 sector (no exit sector recorded)."""
+        sectors = [
+            _make_pit_sector(lap_number=10, pit_status=1),
+        ]
+        stops = _group_pit_stops(sectors)
+        assert len(stops) == 1
+        assert len(stops[0]) == 1
+
+    def test_orphan_exit_sector_discarded(self):
+        """A pit_status=2 without a preceding pit_status=1 starts no group."""
+        sectors = [
+            _make_pit_sector(car_index=0, lap_number=5, pit_status=2),
+            _make_pit_sector(car_index=1, lap_number=10, pit_status=1),
+        ]
+        stops = _group_pit_stops(sectors)
+        assert len(stops) == 1
+        assert stops[0][0][db.PIT_COL_CAR] == 1
+
+    def test_empty_input(self):
+        assert _group_pit_stops([]) == []

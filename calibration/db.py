@@ -116,6 +116,63 @@ def update_outlier_flags(conn: oracledb.Connection, track_id: int, outliers: lis
             )
 
 
+# ── pit stop data ────────────────────────────────────────────────────
+
+_SELECT_PIT_STOP_SECTORS = """
+    SELECT ss.session_uid, ss.car_index, ss.lap_number, ss.sector_number,
+           ss.sector_time_ms, ss.pit_status, ss.tyre_compound_actual,
+           p.ai_controlled
+    FROM sector_snapshots ss
+    JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index
+    JOIN sessions s ON s.session_uid = ss.session_uid
+    WHERE s.track_id = :1
+      AND ss.pit_status IN (1, 2)
+      AND ss.sector_time_ms > 0
+      AND ss.lap_number > 1
+      AND ss.safety_car_status = 0
+      AND ss.penalties_sec = 0
+    ORDER BY ss.car_index, ss.lap_number, ss.sector_number
+"""
+
+PIT_COL_SESSION = 0
+PIT_COL_CAR = 1
+PIT_COL_LAP = 2
+PIT_COL_SECTOR = 3
+PIT_COL_TIME = 4
+PIT_COL_STATUS = 5
+PIT_COL_COMPOUND = 6
+PIT_COL_AI = 7
+
+
+def get_pit_stop_sectors(conn: oracledb.Connection, track_id: int) -> list[tuple]:
+    with conn.cursor() as cur:
+        cur.execute(_SELECT_PIT_STOP_SECTORS, [track_id])
+        return cur.fetchall()
+
+
+_SELECT_NORMAL_SECTOR_MEDIANS = """
+    SELECT ss.sector_number, p.ai_controlled, MEDIAN(ss.sector_time_ms)
+    FROM sector_snapshots ss
+    JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index
+    JOIN sessions s ON s.session_uid = ss.session_uid
+    WHERE s.track_id = :1
+      AND ss.pit_status = 0
+      AND ss.lap_invalid = 0
+      AND ss.safety_car_status = 0
+      AND ss.lap_number > 1
+      AND ss.sector_time_ms > 0
+      AND ss.outlier = 0
+    GROUP BY ss.sector_number, p.ai_controlled
+"""
+
+
+def get_normal_sector_medians(conn: oracledb.Connection, track_id: int) -> dict[tuple[int, int], float]:
+    """Returns {(sector_number, ai_controlled): median_sector_time_ms}."""
+    with conn.cursor() as cur:
+        cur.execute(_SELECT_NORMAL_SECTOR_MEDIANS, [track_id])
+        return {(row[0], row[1]): float(row[2]) for row in cur}
+
+
 # ── calibration data ─────────────────────────────────────────────────
 
 _SELECT_CALIBRATION_DATA = """

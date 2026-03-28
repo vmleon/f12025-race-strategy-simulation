@@ -14,6 +14,7 @@ from calibration.outlier_detector import detect_outliers
 MIN_BASE_PACE_SAMPLES = 5
 MIN_TYRE_DEG_SAMPLES = 10
 MIN_FUEL_SAMPLES = 5
+MIN_PIT_STOP_SAMPLES = 3
 
 MAX_TYRE_AGE_CLEAN = 5
 MIN_GAP_CLEAN_AIR_MS = 2000
@@ -55,6 +56,7 @@ def run(conn: oracledb.Connection, track_id: int) -> None:
         _fit_base_pace(conn, data, track_id, regime, settings_hash, session_count, now)
         _fit_tyre_degradation(conn, data, track_id, regime, settings_hash, session_count, now)
         _fit_fuel_effect(conn, data, track_id, regime, settings_hash, session_count, now)
+        _fit_pit_stop_duration(conn, track_id, regime, settings_hash, session_count, now)
 
 
 # ── base pace ────────────────────────────────────────────────────────
@@ -150,6 +152,81 @@ def _fit_fuel_effect(
         session_count, reg.n, settings_hash, now)
 
     print(f"  fuel_effect: slope={reg.slope:.2f} ms/kg, R²={reg.r_squared:.4f}, n={reg.n}")
+
+
+# ── pit stop duration ────────────────────────────────────────────────
+
+
+def _fit_pit_stop_duration(
+    conn: oracledb.Connection, track_id: int, regime: str,
+    settings_hash: str, session_count: int, now: datetime,
+) -> None:
+    pit_sectors = db.get_pit_stop_sectors(conn, track_id)
+    baselines = db.get_normal_sector_medians(conn, track_id)
+
+    ai_controlled = 1 if regime == "AI" else 0
+    pit_sectors = [s for s in pit_sectors if s[db.PIT_COL_AI] == ai_controlled]
+
+    stops = _group_pit_stops(pit_sectors)
+
+    time_losses = []
+    for stop in stops:
+        loss = 0.0
+        valid = True
+        for sector in stop:
+            baseline = baselines.get((sector[db.PIT_COL_SECTOR], ai_controlled))
+            if baseline is None or baseline <= 0:
+                valid = False
+                break
+            loss += sector[db.PIT_COL_TIME] - baseline
+        if valid and loss > 0:
+            time_losses.append(loss)
+
+    if len(time_losses) < MIN_PIT_STOP_SAMPLES:
+        print(f"  pit_stop_time_loss: insufficient data ({len(time_losses)}), skipping")
+        return
+
+    arr = np.array(time_losses, dtype=float)
+    m = mean(arr)
+    v = variance(arr)
+
+    db.insert_calibration_coefficient(
+        conn, track_id, "pit_stop_time_loss", regime, None, "mean",
+        m, None, None, 0, session_count, len(time_losses), settings_hash, now)
+    db.insert_calibration_coefficient(
+        conn, track_id, "pit_stop_time_loss_variance", regime, None, "variance",
+        v, None, None, 0, session_count, len(time_losses), settings_hash, now)
+
+    print(f"  pit_stop_time_loss: mean={m:.0f}ms, var={v:.0f}, n={len(time_losses)}")
+
+
+def _group_pit_stops(pit_sectors: list[tuple]) -> list[list[tuple]]:
+    """Group pit sectors into individual pit stop events.
+
+    A pit stop starts with pit_status=1 (pitting). Subsequent pit_status=2
+    sectors for the same car in the same session are part of the same stop.
+    """
+    stops: list[list[tuple]] = []
+    current: list[tuple] = []
+
+    for s in pit_sectors:
+        if s[db.PIT_COL_STATUS] == 1:
+            if current:
+                stops.append(current)
+            current = [s]
+        elif (current
+              and s[db.PIT_COL_CAR] == current[0][db.PIT_COL_CAR]
+              and s[db.PIT_COL_SESSION] == current[0][db.PIT_COL_SESSION]):
+            current.append(s)
+        else:
+            if current:
+                stops.append(current)
+            current = []
+
+    if current:
+        stops.append(current)
+
+    return stops
 
 
 # ── helpers ──────────────────────────────────────────────────────────

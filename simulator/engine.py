@@ -255,9 +255,17 @@ class MonteCarloEngine:
                 new_compound = 18 if car.tyre_compound == 16 else 17
                 self._execute_pit_stop(car, new_compound)
 
-    @staticmethod
-    def _execute_pit_stop(car: CarState, new_compound: int) -> None:
-        car.total_time_ms += PIT_STOP_TIME_MS
+    def _execute_pit_stop(self, car: CarState, new_compound: int) -> None:
+        pit_mean = self.coefficients.get("pit_stop_time_loss", car.regime)
+        if pit_mean <= 0:
+            pit_mean = PIT_STOP_TIME_MS
+        pit_var = self.coefficients.get("pit_stop_time_loss_variance", car.regime)
+        if pit_var > 0:
+            pit_time = self.rng.gauss(pit_mean, math.sqrt(pit_var))
+            pit_time = max(pit_time, pit_mean * 0.5)
+        else:
+            pit_time = pit_mean
+        car.total_time_ms += pit_time
         car.tyre_compound = new_compound
         car.tyre_age_laps = 0
         car.num_pit_stops += 1

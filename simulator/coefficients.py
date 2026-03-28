@@ -47,4 +47,5 @@ class Coefficients:
             c.put("drs_advantage", regime, -1, -0.20)
             c.put("overtake_probability", regime, -1, 0.15)
             c.put("safety_car_rate", regime, -1, 0.01)
+            c.put("pit_stop_time_loss", regime, -1, 22_000.0)
         return c
