@@ -1,6 +1,7 @@
 package dev.victormartin.telemetry;
 
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Component;
 
@@ -9,11 +10,7 @@ public class SessionStateHolder {
 
     private final RaceWebSocketHandler raceWebSocketHandler;
     private final QueueService queueService;
-    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
-
-    private String sessionUid;
-    private int trackId;
-    private boolean active;
+    private final ConcurrentHashMap<String, SessionInfo> sessions = new ConcurrentHashMap<>();
 
     public SessionStateHolder(RaceWebSocketHandler raceWebSocketHandler,
                               QueueService queueService) {
@@ -22,53 +19,31 @@ public class SessionStateHolder {
     }
 
     public void onSessionStarted(String sessionUid, int trackId) {
-        lock.writeLock().lock();
-        try {
-            this.sessionUid = sessionUid;
-            this.trackId = trackId;
-            this.active = true;
-            System.out.println("Session started: uid=" + sessionUid + " trackId=" + trackId);
-        } finally {
-            lock.writeLock().unlock();
-        }
+        sessions.put(sessionUid, new SessionInfo(sessionUid, trackId));
+        System.out.println("Session started: uid=" + sessionUid + " trackId=" + trackId);
     }
 
     public void onSessionEnded(String sessionUid) {
-        int endedTrackId;
-        lock.writeLock().lock();
-        try {
-            this.active = false;
-            endedTrackId = this.trackId;
-            System.out.println("Session ended: uid=" + sessionUid);
-        } finally {
-            lock.writeLock().unlock();
-        }
+        SessionInfo removed = sessions.remove(sessionUid);
+        int endedTrackId = removed != null ? removed.trackId() : -1;
+        System.out.println("Session ended: uid=" + sessionUid);
 
         raceWebSocketHandler.broadcast("{\"type\":\"sessionEnded\",\"sessionUid\":\"" + sessionUid + "\"}");
 
         // Enqueue calibration request for the track
-        System.out.println("Enqueuing calibration request for track " + endedTrackId + " after session " + sessionUid);
-        queueService.enqueue("PDBADMIN.CALIBRATION_REQUEST",
-                "{\"trackId\":" + endedTrackId + ",\"sessionUid\":\"" + sessionUid + "\",\"trigger\":\"sessionEnded\"}");
-    }
-
-    public SessionInfo getActiveSession() {
-        lock.readLock().lock();
-        try {
-            if (!active) return null;
-            return new SessionInfo(sessionUid, trackId);
-        } finally {
-            lock.readLock().unlock();
+        if (endedTrackId >= 0) {
+            System.out.println("Enqueuing calibration request for track " + endedTrackId + " after session " + sessionUid);
+            queueService.enqueue("PDBADMIN.CALIBRATION_REQUEST",
+                    "{\"trackId\":" + endedTrackId + ",\"sessionUid\":\"" + sessionUid + "\",\"trigger\":\"sessionEnded\"}");
         }
     }
 
-    public boolean isSessionActive() {
-        lock.readLock().lock();
-        try {
-            return active;
-        } finally {
-            lock.readLock().unlock();
-        }
+    public List<SessionInfo> getActiveSessions() {
+        return List.copyOf(sessions.values());
+    }
+
+    public boolean isSessionActive(String sessionUid) {
+        return sessions.containsKey(sessionUid);
     }
 
     public record SessionInfo(String sessionUid, int trackId) {}

@@ -1,6 +1,11 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 
+export interface ActiveSessionDto {
+  sessionUid: string;
+  trackId: number;
+}
+
 export interface SessionDto {
   sessionUid: string;
   trackId: number;
@@ -35,6 +40,10 @@ export interface SectorSnapshotDto {
 @Injectable({ providedIn: 'root' })
 export class SessionService {
   constructor(private http: HttpClient) {}
+
+  getActiveSessions() {
+    return this.http.get<ActiveSessionDto[]>('/api/sessions/active');
+  }
 
   getSessions(trackId?: number, limit = 20) {
     const params: Record<string, string> = { limit: String(limit) };

@@ -19,38 +19,52 @@ class SessionStateHolderTest {
     }
 
     @Test
-    void initiallyNoActiveSession() {
-        assertFalse(holder.isSessionActive());
-        assertNull(holder.getActiveSession());
+    void initiallyNoActiveSessions() {
+        assertTrue(holder.getActiveSessions().isEmpty());
+        assertFalse(holder.isSessionActive("anything"));
     }
 
     @Test
-    void sessionStartedSetsActiveState() {
+    void sessionStartedAddsToActiveSessions() {
         holder.onSessionStarted("abc123", 5);
 
-        assertTrue(holder.isSessionActive());
-        var info = holder.getActiveSession();
-        assertNotNull(info);
-        assertEquals("abc123", info.sessionUid());
-        assertEquals(5, info.trackId());
+        var sessions = holder.getActiveSessions();
+        assertEquals(1, sessions.size());
+        assertEquals("abc123", sessions.getFirst().sessionUid());
+        assertEquals(5, sessions.getFirst().trackId());
+        assertTrue(holder.isSessionActive("abc123"));
     }
 
     @Test
-    void sessionEndedClearsActiveState() {
+    void sessionEndedRemovesFromActiveSessions() {
         holder.onSessionStarted("abc123", 5);
         holder.onSessionEnded("abc123");
 
-        assertFalse(holder.isSessionActive());
-        assertNull(holder.getActiveSession());
+        assertTrue(holder.getActiveSessions().isEmpty());
+        assertFalse(holder.isSessionActive("abc123"));
     }
 
     @Test
-    void newSessionReplacesOld() {
+    void multipleConcurrentSessions() {
         holder.onSessionStarted("session1", 1);
         holder.onSessionStarted("session2", 3);
 
-        assertTrue(holder.isSessionActive());
-        assertEquals("session2", holder.getActiveSession().sessionUid());
-        assertEquals(3, holder.getActiveSession().trackId());
+        var sessions = holder.getActiveSessions();
+        assertEquals(2, sessions.size());
+        assertTrue(holder.isSessionActive("session1"));
+        assertTrue(holder.isSessionActive("session2"));
+    }
+
+    @Test
+    void endingOneSessionKeepsOthers() {
+        holder.onSessionStarted("session1", 1);
+        holder.onSessionStarted("session2", 3);
+        holder.onSessionEnded("session1");
+
+        var sessions = holder.getActiveSessions();
+        assertEquals(1, sessions.size());
+        assertEquals("session2", sessions.getFirst().sessionUid());
+        assertFalse(holder.isSessionActive("session1"));
+        assertTrue(holder.isSessionActive("session2"));
     }
 }

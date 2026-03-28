@@ -28,15 +28,13 @@ public class SessionController {
     }
 
     @GetMapping("/active")
-    public ResponseEntity<SessionStateHolder.SessionInfo> activeSession() {
-        var session = sessionStateHolder.getActiveSession();
-        if (session == null) return ResponseEntity.notFound().build();
-        return ResponseEntity.ok(session);
+    public List<SessionStateHolder.SessionInfo> activeSessions() {
+        return sessionStateHolder.getActiveSessions();
     }
 
     @GetMapping("/active/state")
     public ResponseEntity<String> activeState() {
-        if (!sessionStateHolder.isSessionActive()) return ResponseEntity.notFound().build();
+        if (sessionStateHolder.getActiveSessions().isEmpty()) return ResponseEntity.notFound().build();
         String state = raceWebSocketHandler.getLatestState();
         if (state == null) return ResponseEntity.notFound().build();
         return ResponseEntity.ok(state);

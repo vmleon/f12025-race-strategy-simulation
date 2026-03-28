@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, signal, computed } from '@angular/core';
-import { Subscription } from 'rxjs';
+import { Subscription, interval } from 'rxjs';
 import { RaceService, CarSnapshot, RaceMessage } from '../race.service';
+import { SessionService, ActiveSessionDto } from '../session.service';
 import { trackName } from '../track-names';
 import { DecimalPipe } from '@angular/common';
 
@@ -11,6 +12,15 @@ import { DecimalPipe } from '@angular/common';
     <div class="race-header">
       <h2>Live Race</h2>
       <div class="session-info">
+        @if (activeSessions().length > 1) {
+          <select class="session-select" (change)="onSessionSelected($event)">
+            @for (s of activeSessions(); track s.sessionUid) {
+              <option [value]="s.sessionUid" [selected]="s.sessionUid === selectedSessionUid()">
+                {{ sessionLabel(s) }}
+              </option>
+            }
+          </select>
+        }
         @if (trackId() != null) {
           <span class="badge">{{ trackLabel() }}</span>
         }
@@ -94,7 +104,7 @@ import { DecimalPipe } from '@angular/common';
       margin-bottom: 1rem;
     }
     .race-header h2 { margin: 0; }
-    .session-info { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .session-info { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
     .badge {
       font-size: 0.8rem;
       padding: 0.2rem 0.5rem;
@@ -105,6 +115,15 @@ import { DecimalPipe } from '@angular/common';
     .badge.live { background: #1b5e20; color: #a5d6a7; }
     .badge.off { background: #555; }
     .badge.safety-car { background: #f9a825; color: #000; }
+
+    .session-select {
+      font-size: 0.85rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      background: #222;
+      color: #ccc;
+      border: 1px solid #555;
+    }
 
     .race-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
     .race-table th {
@@ -147,6 +166,9 @@ export class RaceComponent implements OnInit, OnDestroy {
   cars = signal<CarSnapshot[]>([]);
   events = signal<RaceMessage[]>([]);
 
+  activeSessions = signal<ActiveSessionDto[]>([]);
+  selectedSessionUid = signal<string | null>(null);
+
   trackLabel = computed(() => trackName(this.trackId()!));
   weatherLabel = computed(() => {
     const w = this.weather();
@@ -163,10 +185,17 @@ export class RaceComponent implements OnInit, OnDestroy {
   });
 
   private sub?: Subscription;
+  private pollSub?: Subscription;
 
-  constructor(private raceService: RaceService) {}
+  constructor(
+    private raceService: RaceService,
+    private sessionService: SessionService,
+  ) {}
 
   ngOnInit() {
+    this.fetchActiveSessions();
+    this.pollSub = interval(10_000).subscribe(() => this.fetchActiveSessions());
+
     this.sub = this.raceService.race$.subscribe({
       next: (msg) => this.onMessage(msg),
       error: () => this.status.set('disconnected'),
@@ -175,6 +204,17 @@ export class RaceComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.sub?.unsubscribe();
+    this.pollSub?.unsubscribe();
+  }
+
+  sessionLabel(s: ActiveSessionDto): string {
+    return `${trackName(s.trackId)} (${s.sessionUid.substring(0, 8)})`;
+  }
+
+  onSessionSelected(event: Event) {
+    const uid = (event.target as HTMLSelectElement).value;
+    this.selectedSessionUid.set(uid);
+    this.resetState();
   }
 
   formatSector(sectors: number[] | undefined, idx: number): string {
@@ -198,7 +238,37 @@ export class RaceComponent implements OnInit, OnDestroy {
     return parts.length > 0 ? parts.join(' ') : '-';
   }
 
+  private fetchActiveSessions() {
+    this.sessionService.getActiveSessions().subscribe((sessions) => {
+      this.activeSessions.set(sessions);
+      const selected = this.selectedSessionUid();
+      if (sessions.length === 0) {
+        this.selectedSessionUid.set(null);
+      } else if (!selected || !sessions.some((s) => s.sessionUid === selected)) {
+        // Auto-select first session if none selected or selected session ended
+        this.selectedSessionUid.set(sessions[0].sessionUid);
+        this.resetState();
+      }
+    });
+  }
+
+  private resetState() {
+    this.status.set('waiting...');
+    this.cars.set([]);
+    this.events.set([]);
+    this.trackId.set(null);
+    this.totalLaps.set(0);
+    this.currentLap.set(0);
+    this.weather.set(null);
+    this.safetyCarStatus.set(null);
+  }
+
   private onMessage(msg: RaceMessage) {
+    // Filter messages by selected session
+    if (msg.sessionUid && this.selectedSessionUid() && msg.sessionUid !== this.selectedSessionUid()) {
+      return;
+    }
+
     switch (msg.type) {
       case 'state':
         this.status.set('live');
@@ -216,9 +286,15 @@ export class RaceComponent implements OnInit, OnDestroy {
         this.cars.set([]);
         this.events.set([]);
         if (msg.trackId != null) this.trackId.set(msg.trackId);
+        // Refresh active sessions immediately
+        this.fetchActiveSessions();
         break;
       case 'sessionEnded':
-        this.status.set('session ended');
+        if (msg.sessionUid === this.selectedSessionUid()) {
+          this.status.set('session ended');
+          // Refresh to switch to another session or show empty
+          this.fetchActiveSessions();
+        }
         break;
       case 'event':
         this.events.update((evs) => [msg, ...evs].slice(0, 10));

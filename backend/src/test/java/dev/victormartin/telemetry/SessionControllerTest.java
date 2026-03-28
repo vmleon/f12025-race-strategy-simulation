@@ -33,27 +33,32 @@ class SessionControllerTest {
     // ── Active session endpoints ─────────────────────────────────────────
 
     @Test
-    void activeReturns404WhenNoSession() throws Exception {
-        when(sessionStateHolder.getActiveSession()).thenReturn(null);
-
-        mockMvc.perform(get("/api/sessions/active"))
-                .andExpect(status().isNotFound());
-    }
-
-    @Test
-    void activeReturnsSessionMetadata() throws Exception {
-        when(sessionStateHolder.getActiveSession())
-                .thenReturn(new SessionStateHolder.SessionInfo("abc123", 5));
+    void activeReturnsEmptyListWhenNoSession() throws Exception {
+        when(sessionStateHolder.getActiveSessions()).thenReturn(List.of());
 
         mockMvc.perform(get("/api/sessions/active"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sessionUid").value("abc123"))
-                .andExpect(jsonPath("$.trackId").value(5));
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void activeReturnsListOfSessions() throws Exception {
+        when(sessionStateHolder.getActiveSessions())
+                .thenReturn(List.of(
+                        new SessionStateHolder.SessionInfo("abc123", 5),
+                        new SessionStateHolder.SessionInfo("def456", 3)));
+
+        mockMvc.perform(get("/api/sessions/active"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].sessionUid").value("abc123"))
+                .andExpect(jsonPath("$[0].trackId").value(5))
+                .andExpect(jsonPath("$[1].sessionUid").value("def456"));
     }
 
     @Test
     void activeStateReturns404WhenNoSession() throws Exception {
-        when(sessionStateHolder.isSessionActive()).thenReturn(false);
+        when(sessionStateHolder.getActiveSessions()).thenReturn(List.of());
 
         mockMvc.perform(get("/api/sessions/active/state"))
                 .andExpect(status().isNotFound());
@@ -61,7 +66,8 @@ class SessionControllerTest {
 
     @Test
     void activeStateReturns404WhenNoStateYet() throws Exception {
-        when(sessionStateHolder.isSessionActive()).thenReturn(true);
+        when(sessionStateHolder.getActiveSessions())
+                .thenReturn(List.of(new SessionStateHolder.SessionInfo("abc123", 5)));
         when(raceWebSocketHandler.getLatestState()).thenReturn(null);
 
         mockMvc.perform(get("/api/sessions/active/state"))
@@ -70,7 +76,8 @@ class SessionControllerTest {
 
     @Test
     void activeStateReturnsLatestState() throws Exception {
-        when(sessionStateHolder.isSessionActive()).thenReturn(true);
+        when(sessionStateHolder.getActiveSessions())
+                .thenReturn(List.of(new SessionStateHolder.SessionInfo("abc123", 5)));
         when(raceWebSocketHandler.getLatestState()).thenReturn("{\"cars\":[]}");
 
         mockMvc.perform(get("/api/sessions/active/state"))
