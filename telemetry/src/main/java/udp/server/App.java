@@ -98,7 +98,11 @@ public class App {
                             case 3 -> { // Event
                                 EventData event = EventData.parse(received.data(), received.length());
                                 if (event != null) {
-                                    lifecycle.onEvent(header.sessionUID, header.frameIdentifier, event);
+                                    if ("FLBK".equals(event.eventCode)) {
+                                        lifecycle.onFlashback(header.sessionUID, header.frameIdentifier, event);
+                                    } else {
+                                        lifecycle.onEvent(header.sessionUID, header.frameIdentifier, event);
+                                    }
                                     // Forward disruptive events to backend via TCP
                                     switch (event.eventCode) {
                                         case "SCAR" -> raceState.queueEvent(

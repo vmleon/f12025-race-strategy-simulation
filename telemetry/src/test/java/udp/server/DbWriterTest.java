@@ -63,13 +63,17 @@ class DbWriterTest {
 
     @Test
     void eventRecordNullableFields() {
-        var e = new DbWriter.Event(123456L, 100L, "SPTP", null, null, null, null);
+        var e = new DbWriter.Event(123456L, 100L, "SPTP", null, null, null, null, null, null);
         assertNull(e.carIndex());
         assertEquals("SPTP", e.eventCode());
 
-        var e2 = new DbWriter.Event(123456L, 200L, "PENA", 5, 10, 3, 12);
+        var e2 = new DbWriter.Event(123456L, 200L, "PENA", 5, 10, 3, 12, null, null);
         assertEquals(5, e2.carIndex());
         assertEquals(10, e2.penaltySeconds());
+
+        var e3 = new DbWriter.Event(123456L, 300L, "FLBK", null, null, null, null, 250L, 45.5);
+        assertEquals(250L, e3.flashbackFrameId());
+        assertEquals(45.5, e3.flashbackSessionTime());
     }
 
     @Test

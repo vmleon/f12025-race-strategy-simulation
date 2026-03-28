@@ -17,3 +17,6 @@ databaseChangeLog:
   - include:
       file: 006-session-type.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 007-flashback-columns.yaml
+      relativeToChangelogFile: true

@@ -102,7 +102,8 @@ public class LifecycleDispatcher {
 
         DbWriter.Event record = new DbWriter.Event(
                 sessionUid, frameIdentifier, event.eventCode,
-                carIndex, penaltySeconds, otherCarIndex, lapNumber);
+                carIndex, penaltySeconds, otherCarIndex, lapNumber,
+                null, null);
 
         try (Connection conn = connectionFactory.getConnection()) {
             dbWriter.insertEvent(conn, record);
@@ -112,6 +113,30 @@ public class LifecycleDispatcher {
         } catch (SQLException e) {
             System.err.printf("Failed to insert event uid=%d code=%s: %s%n",
                     sessionUid, event.eventCode, e.getMessage());
+        }
+    }
+
+    /**
+     * Handle flashback: delete sector_snapshots and session_events recorded
+     * after the flashback frame, then persist the FLBK event itself.
+     */
+    public void onFlashback(long sessionUid, long frameIdentifier, EventData event) {
+        long fbFrame = Integer.toUnsignedLong(event.flashbackFrameIdentifier);
+        double fbTime = event.flashbackSessionTime;
+
+        try (Connection conn = connectionFactory.getConnection()) {
+            int deleted = dbWriter.deleteFlashbackData(conn, sessionUid, fbFrame);
+            DbWriter.Event record = new DbWriter.Event(
+                    sessionUid, frameIdentifier, "FLBK",
+                    null, null, null, null,
+                    fbFrame, fbTime);
+            dbWriter.insertEvent(conn, record);
+            conn.commit();
+            System.out.printf("  DB flashback uid=%d rewindToFrame=%d deleted=%d%n",
+                    sessionUid, fbFrame, deleted);
+        } catch (SQLException e) {
+            System.err.printf("Failed to handle flashback uid=%d: %s%n",
+                    sessionUid, e.getMessage());
         }
     }
 

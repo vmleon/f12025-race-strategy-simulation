@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: 007-01-flashback-event-columns
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE session_events ADD (
+                  flashback_frame_id      NUMBER(10),
+                  flashback_session_time  NUMBER(10,3)
+              )

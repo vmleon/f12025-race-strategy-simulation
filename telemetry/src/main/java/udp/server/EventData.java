@@ -38,6 +38,10 @@ public class EventData {
     public final int vehicle1Idx;
     public final int vehicle2Idx;
 
+    // Flashback (FLBK)
+    public final int flashbackFrameIdentifier;
+    public final float flashbackSessionTime;
+
     private EventData(String eventCode, ByteBuffer buf) {
         this.eventCode = eventCode;
 
@@ -49,6 +53,8 @@ public class EventData {
         float spd = 0;
         int sct = 0, et = 0;
         int v1 = -1, v2 = -1;
+        int fbFrame = 0;
+        float fbTime = 0;
 
         switch (eventCode) {
             case "FTLP" -> {
@@ -87,8 +93,8 @@ public class EventData {
                 buf.get(); // numLights
             }
             case "FLBK" -> {
-                buf.getInt();   // flashbackFrameIdentifier
-                buf.getFloat(); // flashbackSessionTime
+                fbFrame = buf.getInt();
+                fbTime = buf.getFloat();
             }
             case "BUTN" -> {
                 buf.getInt(); // buttonStatus
@@ -123,6 +129,8 @@ public class EventData {
         this.eventType = et;
         this.vehicle1Idx = v1;
         this.vehicle2Idx = v2;
+        this.flashbackFrameIdentifier = fbFrame;
+        this.flashbackSessionTime = fbTime;
     }
 
     public static EventData parse(byte[] data, int length) {

@@ -253,14 +253,16 @@ public class DbWriter {
     private static final String INSERT_EVENT = """
             INSERT INTO session_events (
                 event_id, session_uid, frame_identifier, event_code,
-                car_index, penalty_seconds, other_car_index, lap_number
-            ) VALUES (seq_session_events.NEXTVAL, ?,?,?,?,?,?,?)
+                car_index, penalty_seconds, other_car_index, lap_number,
+                flashback_frame_id, flashback_session_time
+            ) VALUES (seq_session_events.NEXTVAL, ?,?,?,?,?,?,?,?,?)
             """;
 
     public record Event(
             long sessionUid, long frameIdentifier, String eventCode,
             Integer carIndex, Integer penaltySeconds,
-            Integer otherCarIndex, Integer lapNumber) {}
+            Integer otherCarIndex, Integer lapNumber,
+            Long flashbackFrameId, Double flashbackSessionTime) {}
 
     public void insertEvent(Connection conn, Event e) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(INSERT_EVENT)) {
@@ -271,8 +273,42 @@ public class DbWriter {
             setNullableInt(ps, 5, e.penaltySeconds);
             setNullableInt(ps, 6, e.otherCarIndex);
             setNullableInt(ps, 7, e.lapNumber);
+            setNullableLong(ps, 8, e.flashbackFrameId);
+            setNullableDouble(ps, 9, e.flashbackSessionTime);
             ps.executeUpdate();
         }
+    }
+
+    // ── flashback cleanup ────────────────────────────────────────────────
+
+    private static final String DELETE_SECTORS_AFTER_FRAME = """
+            DELETE FROM sector_snapshots
+            WHERE session_uid = ? AND frame_identifier > ?
+            """;
+
+    private static final String DELETE_EVENTS_AFTER_FRAME = """
+            DELETE FROM session_events
+            WHERE session_uid = ? AND frame_identifier > ?
+            """;
+
+    /**
+     * Delete sector_snapshots and session_events recorded after the given
+     * flashback frame, so replayed data can be re-inserted cleanly.
+     * Returns the total number of deleted rows.
+     */
+    public int deleteFlashbackData(Connection conn, long sessionUid, long flashbackFrameId) throws SQLException {
+        int deleted = 0;
+        try (PreparedStatement ps = conn.prepareStatement(DELETE_SECTORS_AFTER_FRAME)) {
+            ps.setLong(1, sessionUid);
+            ps.setLong(2, flashbackFrameId);
+            deleted += ps.executeUpdate();
+        }
+        try (PreparedStatement ps = conn.prepareStatement(DELETE_EVENTS_AFTER_FRAME)) {
+            ps.setLong(1, sessionUid);
+            ps.setLong(2, flashbackFrameId);
+            deleted += ps.executeUpdate();
+        }
+        return deleted;
     }
 
     // ── tyre_sets ───────────────────────────────────────────────────────
@@ -394,6 +430,14 @@ public class DbWriter {
     }
 
     // ── helpers ─────────────────────────────────────────────────────────
+
+    private static void setNullableLong(PreparedStatement ps, int index, Long value) throws SQLException {
+        if (value != null) {
+            ps.setLong(index, value);
+        } else {
+            ps.setNull(index, java.sql.Types.BIGINT);
+        }
+    }
 
     private static void setNullableInt(PreparedStatement ps, int index, Integer value) throws SQLException {
         if (value != null) {
