@@ -94,18 +94,6 @@ class DbWriterTest {
     }
 
     @Test
-    void calibrationCoefficientRecordFields() {
-        var cc = new DbWriter.CalibrationCoefficient(
-                5, "tyre_deg_rate", "AI", 1, "OLS",
-                0.00123, 0.95, 0.87, 0,
-                5, 1200, "abc123",
-                java.sql.Timestamp.valueOf("2026-03-24 12:00:00"));
-        assertEquals("tyre_deg_rate", cc.knobName());
-        assertEquals("AI", cc.calibrationRegime());
-        assertEquals(0.00123, cc.value(), 0.00001);
-    }
-
-    @Test
     void batchListCreation() {
         List<DbWriter.Participant> batch = List.of(
                 new DbWriter.Participant(1L, 0, "Driver A", 1, 1, 5, 0),

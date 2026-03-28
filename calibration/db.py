@@ -1,0 +1,233 @@
+from __future__ import annotations
+
+import os
+from datetime import datetime
+
+import oracledb
+
+from calibration.cold_start import KNOB_DEFAULTS, METHOD_NAME, REGIMES
+from calibration.outlier_detector import DriverRating, SectorEntry, SectorKey
+
+_pool: oracledb.ConnectionPool | None = None
+
+
+def get_pool() -> oracledb.ConnectionPool:
+    global _pool
+    if _pool is None:
+        _pool = oracledb.create_pool(
+            user=os.environ.get("ORACLE_USER", "F1SIM"),
+            password=os.environ.get("ORACLE_PASSWORD", "F1SIM"),
+            dsn=os.environ.get("ORACLE_DSN", "localhost:1521/FREEPDB1"),
+            min=1,
+            max=4,
+        )
+    return _pool
+
+
+def close_pool() -> None:
+    global _pool
+    if _pool is not None:
+        _pool.close()
+        _pool = None
+
+
+# ── cold start check ────────────────────────────────────────────────
+
+def has_default_coefficients(conn: oracledb.Connection, track_id: int) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM calibration_coefficients WHERE track_id = :1 AND is_default = 1",
+            [track_id],
+        )
+        return cur.fetchone()[0] > 0
+
+
+def ensure_cold_start_defaults(conn: oracledb.Connection, track_id: int) -> int:
+    if has_default_coefficients(conn, track_id):
+        return 0
+    now = datetime.now()
+    inserted = 0
+    for regime in REGIMES:
+        for knob_name, value in KNOB_DEFAULTS:
+            _insert_calibration_coefficient(
+                conn, track_id, knob_name, regime, None, METHOD_NAME,
+                value, None, None, 1, 0, 0, None, now,
+            )
+            inserted += 1
+    return inserted
+
+
+# ── outlier detection queries ────────────────────────────────────────
+
+_SELECT_SECTORS_FOR_OUTLIER_DETECTION = """
+    SELECT ss.session_uid, ss.car_index, ss.lap_number, ss.sector_number,
+           ss.sector_time_ms, p.driver_name, s.track_id,
+           ss.tyre_compound_actual, p.ai_controlled
+    FROM sector_snapshots ss
+    JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index
+    JOIN sessions s ON s.session_uid = ss.session_uid
+    WHERE s.track_id = :1
+      AND ss.lap_invalid = 0
+      AND ss.pit_status = 0
+      AND ss.safety_car_status = 0
+      AND ss.lap_number > 1
+      AND ss.sector_time_ms > 0
+    ORDER BY p.driver_name, ss.sector_number, ss.tyre_compound_actual
+"""
+
+
+def get_sectors_for_outlier_detection(conn: oracledb.Connection, track_id: int) -> list[SectorEntry]:
+    with conn.cursor() as cur:
+        cur.execute(_SELECT_SECTORS_FOR_OUTLIER_DETECTION, [track_id])
+        return [
+            SectorEntry(
+                session_uid=row[0], car_index=row[1], lap_number=row[2],
+                sector_number=row[3], sector_time_ms=row[4], driver_name=row[5],
+                track_id=row[6], tyre_compound_actual=row[7], ai_controlled=row[8] == 1,
+            )
+            for row in cur
+        ]
+
+
+_SELECT_DRIVER_RATINGS = "SELECT driver_name, track_id, skill_rating FROM driver_ratings"
+
+
+def get_driver_ratings(conn: oracledb.Connection) -> list[DriverRating]:
+    with conn.cursor() as cur:
+        cur.execute(_SELECT_DRIVER_RATINGS)
+        return [DriverRating(driver_name=row[0], track_id=row[1], skill_rating=row[2]) for row in cur]
+
+
+# ── outlier flag updates ─────────────────────────────────────────────
+
+def update_outlier_flags(conn: oracledb.Connection, track_id: int, outliers: list[SectorKey]) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE sector_snapshots SET outlier = 0
+               WHERE session_uid IN (SELECT session_uid FROM sessions WHERE track_id = :1)
+                 AND outlier = 1""",
+            [track_id],
+        )
+        if outliers:
+            cur.executemany(
+                """UPDATE sector_snapshots SET outlier = 1
+                   WHERE session_uid = :1 AND car_index = :2 AND lap_number = :3 AND sector_number = :4""",
+                [(o.session_uid, o.car_index, o.lap_number, o.sector_number) for o in outliers],
+            )
+
+
+# ── calibration data ─────────────────────────────────────────────────
+
+_SELECT_CALIBRATION_DATA = """
+    SELECT ss.session_uid, ss.car_index, ss.lap_number, ss.sector_number,
+           ss.sector_time_ms,
+           ss.tyre_compound_actual, ss.tyre_age_laps,
+           ss.fuel_in_tank_kg,
+           ss.gap_to_car_ahead_ms,
+           ss.drs_allowed,
+           ss.weather, ss.track_temp, ss.air_temp,
+           ss.front_wing_damage_l, ss.front_wing_damage_r, ss.rear_wing_damage,
+           ss.floor_damage, ss.diffuser_damage, ss.sidepod_damage,
+           ss.engine_damage, ss.gearbox_damage,
+           ss.tyre_surface_temp_rl, ss.tyre_surface_temp_rr,
+           ss.tyre_surface_temp_fl, ss.tyre_surface_temp_fr,
+           ss.tyre_inner_temp_rl, ss.tyre_inner_temp_rr,
+           ss.tyre_inner_temp_fl, ss.tyre_inner_temp_fr,
+           s.ai_difficulty, s.car_damage_setting, s.car_damage_rate, s.low_fuel_mode
+    FROM sector_snapshots ss
+    JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index
+    JOIN sessions s ON s.session_uid = ss.session_uid
+    WHERE s.track_id = :1
+      AND p.ai_controlled = :2
+      AND ss.lap_invalid = 0
+      AND ss.corner_cutting_warnings = 0
+      AND ss.pit_status = 0
+      AND ss.safety_car_status = 0
+      AND ss.lap_number > 1
+      AND ss.outlier = 0
+      AND ss.sector_time_ms > 0
+    ORDER BY ss.car_index, ss.lap_number, ss.sector_number
+"""
+
+# Column indices for calibration data rows
+_COL_SESSION_UID = 0
+_COL_CAR_INDEX = 1
+_COL_LAP_NUMBER = 2
+_COL_SECTOR_NUMBER = 3
+_COL_SECTOR_TIME_MS = 4
+_COL_TYRE_COMPOUND = 5
+_COL_TYRE_AGE = 6
+_COL_FUEL = 7
+_COL_GAP_AHEAD = 8
+_COL_DRS = 9
+_COL_WEATHER = 10
+_COL_TRACK_TEMP = 11
+_COL_AIR_TEMP = 12
+_COL_FW_DMG_L = 13
+_COL_FW_DMG_R = 14
+_COL_RW_DMG = 15
+_COL_FLOOR_DMG = 16
+_COL_DIFF_DMG = 17
+_COL_SIDE_DMG = 18
+_COL_ENG_DMG = 19
+_COL_GEAR_DMG = 20
+_COL_AI_DIFF = 29
+_COL_CAR_DMG_SET = 30
+_COL_CAR_DMG_RATE = 31
+_COL_LOW_FUEL = 32
+
+
+def get_calibration_data(conn: oracledb.Connection, track_id: int, regime: str) -> list[tuple]:
+    ai_controlled = 1 if regime == "AI" else 0
+    with conn.cursor() as cur:
+        cur.execute(_SELECT_CALIBRATION_DATA, [track_id, ai_controlled])
+        return cur.fetchall()
+
+
+# ── session count ────────────────────────────────────────────────────
+
+def get_session_count_for_track(conn: oracledb.Connection, track_id: int) -> int:
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(DISTINCT session_uid) FROM sessions WHERE track_id = :1", [track_id])
+        return cur.fetchone()[0]
+
+
+# ── coefficient insert ───────────────────────────────────────────────
+
+_INSERT_COEFFICIENT = """
+    INSERT INTO calibration_coefficients (
+        coefficient_id, track_id, knob_name, calibration_regime,
+        sector_number, method_name, value, confidence, score,
+        is_default, session_count, data_point_count,
+        game_settings_hash, trained_at
+    ) VALUES (seq_calibration_coefficients.NEXTVAL, :1,:2,:3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13)
+"""
+
+
+def _insert_calibration_coefficient(
+    conn: oracledb.Connection, track_id: int, knob_name: str, regime: str,
+    sector_number: int | None, method_name: str, value: float,
+    confidence: float | None, score: float | None, is_default: int,
+    session_count: int, data_point_count: int,
+    game_settings_hash: str | None, trained_at: datetime,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(_INSERT_COEFFICIENT, [
+            track_id, knob_name, regime, sector_number, method_name,
+            value, confidence, score, is_default, session_count,
+            data_point_count, game_settings_hash, trained_at,
+        ])
+
+
+def insert_calibration_coefficient(
+    conn: oracledb.Connection, track_id: int, knob_name: str, regime: str,
+    sector_number: int | None, method_name: str, value: float,
+    confidence: float | None, score: float | None, is_default: int,
+    session_count: int, data_point_count: int,
+    game_settings_hash: str | None, trained_at: datetime,
+) -> None:
+    _insert_calibration_coefficient(
+        conn, track_id, knob_name, regime, sector_number, method_name,
+        value, confidence, score, is_default, session_count,
+        data_point_count, game_settings_hash, trained_at,
+    )

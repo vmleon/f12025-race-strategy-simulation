@@ -45,18 +45,6 @@ class DbReaderTest {
     }
 
     @Test
-    void calibrationCoefficientRowWithNulls() {
-        var row = new DbReader.CalibrationCoefficientRow(
-                1L, 5, "tyre_deg_rate", "AI",
-                null, "OLS", 0.00123, null, null, 0,
-                5, 1200, "abc123",
-                java.sql.Timestamp.valueOf("2026-03-24 12:00:00"));
-        assertNull(row.sectorNumber());
-        assertNull(row.confidence());
-        assertNull(row.score());
-    }
-
-    @Test
     void finalClassificationRowFields() {
         var row = new DbReader.FinalClassificationRow(
                 123456L, 0, 1, 3, 57, 25, 2, 3, 0,

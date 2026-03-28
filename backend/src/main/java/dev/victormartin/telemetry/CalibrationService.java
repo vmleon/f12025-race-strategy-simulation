@@ -30,8 +30,8 @@ public class CalibrationService {
         return t;
     });
 
-    @Value("${calibration.telemetry-dir:../telemetry}")
-    private String telemetryDir;
+    @Value("${calibration.project-dir:..}")
+    private String projectDir;
 
     public CalibrationService(RaceWebSocketHandler raceWebSocketHandler) {
         this.raceWebSocketHandler = raceWebSocketHandler;
@@ -58,12 +58,10 @@ public class CalibrationService {
                 System.out.println("CalibrationService: starting calibration for track " + trackId);
                 long start = System.currentTimeMillis();
 
-                Path telemetryPath = Path.of(telemetryDir).toAbsolutePath().normalize();
+                Path projectPath = Path.of(projectDir).toAbsolutePath().normalize();
                 ProcessBuilder pb = new ProcessBuilder(
-                        telemetryPath.resolve("gradlew").toString(),
-                        "runCalibration",
-                        "--args=" + trackId);
-                pb.directory(telemetryPath.toFile());
+                        "python", "-m", "calibration", "run", String.valueOf(trackId));
+                pb.directory(projectPath.toFile());
                 pb.redirectErrorStream(true);
 
                 Process process = pb.start();
