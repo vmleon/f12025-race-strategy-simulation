@@ -1,14 +1,25 @@
 import { Component, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { Subscription, interval } from 'rxjs';
-import { RaceService, CarSnapshot, RaceMessage } from '../race.service';
+import { RaceService, CarSnapshot, RaceMessage, WeatherForecastSample } from '../race.service';
 import { SessionService, ActiveSessionDto } from '../session.service';
 import { trackName } from '../track-names';
 import { DecimalPipe } from '@angular/common';
 import { CircuitMapComponent } from './circuit-map/circuit-map.component';
+import { PenaltiesPanelComponent } from './penalties-panel/penalties-panel.component';
+import { DamagePanelComponent } from './damage-panel/damage-panel.component';
+import { TyresPanelComponent } from './tyres-panel/tyres-panel.component';
+import { WeatherPanelComponent } from './weather-panel/weather-panel.component';
 
 @Component({
   selector: 'app-race',
-  imports: [DecimalPipe, CircuitMapComponent],
+  imports: [
+    DecimalPipe,
+    CircuitMapComponent,
+    PenaltiesPanelComponent,
+    DamagePanelComponent,
+    TyresPanelComponent,
+    WeatherPanelComponent,
+  ],
   template: `
     <div class="race-header">
       <h2>Live Race</h2>
@@ -41,68 +52,84 @@ import { CircuitMapComponent } from './circuit-map/circuit-map.component';
     </div>
 
     @if (cars().length > 0) {
-      <div class="race-content">
-      <app-circuit-map
-        [cars]="cars()"
-        [trackLength]="trackLength()"
-        [safetyCarStatus]="safetyCarStatus()"
-        [yellowSector]="yellowSector()"
-      />
-      <table class="race-table">
-        <thead>
-          <tr>
-            <th>Pos</th>
-            <th>Driver</th>
-            <th>Lap</th>
-            <th>S1</th>
-            <th>S2</th>
-            <th>S3</th>
-            <th>Tyre</th>
-            <th>Age</th>
-            <th>Pits</th>
-            <th>Pit</th>
-            <th>Fuel</th>
-            <th>Dmg</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (car of cars(); track car.idx) {
-            <tr [class.in-pit]="car.pitStatus !== 0" [class.ai]="car.ai">
-              <td class="pos">{{ car.pos }}</td>
-              <td class="driver">{{ car.name || 'Car ' + car.idx }}</td>
-              <td>{{ car.lap }}</td>
-              <td class="sector-time">{{ formatSector(car.lastSectorMs, 0) }}</td>
-              <td class="sector-time">{{ formatSector(car.lastSectorMs, 1) }}</td>
-              <td class="sector-time">{{ formatSector(car.lastSectorMs, 2) }}</td>
-              <td>
-                <span class="tyre" [attr.data-tyre]="car.tyre">{{ car.tyre }}</span>
-              </td>
-              <td>{{ car.tyreAge }}</td>
-              <td>{{ car.pits ?? 0 }}</td>
-              <td class="pit-status">{{ pitLabel(car.pitStatus) }}</td>
-              <td>{{ car.fuel != null ? (car.fuel | number : '1.1-1') + ' kg' : '-' }}</td>
-              <td>{{ damageLabel(car) }}</td>
-            </tr>
+      <div class="race-layout">
+        <div class="left-column">
+          <div class="race-content">
+            <app-circuit-map
+              [cars]="cars()"
+              [trackLength]="trackLength()"
+              [safetyCarStatus]="safetyCarStatus()"
+              [yellowSector]="yellowSector()"
+            />
+            <table class="race-table">
+              <thead>
+                <tr>
+                  <th>Pos</th>
+                  <th>Driver</th>
+                  <th>Lap</th>
+                  <th>S1</th>
+                  <th>S2</th>
+                  <th>S3</th>
+                  <th>Tyre</th>
+                  <th>Age</th>
+                  <th>Pits</th>
+                  <th>Pit</th>
+                  <th>Fuel</th>
+                  <th>Dmg</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (car of cars(); track car.idx) {
+                  <tr [class.in-pit]="car.pitStatus !== 0" [class.ai]="car.ai">
+                    <td class="pos">{{ car.pos }}</td>
+                    <td class="driver">{{ car.name || 'Car ' + car.idx }}</td>
+                    <td>{{ car.lap }}</td>
+                    <td class="sector-time">{{ formatSector(car.lastSectorMs, 0) }}</td>
+                    <td class="sector-time">{{ formatSector(car.lastSectorMs, 1) }}</td>
+                    <td class="sector-time">{{ formatSector(car.lastSectorMs, 2) }}</td>
+                    <td>
+                      <span class="tyre" [attr.data-tyre]="car.tyre">{{ car.tyre }}</span>
+                    </td>
+                    <td>{{ car.tyreAge }}</td>
+                    <td>{{ car.pits ?? 0 }}</td>
+                    <td class="pit-status">{{ pitLabel(car.pitStatus) }}</td>
+                    <td>{{ car.fuel != null ? (car.fuel | number: '1.1-1') + ' kg' : '-' }}</td>
+                    <td>{{ damageLabel(car) }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          @if (events().length > 0) {
+            <div class="events">
+              <h3>Recent Events</h3>
+              @for (ev of events(); track $index) {
+                <div class="event-item">
+                  <span class="event-type">{{ ev.event }}</span>
+                  @if (ev.carIndex != null) {
+                    <span>Car {{ ev.carIndex }}</span>
+                  }
+                </div>
+              }
+            </div>
           }
-        </tbody>
-      </table>
+        </div>
+
+        <div class="right-column">
+          <app-weather-panel
+            [weather]="weather()"
+            [trackTemp]="trackTemp()"
+            [airTemp]="airTemp()"
+            [forecast]="forecast()"
+          />
+          <app-tyres-panel [car]="playerCar()" />
+          <app-damage-panel [car]="playerCar()" />
+          <app-penalties-panel [car]="playerCar()" [events]="penaltyEvents()" />
+        </div>
       </div>
     } @else {
       <p class="empty">No live session. Start the game and telemetry server to see data here.</p>
-    }
-
-    @if (events().length > 0) {
-      <div class="events">
-        <h3>Recent Events</h3>
-        @for (ev of events(); track $index) {
-          <div class="event-item">
-            <span class="event-type">{{ ev.event }}</span>
-            @if (ev.carIndex != null) {
-              <span>Car {{ ev.carIndex }}</span>
-            }
-          </div>
-        }
-      </div>
     }
   `,
   styles: `
@@ -112,8 +139,15 @@ import { CircuitMapComponent } from './circuit-map/circuit-map.component';
       gap: 1rem;
       margin-bottom: 1rem;
     }
-    .race-header h2 { margin: 0; }
-    .session-info { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    .race-header h2 {
+      margin: 0;
+    }
+    .session-info {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
     .badge {
       font-size: 0.8rem;
       padding: 0.2rem 0.5rem;
@@ -121,9 +155,17 @@ import { CircuitMapComponent } from './circuit-map/circuit-map.component';
       background: #333;
       color: #ccc;
     }
-    .badge.live { background: #1b5e20; color: #a5d6a7; }
-    .badge.off { background: #555; }
-    .badge.safety-car { background: #f9a825; color: #000; }
+    .badge.live {
+      background: #1b5e20;
+      color: #a5d6a7;
+    }
+    .badge.off {
+      background: #555;
+    }
+    .badge.safety-car {
+      background: #f9a825;
+      color: #000;
+    }
 
     .session-select {
       font-size: 0.85rem;
@@ -134,9 +176,38 @@ import { CircuitMapComponent } from './circuit-map/circuit-map.component';
       border: 1px solid #555;
     }
 
-    .race-content { display: flex; gap: 1.5rem; align-items: flex-start; }
-    .race-content app-circuit-map { flex-shrink: 0; }
-    .race-table { flex: 1; min-width: 0; width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .race-layout {
+      display: flex;
+      gap: 1.5rem;
+      align-items: flex-start;
+    }
+    .left-column {
+      flex: 1;
+      min-width: 0;
+    }
+    .right-column {
+      width: 320px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .race-content {
+      display: flex;
+      gap: 1.5rem;
+      align-items: flex-start;
+    }
+    .race-content app-circuit-map {
+      flex-shrink: 0;
+    }
+    .race-table {
+      flex: 1;
+      min-width: 0;
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
     .race-table th {
       text-align: left;
       padding: 0.4rem 0.6rem;
@@ -145,26 +216,92 @@ import { CircuitMapComponent } from './circuit-map/circuit-map.component';
       font-size: 0.8rem;
       text-transform: uppercase;
     }
-    .race-table td { padding: 0.35rem 0.6rem; border-bottom: 1px solid #2a2a2a; }
-    .race-table tr.in-pit { background: #2a1a00; }
-    .race-table tr.ai { opacity: 0.7; }
-    .pos { font-weight: bold; min-width: 2rem; }
-    .driver { white-space: nowrap; }
-    .sector-time { font-family: monospace; font-size: 0.85rem; }
-    .pit-status { font-weight: bold; }
+    .race-table td {
+      padding: 0.35rem 0.6rem;
+      border-bottom: 1px solid #2a2a2a;
+    }
+    .race-table tr.in-pit {
+      background: #2a1a00;
+    }
+    .race-table tr.ai {
+      opacity: 0.7;
+    }
+    .pos {
+      font-weight: bold;
+      min-width: 2rem;
+    }
+    .driver {
+      white-space: nowrap;
+    }
+    .sector-time {
+      font-family: monospace;
+      font-size: 0.85rem;
+    }
+    .pit-status {
+      font-weight: bold;
+    }
 
-    .tyre { padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.8rem; font-weight: bold; }
-    .tyre[data-tyre='S'] { background: #e10600; color: #fff; }
-    .tyre[data-tyre='M'] { background: #ffd600; color: #000; }
-    .tyre[data-tyre='H'] { background: #eee; color: #000; }
-    .tyre[data-tyre='I'] { background: #43a047; color: #fff; }
-    .tyre[data-tyre='W'] { background: #1565c0; color: #fff; }
+    .tyre {
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.8rem;
+      font-weight: bold;
+    }
+    .tyre[data-tyre='S'] {
+      background: #e10600;
+      color: #fff;
+    }
+    .tyre[data-tyre='M'] {
+      background: #ffd600;
+      color: #000;
+    }
+    .tyre[data-tyre='H'] {
+      background: #eee;
+      color: #000;
+    }
+    .tyre[data-tyre='I'] {
+      background: #43a047;
+      color: #fff;
+    }
+    .tyre[data-tyre='W'] {
+      background: #1565c0;
+      color: #fff;
+    }
 
-    .events { margin-top: 1.5rem; }
-    .events h3 { margin-bottom: 0.5rem; }
-    .event-item { display: flex; gap: 0.5rem; padding: 0.25rem 0; font-size: 0.85rem; }
-    .event-type { font-weight: bold; color: #f9a825; }
-    .empty { color: #888; }
+    .events {
+      margin-top: 1.5rem;
+    }
+    .events h3 {
+      margin-bottom: 0.5rem;
+    }
+    .event-item {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.25rem 0;
+      font-size: 0.85rem;
+    }
+    .event-type {
+      font-weight: bold;
+      color: #f9a825;
+    }
+    .empty {
+      color: #888;
+    }
+
+    @media (max-width: 1200px) {
+      .race-layout {
+        flex-direction: column;
+      }
+      .right-column {
+        width: 100%;
+        flex-direction: row;
+        flex-wrap: wrap;
+      }
+      .right-column > * {
+        flex: 1;
+        min-width: 250px;
+      }
+    }
   `,
 })
 export class RaceComponent implements OnInit, OnDestroy {
@@ -173,14 +310,20 @@ export class RaceComponent implements OnInit, OnDestroy {
   totalLaps = signal(0);
   currentLap = signal(0);
   weather = signal<number | null>(null);
+  trackTemp = signal<number | null>(null);
+  airTemp = signal<number | null>(null);
   safetyCarStatus = signal<number | null>(null);
   trackLength = signal(0);
   yellowSector = signal<number | null>(null);
   cars = signal<CarSnapshot[]>([]);
   events = signal<RaceMessage[]>([]);
+  forecast = signal<WeatherForecastSample[]>([]);
 
   activeSessions = signal<ActiveSessionDto[]>([]);
   selectedSessionUid = signal<string | null>(null);
+
+  playerCar = computed(() => this.cars().find((c) => !c.ai) ?? null);
+  penaltyEvents = computed(() => this.events().filter((e) => e.event === 'PENA'));
 
   trackLabel = computed(() => trackName(this.trackId()!));
   weatherLabel = computed(() => {
@@ -258,7 +401,6 @@ export class RaceComponent implements OnInit, OnDestroy {
       if (sessions.length === 0) {
         this.selectedSessionUid.set(null);
       } else if (!selected || !sessions.some((s) => s.sessionUid === selected)) {
-        // Auto-select first session if none selected or selected session ended
         this.selectedSessionUid.set(sessions[0].sessionUid);
         this.resetState();
       }
@@ -273,14 +415,20 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.totalLaps.set(0);
     this.currentLap.set(0);
     this.weather.set(null);
+    this.trackTemp.set(null);
+    this.airTemp.set(null);
     this.safetyCarStatus.set(null);
     this.trackLength.set(0);
     this.yellowSector.set(null);
+    this.forecast.set([]);
   }
 
   private onMessage(msg: RaceMessage) {
-    // Filter messages by selected session
-    if (msg.sessionUid && this.selectedSessionUid() && msg.sessionUid !== this.selectedSessionUid()) {
+    if (
+      msg.sessionUid &&
+      this.selectedSessionUid() &&
+      msg.sessionUid !== this.selectedSessionUid()
+    ) {
       return;
     }
 
@@ -291,24 +439,28 @@ export class RaceComponent implements OnInit, OnDestroy {
         if (msg.totalLaps != null) this.totalLaps.set(msg.totalLaps);
         if (msg.currentLap != null) this.currentLap.set(msg.currentLap);
         if (msg.weather != null) this.weather.set(msg.weather);
+        if (msg.trackTemp != null) this.trackTemp.set(msg.trackTemp);
+        if (msg.airTemp != null) this.airTemp.set(msg.airTemp);
         if (msg.safetyCarStatus != null) this.safetyCarStatus.set(msg.safetyCarStatus);
         if (msg.trackLength != null) this.trackLength.set(msg.trackLength);
         if (msg.cars) {
           this.cars.set([...msg.cars].sort((a, b) => a.pos - b.pos));
+        }
+        if (msg.forecast) {
+          this.forecast.set(msg.forecast);
         }
         break;
       case 'sessionStarted':
         this.status.set('session started');
         this.cars.set([]);
         this.events.set([]);
+        this.forecast.set([]);
         if (msg.trackId != null) this.trackId.set(msg.trackId);
-        // Refresh active sessions immediately
         this.fetchActiveSessions();
         break;
       case 'sessionEnded':
         if (msg.sessionUid === this.selectedSessionUid()) {
           this.status.set('session ended');
-          // Refresh to switch to another session or show empty
           this.fetchActiveSessions();
         }
         break;

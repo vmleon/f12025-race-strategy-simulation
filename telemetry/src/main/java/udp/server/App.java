@@ -114,6 +114,11 @@ public class App {
                                         case "COLL" -> raceState.queueEvent(
                                                 "{\"type\":\"event\",\"event\":\"COLL\",\"car1\":"
                                                 + event.vehicle1Idx + ",\"car2\":" + event.vehicle2Idx + "}");
+                                        case "PENA" -> raceState.queueEvent(
+                                                "{\"type\":\"event\",\"event\":\"PENA\",\"carIndex\":"
+                                                + event.vehicleIdx + ",\"penaltyType\":" + event.penaltyType
+                                                + ",\"infringementType\":" + event.infringementType
+                                                + ",\"time\":" + event.time + ",\"lap\":" + event.lapNum + "}");
                                         default -> {}
                                     }
                                 }
@@ -129,6 +134,7 @@ public class App {
                                 CarTelemetryData[] telemetry = CarTelemetryData.parseAll(received.data(), received.length());
                                 if (telemetry != null) {
                                     carState.updateTelemetry(telemetry);
+                                    raceState.updateFromTelemetry(telemetry);
                                 }
                             }
                             case 7 -> { // CarStatus

@@ -32,6 +32,32 @@ public class SessionData {
     public final float sector2LapDistanceStart;
     public final float sector3LapDistanceStart;
 
+    // Weather forecast
+    public final int numWeatherForecastSamples;
+    public final WeatherForecastSample[] weatherForecastSamples;
+
+    public static class WeatherForecastSample {
+        public final int sessionType;          // uint8
+        public final int timeOffset;           // uint8 (minutes)
+        public final int weather;              // uint8
+        public final int trackTemperature;     // int8
+        public final int trackTemperatureChange; // int8
+        public final int airTemperature;       // int8
+        public final int airTemperatureChange; // int8
+        public final int rainPercentage;       // uint8
+
+        WeatherForecastSample(ByteBuffer buf) {
+            this.sessionType = Byte.toUnsignedInt(buf.get());
+            this.timeOffset = Byte.toUnsignedInt(buf.get());
+            this.weather = Byte.toUnsignedInt(buf.get());
+            this.trackTemperature = buf.get();
+            this.trackTemperatureChange = buf.get();
+            this.airTemperature = buf.get();
+            this.airTemperatureChange = buf.get();
+            this.rainPercentage = Byte.toUnsignedInt(buf.get());
+        }
+    }
+
     private SessionData(ByteBuffer buf) {
         this.weather = Byte.toUnsignedInt(buf.get());
         this.trackTemperature = buf.get(); // signed
@@ -52,8 +78,13 @@ public class SessionData {
         buf.position(buf.position() + MAX_MARSHAL_ZONES * MARSHAL_ZONE_SIZE); // skip marshal zones
         this.safetyCarStatus = Byte.toUnsignedInt(buf.get());
         buf.get(); // networkGame
-        buf.get(); // numWeatherForecastSamples
-        buf.position(buf.position() + MAX_WEATHER_SAMPLES * WEATHER_SAMPLE_SIZE); // skip weather forecasts
+        this.numWeatherForecastSamples = Byte.toUnsignedInt(buf.get());
+        this.weatherForecastSamples = new WeatherForecastSample[numWeatherForecastSamples];
+        for (int i = 0; i < numWeatherForecastSamples; i++) {
+            weatherForecastSamples[i] = new WeatherForecastSample(buf);
+        }
+        // Skip remaining unused forecast slots
+        buf.position(buf.position() + (MAX_WEATHER_SAMPLES - numWeatherForecastSamples) * WEATHER_SAMPLE_SIZE);
         buf.get(); // forecastAccuracy
         this.aiDifficulty = Byte.toUnsignedInt(buf.get());
         buf.getInt(); // seasonLinkIdentifier

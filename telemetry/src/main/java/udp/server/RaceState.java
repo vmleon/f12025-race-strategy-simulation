@@ -39,6 +39,10 @@ public class RaceState {
         }
     }
 
+    // Weather forecast
+    private SessionData.WeatherForecastSample[] weatherForecast;
+    private int numWeatherForecastSamples;
+
     public static class CarState {
         int position;
         int lap;
@@ -52,6 +56,19 @@ public class RaceState {
         int frontWingDamage;
         int floorDamage;
         int engineDamage;
+        int rearWingDamage;
+        int sidepodDamage;
+        int gearBoxDamage;
+        int diffuserDamage;
+        float[] tyresWear = new float[4];
+        int[] brakesTemperature = new int[4];
+        int[] tyresSurfaceTemperature = new int[4];
+        int[] tyresInnerTemperature = new int[4];
+        int penalties;
+        int numUnservedDriveThroughPens;
+        int numUnservedStopGoPens;
+        int totalWarnings;
+        int cornerCuttingWarnings;
         String driverName = "";
         boolean aiControlled = true;
         int resultStatus;
@@ -68,6 +85,8 @@ public class RaceState {
         this.safetyCarStatus = session.safetyCarStatus;
         this.totalLaps = session.totalLaps;
         this.trackLength = session.trackLength;
+        this.weatherForecast = session.weatherForecastSamples;
+        this.numWeatherForecastSamples = session.numWeatherForecastSamples;
         this.sessionActive = true;
     }
 
@@ -84,6 +103,11 @@ public class RaceState {
             cars[i].numPitStops = lap.numPitStops;
             cars[i].resultStatus = lap.resultStatus;
             cars[i].lapDistance = lap.lapDistance;
+            cars[i].penalties = lap.penalties;
+            cars[i].numUnservedDriveThroughPens = lap.numUnservedDriveThroughPens;
+            cars[i].numUnservedStopGoPens = lap.numUnservedStopGoPens;
+            cars[i].totalWarnings = lap.totalWarnings;
+            cars[i].cornerCuttingWarnings = lap.cornerCuttingWarnings;
         }
     }
 
@@ -100,6 +124,19 @@ public class RaceState {
             cars[i].frontWingDamage = Math.max(damage[i].frontLeftWingDamage, damage[i].frontRightWingDamage);
             cars[i].floorDamage = damage[i].floorDamage;
             cars[i].engineDamage = damage[i].engineDamage;
+            cars[i].rearWingDamage = damage[i].rearWingDamage;
+            cars[i].sidepodDamage = damage[i].sidepodDamage;
+            cars[i].gearBoxDamage = damage[i].gearBoxDamage;
+            cars[i].diffuserDamage = damage[i].diffuserDamage;
+            System.arraycopy(damage[i].tyresWear, 0, cars[i].tyresWear, 0, 4);
+        }
+    }
+
+    public synchronized void updateFromTelemetry(CarTelemetryData[] telemetry) {
+        for (int i = 0; i < Math.min(telemetry.length, NUM_CARS); i++) {
+            System.arraycopy(telemetry[i].brakesTemperature, 0, cars[i].brakesTemperature, 0, 4);
+            System.arraycopy(telemetry[i].tyresSurfaceTemperature, 0, cars[i].tyresSurfaceTemperature, 0, 4);
+            System.arraycopy(telemetry[i].tyresInnerTemperature, 0, cars[i].tyresInnerTemperature, 0, 4);
         }
     }
 
@@ -185,6 +222,25 @@ public class RaceState {
               .append(",\"fwDmg\":").append(c.frontWingDamage)
               .append(",\"flDmg\":").append(c.floorDamage)
               .append(",\"engDmg\":").append(c.engineDamage)
+              .append(",\"rwDmg\":").append(c.rearWingDamage)
+              .append(",\"spDmg\":").append(c.sidepodDamage)
+              .append(",\"gbDmg\":").append(c.gearBoxDamage)
+              .append(",\"diffDmg\":").append(c.diffuserDamage)
+              .append(",\"tyreWear\":[")
+              .append(String.format("%.1f,%.1f,%.1f,%.1f", c.tyresWear[0], c.tyresWear[1], c.tyresWear[2], c.tyresWear[3]))
+              .append("],\"brakeTemp\":[")
+              .append(c.brakesTemperature[0]).append(',').append(c.brakesTemperature[1]).append(',')
+              .append(c.brakesTemperature[2]).append(',').append(c.brakesTemperature[3])
+              .append("],\"tyreSurfTemp\":[")
+              .append(c.tyresSurfaceTemperature[0]).append(',').append(c.tyresSurfaceTemperature[1]).append(',')
+              .append(c.tyresSurfaceTemperature[2]).append(',').append(c.tyresSurfaceTemperature[3])
+              .append("],\"tyreInnerTemp\":[")
+              .append(c.tyresInnerTemperature[0]).append(',').append(c.tyresInnerTemperature[1]).append(',')
+              .append(c.tyresInnerTemperature[2]).append(',').append(c.tyresInnerTemperature[3])
+              .append("],\"pen\":").append(c.penalties)
+              .append(",\"unservedDT\":").append(c.numUnservedDriveThroughPens)
+              .append(",\"unservedSG\":").append(c.numUnservedStopGoPens)
+              .append(",\"warnings\":").append(c.totalWarnings)
               .append(",\"name\":\"").append(escapeJson(c.driverName))
               .append("\",\"ai\":").append(c.aiControlled)
               .append(",\"resultStatus\":").append(c.resultStatus)
@@ -193,7 +249,25 @@ public class RaceState {
               .append('}');
         }
 
-        sb.append("]}");
+        sb.append(']');
+
+        // Weather forecast
+        if (weatherForecast != null && numWeatherForecastSamples > 0) {
+            sb.append(",\"forecast\":[");
+            for (int i = 0; i < numWeatherForecastSamples; i++) {
+                if (i > 0) sb.append(',');
+                var f = weatherForecast[i];
+                sb.append("{\"offset\":").append(f.timeOffset)
+                  .append(",\"weather\":").append(f.weather)
+                  .append(",\"trackTemp\":").append(f.trackTemperature)
+                  .append(",\"airTemp\":").append(f.airTemperature)
+                  .append(",\"rain\":").append(f.rainPercentage)
+                  .append('}');
+            }
+            sb.append(']');
+        }
+
+        sb.append('}');
         return sb.toString();
     }
 
@@ -233,6 +307,19 @@ public class RaceState {
             cars[i].frontWingDamage = 0;
             cars[i].floorDamage = 0;
             cars[i].engineDamage = 0;
+            cars[i].rearWingDamage = 0;
+            cars[i].sidepodDamage = 0;
+            cars[i].gearBoxDamage = 0;
+            cars[i].diffuserDamage = 0;
+            cars[i].tyresWear = new float[]{15.0f + i, 14.0f + i, 12.0f + i, 13.0f + i};
+            cars[i].brakesTemperature = new int[]{350 + i * 5, 340 + i * 5, 300 + i * 5, 310 + i * 5};
+            cars[i].tyresSurfaceTemperature = new int[]{95 + i, 96 + i, 90 + i, 91 + i};
+            cars[i].tyresInnerTemperature = new int[]{100 + i, 101 + i, 95 + i, 96 + i};
+            cars[i].penalties = 0;
+            cars[i].numUnservedDriveThroughPens = 0;
+            cars[i].numUnservedStopGoPens = 0;
+            cars[i].totalWarnings = 0;
+            cars[i].cornerCuttingWarnings = 0;
             cars[i].driverName = names[i];
             cars[i].aiControlled = i > 0;
             cars[i].resultStatus = 2; // active

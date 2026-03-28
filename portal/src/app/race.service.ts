@@ -17,9 +17,29 @@ export interface CarSnapshot {
   fwDmg?: number;
   flDmg?: number;
   engDmg?: number;
+  rwDmg?: number;
+  spDmg?: number;
+  gbDmg?: number;
+  diffDmg?: number;
+  tyreWear?: number[];
+  brakeTemp?: number[];
+  tyreSurfTemp?: number[];
+  tyreInnerTemp?: number[];
+  pen?: number;
+  unservedDT?: number;
+  unservedSG?: number;
+  warnings?: number;
   resultStatus?: number;
   lapDist?: number;
   teamId?: number;
+}
+
+export interface WeatherForecastSample {
+  offset: number;
+  weather: number;
+  trackTemp: number;
+  airTemp: number;
+  rain: number;
 }
 
 export interface SimulationCarResult {
@@ -43,7 +63,14 @@ export interface SimulationResult {
 }
 
 export interface RaceMessage {
-  type: 'state' | 'sessionStarted' | 'sessionEnded' | 'event' | 'simulationResult' | 'calibrationComplete' | 'calibrationFailed';
+  type:
+    | 'state'
+    | 'sessionStarted'
+    | 'sessionEnded'
+    | 'event'
+    | 'simulationResult'
+    | 'calibrationComplete'
+    | 'calibrationFailed';
   sessionUid?: string;
   trackId?: number;
   totalLaps?: number;
@@ -55,9 +82,14 @@ export interface RaceMessage {
   safetyCarStatus?: number;
   trackLength?: number;
   cars?: CarSnapshot[];
+  forecast?: WeatherForecastSample[];
   // event fields
   event?: string;
   carIndex?: number;
+  penaltyType?: number;
+  infringementType?: number;
+  time?: number;
+  lap?: number;
   details?: Record<string, unknown>;
   // simulation result fields
   jobId?: string;
@@ -70,6 +102,6 @@ export interface RaceMessage {
 @Injectable({ providedIn: 'root' })
 export class RaceService {
   readonly race$ = webSocket<RaceMessage>(
-    `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/race`
+    `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/race`,
   );
 }
