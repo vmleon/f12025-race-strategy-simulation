@@ -18,6 +18,8 @@ export interface CarSnapshot {
   flDmg?: number;
   engDmg?: number;
   resultStatus?: number;
+  lapDist?: number;
+  teamId?: number;
 }
 
 export interface SimulationCarResult {
@@ -51,6 +53,7 @@ export interface RaceMessage {
   trackTemp?: number;
   airTemp?: number;
   safetyCarStatus?: number;
+  trackLength?: number;
   cars?: CarSnapshot[];
   // event fields
   event?: string;

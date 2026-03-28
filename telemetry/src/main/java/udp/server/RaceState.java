@@ -20,6 +20,7 @@ public class RaceState {
     private int airTemp;
     private int safetyCarStatus;
     private int totalLaps;
+    private int trackLength;
 
     // Per-car state
     private final CarState[] cars = new CarState[NUM_CARS];
@@ -54,6 +55,8 @@ public class RaceState {
         String driverName = "";
         boolean aiControlled = true;
         int resultStatus;
+        float lapDistance;
+        int teamId;
     }
 
     public synchronized void updateFromSession(long sessionUid, SessionData session) {
@@ -64,6 +67,7 @@ public class RaceState {
         this.airTemp = session.airTemperature;
         this.safetyCarStatus = session.safetyCarStatus;
         this.totalLaps = session.totalLaps;
+        this.trackLength = session.trackLength;
         this.sessionActive = true;
     }
 
@@ -79,6 +83,7 @@ public class RaceState {
             cars[i].pitStatus = lap.pitStatus;
             cars[i].numPitStops = lap.numPitStops;
             cars[i].resultStatus = lap.resultStatus;
+            cars[i].lapDistance = lap.lapDistance;
         }
     }
 
@@ -102,6 +107,7 @@ public class RaceState {
         for (int i = 0; i < Math.min(participants.length, NUM_CARS); i++) {
             cars[i].driverName = participants[i].name;
             cars[i].aiControlled = participants[i].aiControlled == 1;
+            cars[i].teamId = participants[i].teamId;
         }
     }
 
@@ -158,6 +164,7 @@ public class RaceState {
           .append(",\"trackTemp\":").append(trackTemp)
           .append(",\"airTemp\":").append(airTemp)
           .append(",\"safetyCarStatus\":").append(safetyCarStatus)
+          .append(",\"trackLength\":").append(trackLength)
           .append(",\"cars\":[");
 
         for (int i = 0; i < NUM_CARS; i++) {
@@ -181,6 +188,8 @@ public class RaceState {
               .append(",\"name\":\"").append(escapeJson(c.driverName))
               .append("\",\"ai\":").append(c.aiControlled)
               .append(",\"resultStatus\":").append(c.resultStatus)
+              .append(",\"lapDist\":").append(String.format("%.1f", c.lapDistance))
+              .append(",\"teamId\":").append(c.teamId)
               .append('}');
         }
 
@@ -199,9 +208,11 @@ public class RaceState {
         this.airTemp = 24;
         this.safetyCarStatus = 0;
         this.totalLaps = 50;
+        this.trackLength = 5303;
         this.sessionActive = true;
 
         String[] compounds = {"S", "M", "H", "S", "M"};
+        int[] teams = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1};
         String[] names = {"Player", "Verstappen", "Hamilton", "Leclerc", "Norris",
                           "Sainz", "Russell", "Piastri", "Alonso", "Stroll",
                           "Gasly", "Ocon", "Albon", "Sargeant", "Bottas",
@@ -225,6 +236,8 @@ public class RaceState {
             cars[i].driverName = names[i];
             cars[i].aiControlled = i > 0;
             cars[i].resultStatus = 2; // active
+            cars[i].lapDistance = (float) (5303.0 * i / NUM_CARS);
+            cars[i].teamId = teams[i];
         }
     }
 

@@ -4,10 +4,11 @@ import { RaceService, CarSnapshot, RaceMessage } from '../race.service';
 import { SessionService, ActiveSessionDto } from '../session.service';
 import { trackName } from '../track-names';
 import { DecimalPipe } from '@angular/common';
+import { CircuitMapComponent } from './circuit-map/circuit-map.component';
 
 @Component({
   selector: 'app-race',
-  imports: [DecimalPipe],
+  imports: [DecimalPipe, CircuitMapComponent],
   template: `
     <div class="race-header">
       <h2>Live Race</h2>
@@ -40,6 +41,13 @@ import { DecimalPipe } from '@angular/common';
     </div>
 
     @if (cars().length > 0) {
+      <div class="race-content">
+      <app-circuit-map
+        [cars]="cars()"
+        [trackLength]="trackLength()"
+        [safetyCarStatus]="safetyCarStatus()"
+        [yellowSector]="yellowSector()"
+      />
       <table class="race-table">
         <thead>
           <tr>
@@ -78,6 +86,7 @@ import { DecimalPipe } from '@angular/common';
           }
         </tbody>
       </table>
+      </div>
     } @else {
       <p class="empty">No live session. Start the game and telemetry server to see data here.</p>
     }
@@ -125,7 +134,9 @@ import { DecimalPipe } from '@angular/common';
       border: 1px solid #555;
     }
 
-    .race-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .race-content { display: flex; gap: 1.5rem; align-items: flex-start; }
+    .race-content app-circuit-map { flex-shrink: 0; }
+    .race-table { flex: 1; min-width: 0; width: 100%; border-collapse: collapse; font-size: 0.9rem; }
     .race-table th {
       text-align: left;
       padding: 0.4rem 0.6rem;
@@ -163,6 +174,8 @@ export class RaceComponent implements OnInit, OnDestroy {
   currentLap = signal(0);
   weather = signal<number | null>(null);
   safetyCarStatus = signal<number | null>(null);
+  trackLength = signal(0);
+  yellowSector = signal<number | null>(null);
   cars = signal<CarSnapshot[]>([]);
   events = signal<RaceMessage[]>([]);
 
@@ -261,6 +274,8 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.currentLap.set(0);
     this.weather.set(null);
     this.safetyCarStatus.set(null);
+    this.trackLength.set(0);
+    this.yellowSector.set(null);
   }
 
   private onMessage(msg: RaceMessage) {
@@ -277,6 +292,7 @@ export class RaceComponent implements OnInit, OnDestroy {
         if (msg.currentLap != null) this.currentLap.set(msg.currentLap);
         if (msg.weather != null) this.weather.set(msg.weather);
         if (msg.safetyCarStatus != null) this.safetyCarStatus.set(msg.safetyCarStatus);
+        if (msg.trackLength != null) this.trackLength.set(msg.trackLength);
         if (msg.cars) {
           this.cars.set([...msg.cars].sort((a, b) => a.pos - b.pos));
         }
