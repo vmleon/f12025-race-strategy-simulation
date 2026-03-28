@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """CLI for managing the F1 Strategy local development environment."""
 
+import datetime
 import os
 import secrets
 import shutil
 import subprocess
 import sys
 import time
+from decimal import Decimal
 
 import click
 from dotenv import load_dotenv, set_key
@@ -24,6 +26,23 @@ LIQUIBASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "databa
 GRANT_SCRIPT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "database", "scripts", "local_pdb_grant.sql"
 )
+BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database", "backups")
+
+_EXPORT_TABLES = [
+    ("sessions", ["session_uid"]),
+    ("participants", ["session_uid", "car_index"]),
+    ("sector_snapshots", ["session_uid", "car_index", "lap_number", "sector_number"]),
+    ("session_events", ["event_id"]),
+    ("tyre_sets", ["session_uid", "car_index", "set_index"]),
+    ("final_classifications", ["session_uid", "car_index"]),
+    ("calibration_coefficients", ["coefficient_id"]),
+    ("driver_ratings", ["driver_name", "track_id"]),
+]
+
+_SEQUENCES = [
+    ("seq_session_events", "session_events", "event_id"),
+    ("seq_calibration_coefficients", "calibration_coefficients", "coefficient_id"),
+]
 
 
 def _check_command(name):
@@ -61,6 +80,28 @@ def _container_running():
 def _get_password():
     load_dotenv(ENV_FILE)
     return os.environ.get("LOCAL_DB_PASSWORD", "")
+
+
+def _format_sql_value(val):
+    """Format a Python value as an Oracle SQL literal."""
+    if val is None:
+        return "NULL"
+    if isinstance(val, (int, float, Decimal)):
+        return str(val)
+    if isinstance(val, datetime.datetime):
+        s = val.strftime("%Y-%m-%d %H:%M:%S")
+        if val.microsecond:
+            return f"TO_TIMESTAMP('{s}.{val.microsecond:06d}', 'YYYY-MM-DD HH24:MI:SS.FF6')"
+        return f"TO_TIMESTAMP('{s}', 'YYYY-MM-DD HH24:MI:SS')"
+    escaped = str(val).replace("'", "''")
+    return f"'{escaped}'"
+
+
+def _db_connect(password):
+    """Connect to the local Oracle database via oracledb thin driver."""
+    import oracledb
+
+    return oracledb.connect(user="pdbadmin", password=password, dsn="localhost:1521/FREEPDB1")
 
 
 @click.group()
@@ -189,6 +230,118 @@ def status():
         ))
     else:
         console.print(f"[yellow]Container '{CONTAINER_NAME}' exists but is not running.[/yellow]")
+
+
+@local.command(name="export")
+def export_cmd():
+    """Export all session and calibration data to a SQL backup file."""
+    password = _get_password()
+    if not password:
+        console.print("[red]Error:[/red] No password in .env. Is the database set up?")
+        sys.exit(1)
+    if not _container_running():
+        console.print("[red]Error:[/red] Database container is not running.")
+        sys.exit(1)
+
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = os.path.join(BACKUP_DIR, f"export_{timestamp}.sql")
+
+    console.print("[bold]Connecting to database...[/bold]")
+    conn = _db_connect(password)
+    cursor = conn.cursor()
+
+    total_rows = 0
+    with open(backup_path, "w") as f:
+        f.write(f"-- F1 Strategy Database Export\n")
+        f.write(f"-- Date: {datetime.datetime.now().isoformat()}\n\n")
+        f.write("SET DEFINE OFF\n\n")
+
+        for table_name, pk_cols in _EXPORT_TABLES:
+            cursor.execute(f"SELECT * FROM {table_name}")
+            columns = [col[0].lower() for col in cursor.description]
+            rows = cursor.fetchall()
+
+            f.write(f"-- Table: {table_name} ({len(rows)} rows)\n")
+            console.print(f"  {table_name}: {len(rows)} rows")
+
+            for row in rows:
+                select_parts = ", ".join(
+                    f"{_format_sql_value(v)} AS {c}" for c, v in zip(columns, row)
+                )
+                on_clause = " AND ".join(f"t.{c} = s.{c}" for c in pk_cols)
+                insert_cols = ", ".join(columns)
+                insert_vals = ", ".join(f"s.{c}" for c in columns)
+
+                f.write(
+                    f"MERGE INTO {table_name} t "
+                    f"USING (SELECT {select_parts} FROM dual) s "
+                    f"ON ({on_clause}) "
+                    f"WHEN NOT MATCHED THEN INSERT ({insert_cols}) "
+                    f"VALUES ({insert_vals});\n"
+                )
+
+            f.write("COMMIT;\n\n")
+            total_rows += len(rows)
+
+        # Sequence reset
+        f.write("-- Reset sequences\n")
+        for seq_name, table_name, column_name in _SEQUENCES:
+            f.write(f"DECLARE\n  v_max NUMBER;\nBEGIN\n")
+            f.write(f"  SELECT NVL(MAX({column_name}), 0) + 1 INTO v_max FROM {table_name};\n")
+            f.write(
+                f"  EXECUTE IMMEDIATE "
+                f"'ALTER SEQUENCE {seq_name} RESTART START WITH ' || v_max;\n"
+            )
+            f.write("END;\n/\n\n")
+
+        f.write("COMMIT;\nEXIT;\n")
+
+    conn.close()
+    console.print(f"\n[green]Export complete:[/green] {backup_path} ({total_rows} total rows)")
+
+
+@local.command(name="import")
+@click.argument("backup_file", required=False)
+def import_cmd(backup_file):
+    """Import data from a backup file. Defaults to the latest backup."""
+    password = _get_password()
+    if not password:
+        console.print("[red]Error:[/red] No password in .env. Is the database set up?")
+        sys.exit(1)
+    if not _container_running():
+        console.print("[red]Error:[/red] Database container is not running.")
+        sys.exit(1)
+
+    if backup_file is None:
+        if not os.path.isdir(BACKUP_DIR):
+            console.print("[red]Error:[/red] No backups directory found.")
+            sys.exit(1)
+        backups = sorted(
+            f for f in os.listdir(BACKUP_DIR)
+            if f.startswith("export_") and f.endswith(".sql")
+        )
+        if not backups:
+            console.print("[red]Error:[/red] No backup files found in database/backups/.")
+            sys.exit(1)
+        backup_file = os.path.join(BACKUP_DIR, backups[-1])
+
+    if not os.path.isfile(backup_file):
+        console.print(f"[red]Error:[/red] File not found: {backup_file}")
+        sys.exit(1)
+
+    console.print(f"[bold]Importing from:[/bold] {os.path.basename(backup_file)}")
+
+    with open(backup_file) as f:
+        sql = f.read()
+
+    _run(
+        ["podman", "exec", "-i", CONTAINER_NAME,
+         "sqlplus", "-s", f"pdbadmin/{password}@FREEPDB1"],
+        input=sql,
+    )
+
+    console.print("[green]Import complete.[/green]")
 
 
 if __name__ == "__main__":

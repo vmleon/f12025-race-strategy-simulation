@@ -29,6 +29,7 @@ xcuserdata/
 
 # Database
 database/db_data/
+database/backups/*.sql
 
 # Python
 __pycache__/
