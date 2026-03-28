@@ -1,6 +1,12 @@
 import { Component, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { Subscription, interval } from 'rxjs';
-import { RaceService, CarSnapshot, RaceMessage, WeatherForecastSample } from '../race.service';
+import {
+  RaceService,
+  CarSnapshot,
+  RaceMessage,
+  WeatherForecastSample,
+  SimulationCarResult,
+} from '../race.service';
 import { SessionService, ActiveSessionDto } from '../session.service';
 import { trackName } from '../track-names';
 import { DecimalPipe } from '@angular/common';
@@ -9,6 +15,7 @@ import { PenaltiesPanelComponent } from './penalties-panel/penalties-panel.compo
 import { DamagePanelComponent } from './damage-panel/damage-panel.component';
 import { TyresPanelComponent } from './tyres-panel/tyres-panel.component';
 import { WeatherPanelComponent } from './weather-panel/weather-panel.component';
+import { StrategyWidgetComponent } from './strategy-widget/strategy-widget.component';
 
 @Component({
   selector: 'app-race',
@@ -19,6 +26,7 @@ import { WeatherPanelComponent } from './weather-panel/weather-panel.component';
     DamagePanelComponent,
     TyresPanelComponent,
     WeatherPanelComponent,
+    StrategyWidgetComponent,
   ],
   template: `
     <div class="race-header">
@@ -126,6 +134,14 @@ import { WeatherPanelComponent } from './weather-panel/weather-panel.component';
           <app-tyres-panel [car]="playerCar()" />
           <app-damage-panel [car]="playerCar()" />
           <app-penalties-panel [car]="playerCar()" [events]="penaltyEvents()" />
+          <app-strategy-widget
+            [playerResult]="simPlayerResult()"
+            [iterations]="simIterations()"
+            [converged]="simConverged()"
+            [simulating]="simulating()"
+            [lastUpdated]="simLastUpdated()"
+            [playerTyre]="playerCar()?.tyre ?? null"
+          />
         </div>
       </div>
     } @else {
@@ -322,6 +338,12 @@ export class RaceComponent implements OnInit, OnDestroy {
   activeSessions = signal<ActiveSessionDto[]>([]);
   selectedSessionUid = signal<string | null>(null);
 
+  simPlayerResult = signal<SimulationCarResult | null>(null);
+  simIterations = signal(0);
+  simConverged = signal(false);
+  simulating = signal(false);
+  simLastUpdated = signal<string | null>(null);
+
   playerCar = computed(() => this.cars().find((c) => !c.ai) ?? null);
   penaltyEvents = computed(() => this.events().filter((e) => e.event === 'PENA'));
 
@@ -421,6 +443,11 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.trackLength.set(0);
     this.yellowSector.set(null);
     this.forecast.set([]);
+    this.simPlayerResult.set(null);
+    this.simIterations.set(0);
+    this.simConverged.set(false);
+    this.simulating.set(false);
+    this.simLastUpdated.set(null);
   }
 
   private onMessage(msg: RaceMessage) {
@@ -466,6 +493,21 @@ export class RaceComponent implements OnInit, OnDestroy {
         break;
       case 'event':
         this.events.update((evs) => [msg, ...evs].slice(0, 10));
+        break;
+      case 'simulationResult':
+        if (msg.result) {
+          const player = this.playerCar();
+          const playerIdx = player?.idx;
+          const playerSimResult =
+            playerIdx != null
+              ? msg.result.cars.find((c) => c.carIndex === playerIdx)
+              : msg.result.cars[0];
+          this.simPlayerResult.set(playerSimResult ?? null);
+          this.simIterations.set(msg.result.iterations);
+          this.simConverged.set(msg.result.converged);
+          this.simulating.set(false);
+          this.simLastUpdated.set(new Date().toLocaleTimeString());
+        }
         break;
     }
   }
