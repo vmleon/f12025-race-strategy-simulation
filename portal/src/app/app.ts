@@ -14,6 +14,7 @@ import { HealthService } from './health.service';
         <a routerLink="/strategy" routerLinkActive="active">Strategy</a>
         <a routerLink="/calibration" routerLinkActive="active">Calibration</a>
         <a routerLink="/sessions" routerLinkActive="active">Sessions</a>
+        <a routerLink="/drivers" routerLinkActive="active">Drivers</a>
       </nav>
       <span class="status" [class.up]="healthUp()" [class.down]="!healthUp()">
         {{ healthUp() ? 'Backend UP' : 'Backend DOWN' }}
