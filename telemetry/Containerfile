@@ -1,0 +1,5 @@
+FROM eclipse-temurin:23-jre
+WORKDIR /app
+COPY build/install/telemetry/ ./
+EXPOSE 20777/udp
+ENTRYPOINT ["./bin/telemetry"]
