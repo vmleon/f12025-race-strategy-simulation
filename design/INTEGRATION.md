@@ -8,11 +8,11 @@
 │  Game       │   20Hz     │  (Plain Java)│  writes   │   26ai       │
 └─────────────┘            └──────┬──────┘           └──────┬───────┘
                                   │ TCP push                │ JDBC reads
-                                  │ JSON-lines ~1Hz         │
+                                  │ JSON-lines ~1Hz         │ TxEventQ queues
                                   ▼                         │
                            ┌─────────────┐                  │
                   ┌───────→│  Backend    │←─────────────────┘
-                  │        │  (Spring Boot)
+                  │        │  (Spring Boot)│
                   │        └──────┬──────┘
                   │               │ WebSocket
                   │               ▼
@@ -23,8 +23,8 @@
                   │
            ┌──────┴──────┐
            │  Simulator  │←── reads coefficients from DB
-           │  (Plain Java)│──→ writes results to DB
-           └─────────────┘
+           │  (Python)   │←── dequeues SIMULATION_REQUEST (TxEventQ)
+           └─────────────┘──→ enqueues SIMULATION_RESULT (TxEventQ)
 ```
 
 ## 1. Telemetry → Database (JDBC, direct write)
@@ -85,25 +85,27 @@ Two channels serving different purposes:
   - `GET /api/driver-ratings` — driver skill ratings (for outlier detection cold start)
   - `PUT /api/driver-ratings/{name}` — update a driver's skill rating
 
-## 5. Calibration Trigger
+## 5. Calibration Trigger (via TxEventQ)
 
 Calibration is a batch process that refits model coefficients from accumulated historical data. It runs in the backend process.
 
-- **Trigger:** Automatic, fired when the backend receives a `sessionEnded` event via the TCP stream
-- **Flow:** `sessionEnded` event arrives on TCP → backend fires calibration as an async task → calibration reads `sector_snapshots` (filtered, `outlier = 0`) from Oracle → fits coefficients → writes to `calibration_coefficients` table
-- **Manual fallback:** `POST /api/calibration/run?trackId={id}` — portal can trigger a manual recalibration for a specific track
+- **Trigger:** Automatic, fired when a session ends. `SessionStateHolder` enqueues to `CALIBRATION_REQUEST` via `QueueService`
+- **Flow:** `sessionEnded` → `CALIBRATION_REQUEST` enqueued → `CalibrationQueueConsumer` dequeues → `CalibrationService.triggerCalibration()` → subprocess runs calibration pipeline → reads `sector_snapshots` from Oracle → fits coefficients → writes to `calibration_coefficients` table → WebSocket broadcast
+- **Manual fallback:** `POST /api/calibration/run?trackId={id}` → enqueues to `CALIBRATION_REQUEST` → returns `202 Accepted`
+- **Session lifecycle:** `TelemetryTcpServer` also enqueues session start/end events to `SESSION_LIFECYCLE` (multi-consumer queue) for future consumers
 - **Scope:** Recalibrates all knobs for the track of the just-completed session, both PLAYER and AI regimes
 - **Duration:** Seconds for early data volumes; the async task prevents blocking the main thread
 
-## 6. Simulation Trigger
+## 6. Simulation Trigger (via TxEventQ)
 
-Simulation runs are requested by the user through the portal.
+Simulations are triggered automatically during live races (lap completions, pit stops, safety car changes) and manually via the portal.
 
-- **Trigger:** User clicks "Run Simulation" in the portal → `POST /api/simulation/run` with parameters (track, strategy options, iteration count)
-- **Flow:** Portal → REST → Backend validates request → Backend invokes simulator → Simulator reads `calibration_coefficients` + current race state from DB → runs Monte Carlo iterations → writes results to DB → Backend returns result ID
-- **Simulator invocation:** The simulator is a separate module but invoked in-process by the backend (direct Java method call, not a subprocess). The backend includes the simulator module as a Gradle dependency
-- **Results:** Stored in the database (a future `simulation_results` table, defined when todo 14 is implemented). Portal fetches results via `GET /api/simulation/{id}/results`
-- **Live re-simulation:** During a live race, the portal can trigger re-simulation with updated race state. Debounced to at most once per lap to avoid overload
+- **Automatic trigger:** `SimulationOrchestrator` detects trigger conditions from the TCP state stream, debounces (3s), assembles a `RaceSnapshot`, and enqueues to `SIMULATION_REQUEST` via `QueueService`
+- **Manual trigger:** Portal → `POST /api/simulation/run` or `/api/simulation/trigger` → Backend enqueues to `SIMULATION_REQUEST` → returns `202 Accepted` with jobId
+- **Flow:** `SIMULATION_REQUEST` queue → Python simulator worker dequeues → loads calibration coefficients → `MonteCarloEngine.simulate()` → enqueues result to `SIMULATION_RESULT` → `SimulationResultConsumer` (Java) dequeues → updates job store → broadcasts via WebSocket
+- **Simulator:** Python FastAPI service (port 8081). REST endpoints remain available for direct use and testing. A background daemon thread polls the queue when `SIMULATOR_USE_DB=true`
+- **Results:** Cached in-memory in `SimulationOrchestrator` (up to 50 jobs). Portal fetches via `GET /api/simulation/results/{jobId}`
+- **Live re-simulation:** Debounced to at most once per 3 seconds to avoid flooding the queue
 
 ## 7. Shared Database
 
@@ -114,8 +116,8 @@ All components that access the database connect to the same Oracle AI Database 2
 - **Connection config per component:**
   - `telemetry/config.properties` — JDBC URL, username, password
   - `backend/src/main/resources/application.properties` — Spring datasource config (same DB, same schema)
-  - Simulator reads via the backend's connection (invoked in-process)
-- **Concurrent access:** Telemetry writes continuously; backend reads on demand; calibration reads/writes after sessions. No write conflicts — telemetry owns data ingestion, calibration owns coefficient updates, simulation results are written by the backend/simulator
+  - `simulator/db.py` — oracledb pool config (same DB, same schema)
+- **Concurrent access:** Telemetry writes continuously; backend reads on demand; calibration reads/writes after sessions; simulator reads coefficients and communicates via TxEventQ queues. No write conflicts — telemetry owns data ingestion, calibration owns coefficient updates
 - **Schema ownership:** A single DB user owns all tables. No per-component users for the POC
 
 ## 8. Build Independence & Interface Versioning
@@ -149,4 +151,6 @@ Both telemetry and backend connect to the same Oracle schema (section 7 above). 
 | Backend | Oracle DB | JDBC | Backend ↔ DB | SQL | On demand |
 | Backend | Portal | WebSocket | Backend → Portal | JSON | ~1Hz (live) |
 | Portal | Backend | HTTP REST | Portal → Backend | JSON | On demand |
-| Backend | Simulator | In-process | Backend → Simulator | Java method call | On demand |
+| Backend | Simulator | TxEventQ | Backend → DB → Simulator | JSON (queue) | On trigger |
+| Simulator | Backend | TxEventQ | Simulator → DB → Backend | JSON (queue) | On completion |
+| Backend | Calibration | TxEventQ | Backend → DB → Consumer | JSON (queue) | On session end |

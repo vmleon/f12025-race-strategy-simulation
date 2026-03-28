@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 
 from simulator.coefficients import Coefficients
-from simulator.db import close_pool, load_coefficients_for_track
+from simulator.db import close_pool, get_pool, load_coefficients_for_track
 from simulator.engine import MonteCarloEngine
 from simulator.models import (
     RaceSnapshot,
@@ -20,9 +21,27 @@ from simulator.strategy import StrategyEvaluator
 logger = logging.getLogger("simulator")
 
 
+_shutdown_event = threading.Event()
+_worker_thread: threading.Thread | None = None
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    global _worker_thread
+    if _use_db:
+        from simulator.worker import run_worker
+
+        _worker_thread = threading.Thread(
+            target=run_worker,
+            args=(get_pool(), _shutdown_event),
+            name="queue-worker",
+            daemon=True,
+        )
+        _worker_thread.start()
     yield
+    _shutdown_event.set()
+    if _worker_thread is not None:
+        _worker_thread.join(timeout=10)
     close_pool()
 
 
