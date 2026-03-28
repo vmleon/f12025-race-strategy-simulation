@@ -27,6 +27,7 @@ class DbReaderTest {
                 110,
                 45.5, 2.3, 1,
                 0, 28, 22,
+                10,
                 0, 0, 0);
         assertEquals(123456L, row.sessionUid());
         assertEquals(28500, row.sectorTimeMs());

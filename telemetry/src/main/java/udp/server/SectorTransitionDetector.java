@@ -219,6 +219,7 @@ public class SectorTransitionDetector {
                 session != null ? session.trackTemperature : 0,
                 session != null ? session.airTemperature : 0,
                 session != null ? session.safetyCarStatus : 0,
+                session != null ? session.sessionType : 0,
                 recovered,
                 frameIdentifier
         );

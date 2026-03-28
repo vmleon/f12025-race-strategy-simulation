@@ -197,6 +197,9 @@ CREATE TABLE sector_snapshots (
     air_temp             NUMBER(3),
     safety_car_status    NUMBER(1),
 
+    -- Session type (denormalized from sessions for calibration filtering)
+    session_type         NUMBER(2)     NOT NULL,
+
     -- Data quality
     recovered            NUMBER(1)     DEFAULT 0 NOT NULL,
         -- 0 = primary capture (sector transition detected)

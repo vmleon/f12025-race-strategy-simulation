@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-01-session-type-column
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE sector_snapshots ADD (
+                  session_type  NUMBER(2)  NOT NULL
+              )

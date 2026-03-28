@@ -52,6 +52,7 @@ class DbWriterTest {
                 45.5, 2.3, 1,
                 1, 100.0,
                 0, 28, 22, 0,
+                10,
                 0, 500L);
         assertEquals(123456L, ss.sessionUid());
         assertEquals(5, ss.lapNumber());

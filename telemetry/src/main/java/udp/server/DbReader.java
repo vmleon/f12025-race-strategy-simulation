@@ -39,6 +39,7 @@ public class DbReader {
             int engineTemp,
             double fuelInTankKg, double fuelRemainingLaps, int ersDeployMode,
             int weather, int trackTemp, int airTemp,
+            int sessionType,
             int recovered, int outlier, int aiControlled) {}
 
     public List<SectorSnapshotRow> getSectorSnapshots(Connection conn, long sessionUid, int aiControlled) throws SQLException {
@@ -73,6 +74,7 @@ public class DbReader {
                             rs.getDouble("fuel_in_tank_kg"), rs.getDouble("fuel_remaining_laps"),
                             rs.getInt("ers_deploy_mode"),
                             rs.getInt("weather"), rs.getInt("track_temp"), rs.getInt("air_temp"),
+                            rs.getInt("session_type"),
                             rs.getInt("recovered"), rs.getInt("outlier"),
                             rs.getInt("ai_controlled")));
                 }

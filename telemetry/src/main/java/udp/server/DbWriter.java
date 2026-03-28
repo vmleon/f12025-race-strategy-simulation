@@ -114,6 +114,7 @@ public class DbWriter {
                 fuel_in_tank_kg, fuel_remaining_laps, ers_deploy_mode,
                 drs_allowed, drs_activation_dist,
                 weather, track_temp, air_temp, safety_car_status,
+                session_type,
                 recovered, frame_identifier
             ) VALUES (
                 ?,?,?,?,
@@ -136,6 +137,7 @@ public class DbWriter {
                 ?,?,?,
                 ?,?,
                 ?,?,?,?,
+                ?,
                 ?,?
             )
             """;
@@ -163,6 +165,7 @@ public class DbWriter {
             double fuelInTankKg, double fuelRemainingLaps, int ersDeployMode,
             int drsAllowed, double drsActivationDist,
             int weather, int trackTemp, int airTemp, int safetyCarStatus,
+            int sessionType,
             int recovered, long frameIdentifier) {}
 
     public void insertSectorSnapshots(Connection conn, List<SectorSnapshot> snapshots) throws SQLException {
@@ -236,6 +239,7 @@ public class DbWriter {
                 ps.setInt(i++, s.trackTemp);
                 ps.setInt(i++, s.airTemp);
                 ps.setInt(i++, s.safetyCarStatus);
+                ps.setInt(i++, s.sessionType);
                 ps.setInt(i++, s.recovered);
                 ps.setLong(i, s.frameIdentifier);
                 ps.addBatch();
