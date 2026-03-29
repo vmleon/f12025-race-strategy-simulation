@@ -2,7 +2,7 @@
 
 ## What This Project Does
 
-This system ingests real-time telemetry from the EA Sports F1 2025 video game, fits statistical models to the observed data, and runs Monte Carlo simulations to predict race outcomes under different pit stop strategies. The output is a probability distribution of finishing positions for each car — the kind of analysis a real F1 strategy team would produce, applied to a game environment where the underlying physics model is unknown and must be reverse-engineered from data.
+This system ingests real-time telemetry from the EA Sports F1 2025 video game, fits statistical models to the observed data, and runs Monte Carlo simulations ([Metropolis & Ulam, 1949](10-REFERENCES.md#metropolis1949)) to predict race outcomes under different pit stop strategies. The output is a probability distribution of finishing positions for each car — the kind of analysis a real F1 strategy team would produce ([Brawn & Parr, 2016](10-REFERENCES.md#brawn2016)), applied to a game environment where the underlying physics model is unknown and must be reverse-engineered from data.
 
 A native iOS app delivers the simulation results as spoken race engineer messages during the race, turning the predictions into actionable radio calls ("Box this lap, switch to hards, you'll gain two positions").
 
@@ -43,7 +43,7 @@ graph LR
 - **Per-sector granularity** — The simulation operates at sector level (3 per lap), not lap level. This captures DRS zones, dirty air, overtakes, and sector-specific effects that per-lap averages would lose.
 - **Dual calibration** — The game runs different physics for AI cars and the player car. All model coefficients are fitted separately for each regime.
 - **Snapshot-on-transition** — Instead of storing every UDP packet (~100/sec), the telemetry server buffers state in memory and writes only when a sector boundary is crossed (~60 rows/lap).
-- **TxEventQ decoupling** — Calibration and simulation are triggered via Oracle TxEventQ message queues, not direct REST calls. This decouples component lifecycles and provides reliable exactly-once delivery through the database.
+- **TxEventQ decoupling** — Calibration and simulation are triggered via Oracle TxEventQ message queues ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-txeventq)), not direct REST calls. This decouples component lifecycles and provides reliable exactly-once delivery through the database.
 - **Plain Java for ingestion** — The telemetry server has zero framework dependencies. A blocking UDP socket loop with Oracle JDBC is all it needs.
 
 ## How to Read This Document

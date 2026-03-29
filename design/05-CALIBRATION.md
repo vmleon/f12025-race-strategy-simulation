@@ -161,7 +161,7 @@ Approaches to decouple:
 How carrying more fuel slows the car.
 
 - **Fit from:** Sector time vs `fuelInTank`, using cross-stint comparisons to avoid multicollinearity with tyre age
-- **Form:** Linear. Real F1 is ~0.03–0.04s/kg/lap; the game may use a similar constant per track, but this must be verified empirically
+- **Form:** Linear. Real F1 is ~0.03–0.04s/kg/lap ([Wright, 2001](10-REFERENCES.md#wright2001)); the game may use a similar constant per track, but this must be verified empirically
 - **Output:** `fuel_penalty_per_kg` per sector per track
 
 ### 4. Car Damage Effects
@@ -172,7 +172,7 @@ How each damage type affects pace. Multiple sub-knobs:
 | ---------------- | ------------------------------------------ | ------------------------------------------------------------- |
 | Front wing (L/R) | Aero loss, primarily in high-speed corners | Sector time vs `frontLeftWingDamage` / `frontRightWingDamage` |
 | Rear wing        | Aero + DRS loss                            | Sector time vs `rearWingDamage`                               |
-| Floor            | Major downforce loss (ground effect)       | Sector time vs `floorDamage`                                  |
+| Floor            | Major downforce loss (ground effect) ([Mendez, 2023](10-REFERENCES.md#mendez2023)) | Sector time vs `floorDamage`                                  |
 | Diffuser         | Rear downforce loss                        | Sector time vs `diffuserDamage`                               |
 | Sidepod          | Cooling + aero                             | Sector time vs `sidepodDamage`                                |
 | Engine           | Straight-line speed loss                   | Sector time vs `engineDamage`                                 |
@@ -189,7 +189,7 @@ Time lost when following another car closely.
 - **Fit from:** Compare sector times at different `deltaToCarInFront` values vs clean-air baseline (large gap), controlling for driver, compound, tyre age, fuel
 - **Form:** Decay function — effect strongest under ~1.5s gap, diminishing with distance, negligible beyond ~3s. The actual thresholds in the game are unknown and must be fitted from data
 - **Output:** `dirty_air_time_loss(gap)` function per track
-- **Note:** The game's dirty air model may not match real F1 physics. Do not assume real-world aero knowledge transfers to the game — fit from observed data only
+- **Note:** The game's dirty air model may not match real F1 physics ([Noble & Straw, 2025](10-REFERENCES.md#therace-dirtyair)). Do not assume real-world aero knowledge transfers to the game — fit from observed data only
 
 ### 6. DRS Advantage (per track, per sector)
 
@@ -238,7 +238,7 @@ Probability that a faster car passes a slower one at a sector boundary.
   - The gap between the two cars must be below a threshold (e.g., < 3s) — positions gained due to lapping are not overtakes
   - Exclude laps where any car in the relevant positions entered or exited the pit lane
   - **Edge cases:** Undercuts (car pits, comes out ahead) are strategy-driven, not on-track overtakes. DRS trains have different dynamics. For the POC, start with simple gap + pit status filtering and revisit if overtake probability predictions are poor
-- **Form:** Logistic regression — probability as a function of multiple input variables
+- **Form:** Logistic regression ([Hosmer et al., 2013](10-REFERENCES.md#hosmer2013)) — probability as a function of multiple input variables
 - **Output:** Logistic model coefficients per sector per track
 
 ### 10. Event Probabilities
@@ -357,7 +357,7 @@ Before fitting any knob, filter the sector_snapshots dataset:
 - **Exclude lap 1** — first lap is an outlier (standing start, cold tyres, contact)
 - **Filter by game settings** — only include sessions with matching AI difficulty, damage mode, tyre wear mode
 
-### Outlier Detection (Per-Driver IQR)
+### Outlier Detection (Per-Driver IQR) ([Tukey, 1977](10-REFERENCES.md#tukey1977))
 
 After applying the hard filters above, the dataset still contains **performance anomalies** — sectors that are technically valid but statistically unusual. A driver locking up into turn 1, getting punted, or encountering unexpected traffic can produce sector times that don't trigger `currentLapInvalid` but would distort calibration coefficients if included.
 

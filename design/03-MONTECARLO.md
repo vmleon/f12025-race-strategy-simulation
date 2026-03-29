@@ -2,7 +2,7 @@
 
 ## Goal
 
-Ingest F1 25 telemetry data from live sessions and store it in an Oracle relational database. The data will feed Monte Carlo simulations that predict final race results under different strategy choices (pit stop timing, tyre compound selection).
+Ingest F1 25 telemetry data ([Electronic Arts, 2025](10-REFERENCES.md#ea2025)) from live sessions and store it in an Oracle relational database. The data will feed Monte Carlo simulations that predict final race results under different strategy choices (pit stop timing, tyre compound selection).
 
 ## Core Simulation Model
 
@@ -12,7 +12,7 @@ The simulation answers: **"Given current race state + a strategy choice, what's 
 
 For a 50-lap race with 20 cars at per-sector granularity, each Monte Carlo iteration simulates ~3,000 sector steps (50 laps × 3 sectors × 20 cars). Convergence depends on the scenario — a dominant leader converges fast (always P1), while a tight midfield needs many more iterations.
 
-**For the POC:** Start with 1,000 iterations, measure wall-clock time, and check if position distributions are stable (mean and 95% CI stop shifting by more than 0.1 positions). Scale up to 10,000 only if results are noisy. Published Monte Carlo race simulations (Heilmeier et al.) use ~10,000 iterations, but per-sector granularity is 3× more expensive than per-lap.
+**For the POC:** Start with 1,000 iterations, measure wall-clock time, and check if position distributions are stable (mean and 95% CI stop shifting by more than 0.1 positions). Scale up to 10,000 only if results are noisy. Published Monte Carlo race simulations ([Heilmeier et al., 2020](10-REFERENCES.md#heilmeier2020)) use ~10,000 iterations, but per-sector granularity is 3× more expensive than per-lap.
 
 A lap time is a function of:
 
@@ -30,7 +30,7 @@ For each remaining lap:
     For each car:
       sector_time = base_pace + tyre_deg + fuel_effect + damage_effect
                   + dirty_air + drs + residual_noise
-      where residual_noise = gauss(0, sqrt(residual_variance))
+      where residual_noise = gauss(0, sqrt(residual_variance))  # ([Rubinstein & Kroese, 2017](10-REFERENCES.md#rubinstein2017))
     Resolve interactions (overtakes, position changes)
     Update car states (tyre_age++, fuel--, DRS eligibility, gaps)
 ```
@@ -50,7 +50,7 @@ The simulation runs thousands of iterations (1,000–10,000), each producing a d
 
 To compare strategies, the simulation runs a full Monte Carlo batch for each candidate strategy independently. Each candidate defines a pit stop plan (which lap to pit, which compound to switch to). The simulation injects the candidate's pit plan for the player car while AI cars follow their own heuristic pit logic.
 
-After all candidates have been simulated, results are ranked by mean finishing position and expected championship points. Each ranked strategy includes position distribution, confidence intervals, DNF probability, and top-3 / points-finish probabilities — giving the player a complete picture of each option's risk/reward profile.
+After all candidates have been simulated, results are ranked by mean finishing position and expected championship points ([Brawn & Parr, 2016](10-REFERENCES.md#brawn2016)). Each ranked strategy includes position distribution, confidence intervals, DNF probability, and top-3 / points-finish probabilities — giving the player a complete picture of each option's risk/reward profile.
 
 The candidate strategies themselves are provided by the caller (the Backend). Strategy generation (e.g. exploring different pit windows and compound permutations) is the Backend's responsibility; the Simulator only evaluates what it receives. This separation keeps the simulation engine focused on a single concern: running Monte Carlo iterations.
 
@@ -62,7 +62,7 @@ The residual variance controls how spread out the outcomes are — tight residua
 
 ### Per-sector granularity (design choice)
 
-We simulate at per-sector granularity rather than per-lap. This is a design choice that trades higher data volume (3× more rows) for finer resolution. Published Monte Carlo race strategy simulations (e.g. Heilmeier et al., 2020) work at per-lap granularity, but per-sector lets us model effects that are sector-specific:
+We simulate at per-sector granularity rather than per-lap. This is a design choice that trades higher data volume (3× more rows) for finer resolution. Published Monte Carlo race strategy simulations (e.g. [Heilmeier et al., 2020](10-REFERENCES.md#heilmeier2020)) work at per-lap granularity, but per-sector lets us model effects that are sector-specific:
 
 - Overtakes happen in specific sectors (DRS zones, heavy braking points)
 - A position change in sector 1 changes the entire dynamic for sectors 2 and 3
@@ -282,11 +282,11 @@ The simulation cannot treat each car independently. Key interactions that affect
 
 ### Dirty Air
 
-Following a car closely reduces downforce and increases tyre degradation. The exact thresholds and magnitude of this effect in the game are unknown — the game's dirty air model is a game-engine approximation, not a physics simulation, and may not match real F1 behavior. Rather than hardcoding a fixed effect or assuming real-world aero knowledge, the simulation derives dirty air impact entirely from historical data: comparing sector times when a car has a small `deltaToCarInFront` vs clean-air sector times for the same driver/compound/tyre age. Per-sector resolution lets the simulation see "car X was stuck in dirty air through sectors 1 and 2, then passed in sector 3" — much richer than a single per-lap average. See `09-CHALLENGES.md` (Challenge 7) for open questions about fitting the dirty air curve.
+Following a car closely reduces downforce and increases tyre degradation. The exact thresholds and magnitude of this effect in the game are unknown — the game's dirty air model is a game-engine approximation, not a physics simulation, and may not match real F1 behavior. Rather than hardcoding a fixed effect or assuming real-world aero knowledge, the simulation derives dirty air impact entirely from historical data: comparing sector times when a car has a small `deltaToCarInFront` vs clean-air sector times for the same driver/compound/tyre age ([Noble & Straw, 2025](10-REFERENCES.md#therace-dirtyair)). Per-sector resolution lets the simulation see "car X was stuck in dirty air through sectors 1 and 2, then passed in sector 3" — much richer than a single per-lap average. See `09-CHALLENGES.md` (Challenge 7) for open questions about fitting the dirty air curve.
 
 ### DRS Effect
 
-Within 1 second of the car ahead at the detection point, DRS activates on the next straight. The time advantage varies significantly by track (near zero at Monaco, up to ~0.8s at Monza). We capture `drsAllowed` per car per sector. Since DRS zones exist in specific sectors, per-sector data lets us model exactly which sectors see DRS-assisted overtakes. Like dirty air, the actual DRS advantage is derived from historical sector time deltas rather than a hardcoded constant.
+Within 1 second of the car ahead at the detection point, DRS activates on the next straight ([FIA, 2025](10-REFERENCES.md#fia2025)). The time advantage varies significantly by track (near zero at Monaco, up to ~0.8s at Monza). We capture `drsAllowed` per car per sector. Since DRS zones exist in specific sectors, per-sector data lets us model exactly which sectors see DRS-assisted overtakes. Like dirty air, the actual DRS advantage is derived from historical sector time deltas rather than a hardcoded constant.
 
 ### Traffic / Slower Cars
 

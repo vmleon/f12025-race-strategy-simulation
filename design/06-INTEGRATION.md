@@ -18,7 +18,7 @@ graph TD
 
 ## 1. Telemetry → Database (JDBC, direct write)
 
-The telemetry server writes parsed UDP data directly to Oracle via JDBC + Oracle UCP connection pool. No intermediary.
+The telemetry server writes parsed UDP data directly to Oracle via JDBC + Oracle UCP connection pool ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-ucp)). No intermediary.
 
 - **Protocol:** JDBC (Oracle thin driver)
 - **Direction:** Telemetry → Oracle
@@ -76,7 +76,7 @@ Two channels serving different purposes:
 
 ## 5. Calibration Trigger (via TxEventQ)
 
-Calibration is a batch process that refits model coefficients from accumulated historical data. It runs in the backend process.
+Calibration is a batch process that refits model coefficients from accumulated historical data. It runs in the backend process, triggered via TxEventQ ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-txeventq)).
 
 - **Trigger:** Automatic, fired when a session ends. `SessionStateHolder` enqueues to `CALIBRATION_REQUEST` via `QueueService`
 - **Flow:** `sessionEnded` → `CALIBRATION_REQUEST` enqueued → `CalibrationQueueConsumer` dequeues → `CalibrationService.triggerCalibration()` → subprocess runs calibration pipeline → reads `sector_snapshots` from Oracle → fits coefficients → writes to `calibration_coefficients` table → WebSocket broadcast
@@ -92,7 +92,7 @@ Simulations are triggered automatically during live races (lap completions, pit 
 - **Automatic trigger:** `SimulationOrchestrator` detects trigger conditions from the TCP state stream, debounces (3s), assembles a `RaceSnapshot`, and enqueues to `SIMULATION_REQUEST` via `QueueService`
 - **Manual trigger:** Portal → `POST /api/simulation/run` or `/api/simulation/trigger` → Backend enqueues to `SIMULATION_REQUEST` → returns `202 Accepted` with jobId
 - **Flow:** `SIMULATION_REQUEST` queue → Python simulator worker dequeues → loads calibration coefficients → `MonteCarloEngine.simulate()` → enqueues result to `SIMULATION_RESULT` → `SimulationResultConsumer` (Java) dequeues → updates job store → broadcasts via WebSocket
-- **Simulator:** Python FastAPI service (port 8081). REST endpoints remain available for direct use and testing. A background daemon thread polls the queue when `SIMULATOR_USE_DB=true`
+- **Simulator:** Python FastAPI service ([Ramirez, 2025](10-REFERENCES.md#fastapi)) (port 8081). REST endpoints remain available for direct use and testing. A background daemon thread polls the queue when `SIMULATOR_USE_DB=true`
 - **Results:** Cached in-memory in `SimulationOrchestrator` (up to 50 jobs). Portal fetches via `GET /api/simulation/results/{jobId}`
 - **Live re-simulation:** Debounced to at most once per 3 seconds to avoid flooding the queue
 
@@ -148,7 +148,7 @@ graph TD
     Race --> Strategy["StrategyWidgetComponent"]
 ```
 
-- **Reactivity:** Angular signals (`signal()`, `computed()`) for granular state tracking. The race service exposes signals that child components bind to directly — no manual subscription management.
+- **Reactivity:** Angular signals ([Google, 2025](10-REFERENCES.md#angular-signals)) (`signal()`, `computed()`) for granular state tracking. The race service exposes signals that child components bind to directly — no manual subscription management.
 - **Session selector:** Queries `GET /api/sessions` for active sessions. Selecting a session switches the WebSocket subscription and reloads all child components with new state.
 - **Circuit map:** SVG-based rendering with a fixed viewBox. Car positions are mapped to track coordinates using sector progress. Renders DRS zones, yellow flag sectors, pit entry/exit. Team colours from a static lookup table.
 - **Strategy widget:** Displays the latest Monte Carlo simulation result — predicted finishing position with 95% confidence intervals, iteration count, convergence status. Links to the full Strategy view for detailed comparison.
@@ -185,7 +185,7 @@ graph TD
 ```
 
 - **WebSocketService:** `@Observable` for SwiftUI binding. Connection states: disconnected → connecting → connected (with reconnecting as a transient state). Exponential backoff reconnect: delay = min(2^attempt, 30) seconds, max 10 attempts. Automatically converts HTTP/HTTPS URLs to WS/WSS. Filters incoming messages by `sessionUid` to prevent cross-session contamination.
-- **SpeechService:** `AVSpeechSynthesizer` with a priority queue. IMMEDIATE-priority messages interrupt current speech; NORMAL-priority messages queue behind active speech. Audio session configured as `.playback` with `.duckOthers` (lowers game audio during speech). Voice: English (GB), rate 0.48, 0.1s inter-message delay.
+- **SpeechService:** `AVSpeechSynthesizer` ([Apple Inc., 2025](10-REFERENCES.md#apple-tts)) with a priority queue. IMMEDIATE-priority messages interrupt current speech; NORMAL-priority messages queue behind active speech. Audio session configured as `.playback` with `.duckOthers` (lowers game audio during speech). Voice: English (GB), rate 0.48, 0.1s inter-message delay.
 - **Thread safety:** `@unchecked Sendable` + `@MainActor` for safe concurrent access from WebSocket callbacks to UI state updates.
 
 ## Decision Rationale: TCP Push Architecture

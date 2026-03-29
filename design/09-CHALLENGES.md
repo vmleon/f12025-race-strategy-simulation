@@ -120,9 +120,9 @@ These involve fundamental unknowns that could reshape the entire approach. They 
 
 ### 7. Dirty Air Model: Game vs Reality (Calibration + Monte Carlo)
 
-**Problem:** `03-MONTECARLO.md` references dirty air being "most significant within ~1–1.5 seconds." This is based on real-F1 knowledge, but:
+**Problem:** `03-MONTECARLO.md` references dirty air being "most significant within ~1–1.5 seconds" ([Noble & Straw, 2025](10-REFERENCES.md#therace-dirtyair)). This is based on real-F1 knowledge, but:
 
-1. The F1 25 game's dirty air model is a game-engine approximation, not a CFD simulation. It may not match real physics at all
+1. The F1 25 game's dirty air model is a game-engine approximation, not a CFD simulation ([FIA, 2025](10-REFERENCES.md#fia2025)). It may not match real physics at all
 2. The thresholds (1.5s, 3s) and magnitude (+0.3s/sector) are guesses
 
 **What to investigate:**

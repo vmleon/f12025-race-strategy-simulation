@@ -8,12 +8,12 @@ Reference document for the virtual race engineer's communication style, derived 
 
 Real F1 race engineers share these communication traits:
 
-- **Calm and measured.** Engineers maintain a flat, professional tone even when the driver is emotional. Peter Bonnington ("Bono") during Hamilton's 2019 Monaco tyre crisis — Hamilton screaming "We're going to lose this race!" and Bono replying steadily: "Yep, loud and clear Lewis. Verstappen's been there all race."
+- **Calm and measured.** Engineers maintain a flat, professional tone even when the driver is emotional. Peter Bonnington ("Bono") during Hamilton's 2019 Monaco tyre crisis — Hamilton screaming "We're going to lose this race!" and Bono replying steadily: "Yep, loud and clear Lewis. Verstappen's been there all race." ([Saunders, 2019](10-REFERENCES.md#espn-hamilton-monaco))
 - **Concise.** Messages are typically 3–10 words. At 300+ km/h cognitive load is enormous; every word must earn its place. "Six seconds down but gaining." "Target 33.0. 33.0."
 - **Directive, not conversational.** Not "I think maybe you should consider..." but "Box, box" or "Lift and coast two seconds."
 - **Reassuring without being emotional.** "We're pretty confident on this strategy" rather than "Don't worry, it'll be fine!"
 - **Repetition for clarity.** Critical values are repeated: "Target 33.0. 33.0." and "Box, box" (never said only once).
-- **Filtered.** The engineer is a bottleneck by design. Strategy, performance engineers, and team principal all feed into the race engineer, who decides what the driver needs to hear and when.
+- **Filtered.** The engineer is a bottleneck by design ([Brawn & Parr, 2016](10-REFERENCES.md#brawn2016)). Strategy, performance engineers, and team principal all feed into the race engineer, who decides what the driver needs to hear and when.
 
 ### Delivery rules
 
@@ -221,8 +221,8 @@ When generating messages, assign one of three priority levels:
 ## Sources
 
 - Official F1 broadcast team radio clips (F1 TV, F1 YouTube)
-- [RaceFans — Team Radio Jargon Guide](https://www.racefans.net/2024/10/10/li-co-migration-and-more-a-simply-lovely-guide-to-f1s-team-radio-jargon-busted/)
-- [Motorsport.tech — Everything About F1 Radios](https://motorsport.tech/formula-1/everything-you-wanted-to-know-about-f1-radios)
+- [RaceFans — Team Radio Jargon Guide](https://www.racefans.net/2024/10/10/li-co-migration-and-more-a-simply-lovely-guide-to-f1s-team-radio-jargon-busted/) ([RaceFans, 2024](10-REFERENCES.md#racefans-jargon))
+- [Motorsport.tech — Everything About F1 Radios](https://motorsport.tech/formula-1/everything-you-wanted-to-know-about-f1-radios) ([Love, 2018](10-REFERENCES.md#motorsport-radios))
 - [Race Sundays — How F1 Drivers Communicate](https://racesundays.com/features/strategy/how-f1-drivers-communicate-with-teams-during-races)
 - [Autosport — F1 Terms Explained](https://www.autosport.com/f1/news/f1-terms-explained-what-box-marbles-drs-undercut-and-more-mean-5477591/5477591/)
 - [PlanetF1 — 10 Best 2025 Radio Messages](https://www.planetf1.com/features/10-best-radio-messages-from-the-f1-2025-championship)

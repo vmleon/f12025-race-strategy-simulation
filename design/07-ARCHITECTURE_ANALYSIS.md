@@ -58,7 +58,7 @@ Current state: ~350 lines of plain Java, only header parsing done. 0/7 DB tables
 
 **Cons:**
 - **Heavy for a UDP-only POC** — Spring Boot assumes HTTP; ingestion has zero HTTP
-- Startup overhead (~2-4s vs instant for plain Java)
+- Startup overhead (~2-4s vs instant for plain Java) ([VMware, 2025](10-REFERENCES.md#spring-boot))
 - Spring context initialization adds complexity for a simple UDP loop
 - **UDP socket management** — Spring doesn't provide UDP abstractions (Spring Integration does, but that's another layer). You'd still write raw `DatagramSocket` code inside a Spring bean
 - JPA entity mapping for 7 tables is boilerplate you don't need if raw SQL works
@@ -74,7 +74,7 @@ Current state: ~350 lines of plain Java, only header parsing done. 0/7 DB tables
 
 **What it looks like:**
 - Keep plain Java structure
-- Add **Oracle UCP** (Universal Connection Pool) for connection pooling
+- Add **Oracle UCP** ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-ucp)) (Universal Connection Pool) for connection pooling
 - Add **Oracle JDBC driver** (required regardless)
 - Use raw JDBC with prepared statements (the 7 tables are well-defined, ORM is overkill)
 - 3 independent Gradle submodules sharing a `common` module:
@@ -183,7 +183,7 @@ try (var ps = conn.prepareStatement(sql)) {
 
 ### Practical tip
 
-To avoid raw column-index errors, use a thin record + helper pattern:
+To avoid raw column-index errors, use a thin record ([Oracle Corporation, 2024](10-REFERENCES.md#java-se-23)) + helper pattern:
 
 ```java
 record SectorSnapshot(long sessionUid, int carIndex, int lapNumber, int sectorNumber, ...) {
