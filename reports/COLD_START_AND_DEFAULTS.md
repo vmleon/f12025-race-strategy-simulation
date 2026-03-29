@@ -47,7 +47,7 @@ The simulation uses wider variance when sampling from defaults (low confidence) 
 
 ## The Asymmetry: Player vs AI Data Rates
 
-The dual calibration requirement (see `DESIGN.md`) creates a severe asymmetry:
+The dual calibration requirement (see `AI_VS_PLAYER_PHYSICS.md`) creates a severe asymmetry:
 
 - **AI coefficients** accumulate data from 19 cars per session. Dirty air, DRS, and base pace converge quickly because there are many AI-vs-AI interactions every race.
 - **Player coefficients** come from 1 car per session. Tyre degradation needs multiple stints per compound. Damage effects need damage incidents involving the player car specifically.
