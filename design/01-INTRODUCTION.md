@@ -24,16 +24,18 @@ Six components work together:
 | **Portal** | Angular 21 | Live race dashboard, strategy comparison, calibration status, session browser |
 | **iOS Client** | SwiftUI | Receives race engineer messages via WebSocket, speaks them aloud with priority-based TTS |
 
-```
-F1 Game → UDP → Telemetry → Oracle DB ← Calibration (batch, post-session)
-                    ↓              ↑
-               TCP push      TxEventQ queues
-                    ↓              ↑
-                Backend ←→ Simulator (Monte Carlo)
-                    ↓
-            WebSocket push
-              ↓         ↓
-           Portal    iOS Client
+```mermaid
+graph LR
+    Game["F1 Game"] -- UDP --> Telemetry
+    Telemetry -- JDBC --> DB["Oracle DB"]
+    Telemetry -- "TCP push" --> Backend
+    DB -- "TxEventQ" --> Simulator["Simulator<br/>(Monte Carlo)"]
+    Simulator -- "TxEventQ" --> DB
+    DB -- JDBC --> Backend
+    DB -- JDBC --> Calibration["Calibration<br/>(batch, post-session)"]
+    Calibration -- JDBC --> DB
+    Backend -- WebSocket --> Portal
+    Backend -- WebSocket --> iOS["iOS Client"]
 ```
 
 ## Key Design Decisions

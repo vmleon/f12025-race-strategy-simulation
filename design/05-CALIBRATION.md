@@ -6,8 +6,12 @@ Monte Carlo simulation is **dumb sampling** — it draws from whatever distribut
 
 This document describes the **calibration layer** that sits between raw telemetry data (captured by the ingestion pipeline — see `03-MONTECARLO.md`) and the Monte Carlo simulation engine. Calibration transforms accumulated historical data into fitted model coefficients ("knobs") that the simulation uses to predict sector times.
 
-```
-[Telemetry Ingestion] → [Oracle DB: sector snapshots] → [Calibration (this doc)] → [Fitted Coefficients] → [Monte Carlo Simulation]
+```mermaid
+graph LR
+    A["Telemetry Ingestion"] --> B["Oracle DB:<br/>sector snapshots"]
+    B --> C["Calibration<br/>(this doc)"]
+    C --> D["Fitted Coefficients"]
+    D --> E["Monte Carlo Simulation"]
 ```
 
 Without calibration, the simulation would need hardcoded guesses (e.g. "front wing damage costs 0.5–3 seconds") with wide, uninformed distributions. With calibration, each effect is a fitted function derived from observed data, and the Monte Carlo sampling is limited to genuinely uncertain events (safety cars, overtake success, mechanical failures).
@@ -281,25 +285,22 @@ Adjusts knob values during a live race based on observed sector times from the c
 
 ### Choosing Between Tiers
 
-```
-Start with Tier 1 only
-    │
-    ▼
-Run simulations, compare predicted vs actual (FinalClassification)
-    │
-    ▼
-Are predictions systematically off in ways that track-specific
-historical data should have captured?
-    │
-    ├── No → Tier 1 is sufficient, keep iterating on data volume
-    │
-    └── Yes → Is the error consistent across sessions (game update?)
-              or session-specific (unusual conditions)?
-              │
-              ├── Consistent → Retrain Tier 1 with more recent data,
-              │                or weight recent sessions higher
-              │
-              └── Session-specific → Tier 2 may help
+```mermaid
+graph TD
+    A["Start with Tier 1 only"] --> B["Run simulations, compare
+    predicted vs actual
+    FinalClassification"]
+    B --> C{"Predictions systematically
+    off in ways historical data
+    should have captured?"}
+    C -- No --> D["Tier 1 sufficient —
+    keep iterating on data volume"]
+    C -- Yes --> E{"Error consistent across
+    sessions or session-specific?"}
+    E -- Consistent --> F["Retrain Tier 1 with
+    more recent data or
+    weight recent sessions higher"]
+    E -- Session-specific --> G["Tier 2 may help"]
 ```
 
 ## Initial Values (Cold Start)
@@ -443,17 +444,19 @@ After fitting, validate each knob by checking if the model can predict sector ti
 
 Fitted coefficients need to be stored and versioned so the simulation always uses the latest calibration. Suggested structure:
 
-```
-coefficients
-├── track_id (FK to sessions)
-├── knob_name (e.g. "tyre_deg_soft", "fuel_effect", "drs_advantage_s1")
-├── calibration_regime ("PLAYER" or "AI")
-├── value (fitted coefficient)
-├── confidence (standard error or number of data points)
-├── is_default (boolean — using initial default or fitted from data)
-├── last_updated (timestamp of last recalibration)
-├── session_count (number of sessions used in fitting)
-└── game_settings_hash (hash of AI difficulty + damage mode + tyre wear mode)
+```mermaid
+classDiagram
+    class calibration_coefficients {
+        NUMBER track_id
+        VARCHAR knob_name
+        VARCHAR calibration_regime
+        FLOAT value
+        FLOAT confidence
+        NUMBER is_default
+        TIMESTAMP last_updated
+        NUMBER session_count
+        VARCHAR game_settings_hash
+    }
 ```
 
 This can be a table in Oracle alongside the telemetry data, or a separate configuration store — the simulation just needs to load the current coefficients for the relevant track and regime before running.

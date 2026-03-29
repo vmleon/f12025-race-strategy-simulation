@@ -2,30 +2,18 @@
 
 ## System Overview
 
-```
-┌─────────────┐    UDP     ┌─────────────┐   JDBC    ┌──────────────┐
-│  F1 2025    │──────────→ │  Telemetry  │─────────→ │   Oracle DB  │
-│  Game       │   20Hz     │  (Plain Java)│  writes   │   26ai       │
-└─────────────┘            └──────┬──────┘           └──────┬───────┘
-                                  │ TCP push                │ JDBC reads
-                                  │ JSON-lines ~1Hz         │ TxEventQ queues
-                                  ▼                         │
-                           ┌─────────────┐                  │
-                  ┌───────→│  Backend    │←─────────────────┘
-                  │        │  (Spring Boot)│
-                  │        └──────┬──────┘
-                  │               │ WebSocket
-                  │               ├──────────────┐
-                  │               ▼              ▼
-                  │        ┌─────────────┐ ┌──────────────┐
-                  │        │   Portal    │ │  iOS Client  │
-                  │        │  (Angular)  │ │  (SwiftUI)   │
-                  │        └─────────────┘ └──────────────┘
-                  │
-           ┌──────┴──────┐
-           │  Simulator  │←── reads coefficients from DB
-           │  (Python)   │←── dequeues SIMULATION_REQUEST (TxEventQ)
-           └─────────────┘──→ enqueues SIMULATION_RESULT (TxEventQ)
+```mermaid
+graph TD
+    Game["F1 2025 Game"] -- "UDP 20Hz" --> Telemetry["Telemetry — Plain Java"]
+    Telemetry -- "JDBC writes" --> DB["Oracle DB 26ai"]
+    Telemetry -- "TCP push ~1Hz" --> Backend["Backend — Spring Boot"]
+    DB -- "JDBC reads" --> Backend
+    DB -- "TxEventQ" --> Backend
+    Backend -- WebSocket --> Portal["Portal — Angular"]
+    Backend -- WebSocket --> iOS["iOS Client — SwiftUI"]
+    Simulator["Simulator — Python"] -- "SIMULATION_REQUEST" --> DB
+    DB -- "SIMULATION_RESULT" --> Backend
+    Simulator -- "reads coefficients" --> DB
 ```
 
 ## 1. Telemetry → Database (JDBC, direct write)
@@ -148,15 +136,16 @@ The portal's Race view is a modular Angular component tree that renders live rac
 
 ### Architecture
 
-```
-RaceComponent (parent)
-├── Session Selector          — switches between active sessions
-├── CircuitMapComponent       — SVG track with car positions
-├── PenaltiesPanelComponent   — active/served penalties per car
-├── DamagePanelComponent      — car damage levels
-├── TyresPanelComponent       — compound, wear, temperatures
-├── WeatherPanelComponent     — current/forecast conditions
-└── StrategyWidgetComponent   — Monte Carlo simulation results
+```mermaid
+graph TD
+    Race["RaceComponent"]
+    Race --> Selector["Session Selector"]
+    Race --> Circuit["CircuitMapComponent"]
+    Race --> Penalties["PenaltiesPanelComponent"]
+    Race --> Damage["DamagePanelComponent"]
+    Race --> Tyres["TyresPanelComponent"]
+    Race --> Weather["WeatherPanelComponent"]
+    Race --> Strategy["StrategyWidgetComponent"]
 ```
 
 - **Reactivity:** Angular signals (`signal()`, `computed()`) for granular state tracking. The race service exposes signals that child components bind to directly — no manual subscription management.
@@ -173,16 +162,26 @@ A native iOS app that receives race engineer messages via WebSocket and speaks t
 
 Three-layer design:
 
-```
-UI (SwiftUI)
-├── ConnectView     — server URL input, connection button
-├── LiveView        — message history, connection status
-└── SettingsView    — voice rate, volume
-Services
-├── WebSocketService  — persistent connection, JSON decode, reconnect
-└── SpeechService     — TTS queue with priority interruption
-Protocol
-└── EngineerMessage   — shared message model (priority, text, sessionUid)
+```mermaid
+graph TD
+    subgraph UI["UI — SwiftUI"]
+        Connect["ConnectView"]
+        Live["LiveView"]
+        Settings["SettingsView"]
+    end
+    subgraph Services
+        WS["WebSocketService"]
+        Speech["SpeechService"]
+    end
+    subgraph Protocol
+        Msg["EngineerMessage"]
+    end
+    Connect --> WS
+    Live --> WS
+    Live --> Speech
+    Settings --> Speech
+    WS --> Msg
+    Speech --> Msg
 ```
 
 - **WebSocketService:** `@Observable` for SwiftUI binding. Connection states: disconnected → connecting → connected (with reconnecting as a transient state). Exponential backoff reconnect: delay = min(2^attempt, 30) seconds, max 10 attempts. Automatically converts HTTP/HTTPS URLs to WS/WSS. Filters incoming messages by `sessionUid` to prevent cross-session contamination.
