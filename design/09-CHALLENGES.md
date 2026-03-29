@@ -1,8 +1,8 @@
 # Challenges — Open Research Questions
 
-This document tracks the hard problems in the calibration and simulation pipelines that require investigation, testing, or data before they can be resolved. Referenced from `CALIBRATION.md` and `MONTECARLO.md`. See the Investigation Plan section at the end for status and phased investigation order.
+This document tracks the hard problems in the calibration and simulation pipelines that require investigation, testing, or data before they can be resolved. Referenced from `05-CALIBRATION.md` and `03-MONTECARLO.md`. See the Investigation Plan section at the end for status and phased investigation order.
 
-Manageable challenges (sample size requirements, overtake filtering, defending modeling, Monte Carlo convergence, simulation re-trigger frequency, UDP loss recovery) have been resolved into actionable measures within `CALIBRATION.md` and `MONTECARLO.md` respectively.
+Manageable challenges (sample size requirements, overtake filtering, defending modeling, Monte Carlo convergence, simulation re-trigger frequency, UDP loss recovery) have been resolved into actionable measures within `05-CALIBRATION.md` and `03-MONTECARLO.md` respectively.
 
 ---
 
@@ -83,7 +83,7 @@ These involve fundamental unknowns that could reshape the entire approach. They 
 **Possible outcomes:**
 
 - Only tyre deg differs → fit tyre deg separately, share other knobs
-- Multiple systems differ → full dual calibration as described in `CALIBRATION.md`
+- Multiple systems differ → full dual calibration as described in `05-CALIBRATION.md`
 - Differences are minor → a single model with an AI/player offset term may suffice
 
 **Why this is critical:** This determines whether the calibration pipeline needs one model or two, which changes the entire architecture and data requirements downstream.
@@ -120,7 +120,7 @@ These involve fundamental unknowns that could reshape the entire approach. They 
 
 ### 7. Dirty Air Model: Game vs Reality (Calibration + Monte Carlo)
 
-**Problem:** `MONTECARLO.md` references dirty air being "most significant within ~1–1.5 seconds." This is based on real-F1 knowledge, but:
+**Problem:** `03-MONTECARLO.md` references dirty air being "most significant within ~1–1.5 seconds." This is based on real-F1 knowledge, but:
 
 1. The F1 25 game's dirty air model is a game-engine approximation, not a CFD simulation. It may not match real physics at all
 2. The thresholds (1.5s, 3s) and magnitude (+0.3s/sector) are guesses

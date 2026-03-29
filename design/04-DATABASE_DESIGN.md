@@ -2,7 +2,7 @@
 
 ## Overview
 
-Nine tables: six mapping 1:1 to the data categories defined in `MONTECARLO.md` (session metadata, participants, per-sector snapshots, events, tyre sets inventory, final classifications), a `calibration_coefficients` table for fitted model values from `CALIBRATION.md`, and `drivers` + `driver_sessions` for driver identity management. Stints are derivable from sector data. Weather transitions are visible in per-sector snapshots.
+Nine tables: six mapping 1:1 to the data categories defined in `03-MONTECARLO.md` (session metadata, participants, per-sector snapshots, events, tyre sets inventory, final classifications), a `calibration_coefficients` table for fitted model values from `05-CALIBRATION.md`, and `drivers` + `driver_sessions` for driver identity management. Stints are derivable from sector data. Weather transitions are visible in per-sector snapshots.
 
 ## Key Design Decisions
 
@@ -49,7 +49,7 @@ Tempting — the most common analytical pattern is "all data for track X." But `
 
 The calibration pipeline applies hard filters (invalid laps, pit laps, safety car, lap 1) but these miss **performance anomalies** — lock-ups, spins, and traffic incidents that produce valid but statistically unusual sector times. An `outlier NUMBER(1) DEFAULT 0` column marks these rows so calibration excludes them (`AND outlier = 0`) while driver feedback views retain them with the flag highlighted.
 
-The flag is recomputed each calibration run via per-driver IQR analysis (see `CALIBRATION.md` — Outlier Detection). It is not set during ingestion — the ingestion pipeline writes `outlier = 0` (the default) and calibration updates it in batch.
+The flag is recomputed each calibration run via per-driver IQR analysis (see `05-CALIBRATION.md` — Outlier Detection). It is not set during ingestion — the ingestion pipeline writes `outlier = 0` (the default) and calibration updates it in batch.
 
 ### 11. Separate `driver_ratings` table for skill ratings
 

@@ -4,7 +4,7 @@
 
 Monte Carlo simulation is **dumb sampling** — it draws from whatever distributions and coefficients you give it. It does not learn, adjust, or self-correct. The quality of the simulation depends entirely on the quality of its input model.
 
-This document describes the **calibration layer** that sits between raw telemetry data (captured by the ingestion pipeline — see `MONTECARLO.md`) and the Monte Carlo simulation engine. Calibration transforms accumulated historical data into fitted model coefficients ("knobs") that the simulation uses to predict sector times.
+This document describes the **calibration layer** that sits between raw telemetry data (captured by the ingestion pipeline — see `03-MONTECARLO.md`) and the Monte Carlo simulation engine. Calibration transforms accumulated historical data into fitted model coefficients ("knobs") that the simulation uses to predict sector times.
 
 ```
 [Telemetry Ingestion] → [Oracle DB: sector snapshots] → [Calibration (this doc)] → [Fitted Coefficients] → [Monte Carlo Simulation]
@@ -63,7 +63,7 @@ sector_time = base_pace
 
 Each term is a function with coefficients — those coefficients are the **knobs**. Calibration fits these knobs from historical data. The `residual_noise` term captures variance the model can't explain — this is what Monte Carlo actually samples from.
 
-**Additive vs multiplicative model:** The additive form is a simplification. In real physics (and likely in the game), aero effects like damage and dirty air apply as percentage-based downforce reductions, which would be better modeled multiplicatively. The additive model is the starting point — if residual analysis shows systematic patterns (e.g., damage effects scaling with base pace), switch to a log-linear or multiplicative form. See `CHALLENGES.md` (Challenge 1) for details.
+**Additive vs multiplicative model:** The additive form is a simplification. In real physics (and likely in the game), aero effects like damage and dirty air apply as percentage-based downforce reductions, which would be better modeled multiplicatively. The additive model is the starting point — if residual analysis shows systematic patterns (e.g., damage effects scaling with base pace), switch to a log-linear or multiplicative form. See `09-CHALLENGES.md` (Challenge 1) for details.
 
 ## Empirical Fitting: Game Physics vs Real-World Assumptions
 
@@ -94,7 +94,7 @@ F1 25 is a game, not reality. The game engine applies internal formulas to compu
 
 The apparent variance in observed effects (e.g. "wing damage seems to cost anywhere from 0.5 to 3 seconds") comes from **confounding variables** (damage level, compound, fuel load, track sector), not randomness in the game's formula.
 
-**This is a hypothesis, not a proven fact.** The calibration pipeline should validate it: if residuals remain large and unstructured after fitting all knobs, the game may introduce stochastic elements not captured by the model. See `CHALLENGES.md` (Challenge 6) for validation approaches.
+**This is a hypothesis, not a proven fact.** The calibration pipeline should validate it: if residuals remain large and unstructured after fitting all knobs, the game may introduce stochastic elements not captured by the model. See `09-CHALLENGES.md` (Challenge 6) for validation approaches.
 
 ## Required Game Settings
 
@@ -407,7 +407,7 @@ Human players are inherently more variable. A 2.0× multiplier avoids false posi
 
 #### Driver Skill Rating (Cold-Start Prior)
 
-A per-driver numeric rating (0–100) stored in the `driver_ratings` table (see `DATABASE_DESIGN.md`). The rating is set through the portal and serves as a prior for outlier detection before enough data exists to compute a meaningful IQR.
+A per-driver numeric rating (0–100) stored in the `driver_ratings` table (see `04-DATABASE_DESIGN.md`). The rating is set through the portal and serves as a prior for outlier detection before enough data exists to compute a meaningful IQR.
 
 - **100** = alien-level consistency (very tight expected range)
 - **50** = average driver (wide expected range, default when no rating exists)
@@ -437,7 +437,7 @@ After fitting, validate each knob by checking if the model can predict sector ti
 
 1. **Train/test split** — fit on 80% of sessions, validate on 20%
 2. **Residual analysis** — are residuals normally distributed with small variance? Large residuals suggest a missing variable or a non-linear effect the model isn't capturing. Systematic patterns in residuals (e.g., residuals scaling with base pace) suggest the additive model is wrong
-3. **End-to-end validation** — run the full Monte Carlo simulation on historical races and compare predicted positions/times against FinalClassification ground truth (see `MONTECARLO.md` — Simulation Validation)
+3. **End-to-end validation** — run the full Monte Carlo simulation on historical races and compare predicted positions/times against FinalClassification ground truth (see `03-MONTECARLO.md` — Simulation Validation)
 
 ## Coefficient Storage
 
@@ -460,7 +460,7 @@ This can be a table in Oracle alongside the telemetry data, or a separate config
 
 ## Implementation: Standalone Python CLI
 
-Calibration is implemented as a standalone Python component (`python -m calibration run <trackId>`), invoked as a subprocess by the Backend when a session ends (see `INTEGRATION.md` §5). The pipeline reads from and writes to the same Oracle schema used by telemetry and simulation.
+Calibration is implemented as a standalone Python component (`python -m calibration run <trackId>`), invoked as a subprocess by the Backend when a session ends (see `06-INTEGRATION.md` §5). The pipeline reads from and writes to the same Oracle schema used by telemetry and simulation.
 
 ### Pipeline Architecture
 

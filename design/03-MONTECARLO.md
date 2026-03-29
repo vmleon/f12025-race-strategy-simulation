@@ -56,7 +56,7 @@ The candidate strategies themselves are provided by the caller (the Backend). St
 
 The residual variance controls how spread out the outcomes are — tight residuals (well-calibrated model) produce consistent predictions, wide residuals (poor calibration or genuinely noisy game physics) produce uncertain outcomes. The required iteration count depends on convergence — see Convergence and Iteration Count above.
 
-**Important:** Monte Carlo does not self-calibrate. The quality of the simulation depends entirely on the quality of the model coefficients ("knobs") fitted from historical data. See `CALIBRATION.md` for the calibration pipeline that transforms raw telemetry into fitted coefficients for each term in the lap time function.
+**Important:** Monte Carlo does not self-calibrate. The quality of the simulation depends entirely on the quality of the model coefficients ("knobs") fitted from historical data. See `05-CALIBRATION.md` for the calibration pipeline that transforms raw telemetry into fitted coefficients for each term in the lap time function.
 
 ## Simulation Granularity
 
@@ -122,7 +122,7 @@ The simulation needs a `HistoricalContext` data structure containing pre-compute
 - Inter-car interaction parameters (dirty air effect magnitude, DRS advantage — derived from historical gap and sector time data rather than hardcoded constants)
 - Overtake probability model per sector (logistic regression or similar, fitted from historical position changes)
 
-These values are computed offline from accumulated historical data and updated after each new session. See `CALIBRATION.md` for the full calibration pipeline: how each coefficient is fitted, the two-tier approach (historical baseline + optional in-session dynamic adjustment), initial default values for cold start, and validation methodology.
+These values are computed offline from accumulated historical data and updated after each new session. See `05-CALIBRATION.md` for the full calibration pipeline: how each coefficient is fitted, the two-tier approach (historical baseline + optional in-session dynamic adjustment), initial default values for cold start, and validation methodology.
 
 ## Data to Capture
 
@@ -282,7 +282,7 @@ The simulation cannot treat each car independently. Key interactions that affect
 
 ### Dirty Air
 
-Following a car closely reduces downforce and increases tyre degradation. The exact thresholds and magnitude of this effect in the game are unknown — the game's dirty air model is a game-engine approximation, not a physics simulation, and may not match real F1 behavior. Rather than hardcoding a fixed effect or assuming real-world aero knowledge, the simulation derives dirty air impact entirely from historical data: comparing sector times when a car has a small `deltaToCarInFront` vs clean-air sector times for the same driver/compound/tyre age. Per-sector resolution lets the simulation see "car X was stuck in dirty air through sectors 1 and 2, then passed in sector 3" — much richer than a single per-lap average. See `CHALLENGES.md` (Challenge 7) for open questions about fitting the dirty air curve.
+Following a car closely reduces downforce and increases tyre degradation. The exact thresholds and magnitude of this effect in the game are unknown — the game's dirty air model is a game-engine approximation, not a physics simulation, and may not match real F1 behavior. Rather than hardcoding a fixed effect or assuming real-world aero knowledge, the simulation derives dirty air impact entirely from historical data: comparing sector times when a car has a small `deltaToCarInFront` vs clean-air sector times for the same driver/compound/tyre age. Per-sector resolution lets the simulation see "car X was stuck in dirty air through sectors 1 and 2, then passed in sector 3" — much richer than a single per-lap average. See `09-CHALLENGES.md` (Challenge 7) for open questions about fitting the dirty air curve.
 
 ### DRS Effect
 
@@ -297,13 +297,13 @@ A faster car stuck behind a slower car loses time until it overtakes. The simula
 - Track overtaking difficulty (Monaco vs Monza)
 - Tyre compound difference (fresh vs worn)
 
-Factors like tyre age, fuel load, and car damage affect overtake probability **indirectly** — they change the pace of each car, which changes the pace delta, which is the primary input to the overtake model. This is a deliberate design choice: rather than making tyre age a direct input to the overtake probability function, the simulation lets the pace model translate all performance factors into a single pace delta that drives overtake likelihood. This avoids double-counting effects and keeps the overtake model simple (fewer coefficients to fit from limited position-change data). See `CALIBRATION.md` §9 for the logistic regression fitting approach.
+Factors like tyre age, fuel load, and car damage affect overtake probability **indirectly** — they change the pace of each car, which changes the pace delta, which is the primary input to the overtake model. This is a deliberate design choice: rather than making tyre age a direct input to the overtake probability function, the simulation lets the pace model translate all performance factors into a single pace delta that drives overtake likelihood. This avoids double-counting effects and keeps the overtake model simple (fewer coefficients to fit from limited position-change data). See `05-CALIBRATION.md` §9 for the logistic regression fitting approach.
 
 Since we capture all active cars' lap data, the simulation can identify when a faster car is stuck behind a slower one (same lap time despite better pace on clear track) and model this correctly.
 
 ### Defending
 
-A car defending position uses more fuel, takes sub-optimal lines, and wears tyres more. This is partially captured implicitly: a car that's defending will show higher tyre wear and slower sector times in the data. The gap-to-car-behind can be derived from the car behind's `deltaToCarInFront`. However, for prediction purposes, the simulation must decide whether defending is modeled explicitly (as an input variable) or left as noise in the residuals. See `CALIBRATION.md` (Defending: Not Modeled Explicitly) for the tradeoff analysis.
+A car defending position uses more fuel, takes sub-optimal lines, and wears tyres more. This is partially captured implicitly: a car that's defending will show higher tyre wear and slower sector times in the data. The gap-to-car-behind can be derived from the car behind's `deltaToCarInFront`. However, for prediction purposes, the simulation must decide whether defending is modeled explicitly (as an input variable) or left as noise in the residuals. See `05-CALIBRATION.md` (Defending: Not Modeled Explicitly) for the tradeoff analysis.
 
 ### Car Damage
 
@@ -315,7 +315,7 @@ Car damage from collisions, kerb strikes, or component wear directly affects pac
 
 - **Pit for repairs** — If damage exceeds a threshold, pitting for a new front wing (or other replaceable parts) may be faster than continuing with degraded pace. The simulation compares projected race time with damage vs. time lost pitting for repairs.
 - **Retirement probability** — Engine and gearbox damage above certain levels risk mechanical failure. The simulation models retirement probability as a function of damage level and remaining race distance — a car with 60% engine damage on lap 5 is far more likely to retire than one with 20% on the final lap.
-- **Compound effect with tyres** — Aero damage may increase tyre degradation (less downforce = more sliding = more wear). Whether this interaction exists in the game is unverified — it is plausible in real F1 but the game may treat damage and tyre wear independently. See `CHALLENGES.md` (Challenge 8) for how to test this.
+- **Compound effect with tyres** — Aero damage may increase tyre degradation (less downforce = more sliding = more wear). Whether this interaction exists in the game is unverified — it is plausible in real F1 but the game may treat damage and tyre wear independently. See `09-CHALLENGES.md` (Challenge 8) for how to test this.
 
 ### Penalties
 

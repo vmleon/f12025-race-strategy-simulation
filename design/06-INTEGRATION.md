@@ -34,7 +34,7 @@ The telemetry server writes parsed UDP data directly to Oracle via JDBC + Oracle
 
 - **Protocol:** JDBC (Oracle thin driver)
 - **Direction:** Telemetry → Oracle
-- **Data:** `sessions`, `participants`, `sector_snapshots`, `session_events`, `tyre_sets`, `final_classifications` (all 6 data tables from `DATABASE_DESIGN.md`)
+- **Data:** `sessions`, `participants`, `sector_snapshots`, `session_events`, `tyre_sets`, `final_classifications` (all 6 data tables from `04-DATABASE_DESIGN.md`)
 - **Rate:** ~60 rows/lap for sector_snapshots (3 sectors x 20 cars), plus sporadic event/metadata rows
 - **Batching:** JDBC `addBatch()` / `executeBatch()` for sector_snapshots (all 20 cars snapshotted at each sector boundary)
 - **Connection config:** `telemetry/config.properties` — host, port, service name, credentials
@@ -135,7 +135,7 @@ The only runtime interface is the TCP push socket (section 2 above). Both sides 
 
 - **Message versioning:** Each JSON message includes a `version` field (integer, starting at `1`). The producer (telemetry) sets the version; the consumer (backend) must handle all supported versions.
 - **Backward compatibility rule:** New fields may be added without bumping the version. Removing or renaming a field requires a version bump. The consumer ignores unknown fields.
-- **Schema definition:** The canonical message schemas are documented in `design/INTEGRATION.md` (this file) and updated when the interface changes. There is no shared code artifact — each side implements its own serialization/deserialization.
+- **Schema definition:** The canonical message schemas are documented in `design/06-INTEGRATION.md` (this file) and updated when the interface changes. There is no shared code artifact — each side implements its own serialization/deserialization.
 
 **Interface between backend and database:**
 Both telemetry and backend connect to the same Oracle schema (section 7 above). The database schema (managed by Liquibase, see todo 05) is the shared contract. Both sides depend on the table definitions, not on each other's code.
@@ -167,7 +167,7 @@ RaceComponent (parent)
 
 ## 10. iOS Voice Client (SwiftUI)
 
-A native iOS app that receives race engineer messages via WebSocket and speaks them aloud using text-to-speech. This is the delivery mechanism for the race engineer voice described in `RACE_ENGINEER_VOICE.md`.
+A native iOS app that receives race engineer messages via WebSocket and speaks them aloud using text-to-speech. This is the delivery mechanism for the race engineer voice described in `08-RACE_ENGINEER_VOICE.md`.
 
 ### Architecture
 
