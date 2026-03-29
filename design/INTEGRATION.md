@@ -40,7 +40,7 @@ The telemetry server writes parsed UDP data directly to Oracle via JDBC + Oracle
 
 ## 2. Telemetry → Backend (TCP push, JSON-lines)
 
-Live race state and session lifecycle events flow from telemetry to backend over a persistent TCP socket. Decided in `reports/TCP_PUSH_ARCHITECTURE.md`.
+Live race state and session lifecycle events flow from telemetry to backend over a persistent TCP socket.
 
 - **Protocol:** Plain TCP socket, newline-delimited JSON (`\n`-separated)
 - **Direction:** Telemetry → Backend (telemetry connects to backend's TCP server port)
@@ -140,6 +140,40 @@ The only runtime interface is the TCP push socket (section 2 above). Both sides 
 Both telemetry and backend connect to the same Oracle schema (section 7 above). The database schema (managed by Liquibase, see todo 05) is the shared contract. Both sides depend on the table definitions, not on each other's code.
 
 **Duplicate dependencies are accepted:** Both projects independently declare their JDBC driver and other shared dependencies. This is a conscious trade-off for build isolation.
+
+## Decision Rationale: TCP Push Architecture
+
+Five options were evaluated for the telemetry-to-backend data path. Plain TCP won.
+
+### Options Evaluated
+
+| Option | Approach | Why it lost |
+|--------|----------|-------------|
+| **A. REST** | HTTP POST from telemetry to backend endpoints | Adds HTTP client overhead per message. Request/response model is wrong for a persistent data stream. Telemetry must handle HTTP client concerns (timeouts, retries, connection pooling) |
+| **B. WebSocket** | Telemetry opens WS connection to backend | HTTP upgrade handshake and frame masking are designed for browser security — unnecessary between two JVM processes. Requires a WebSocket client library in telemetry |
+| **C. gRPC** | Protobuf streaming RPCs | Right tool for production microservices with multiple consumers and strict API contracts. For a single-instance PoC with one producer and one consumer, protobuf compilation and gRPC runtime are overhead without payoff |
+| **D. DB polling** | Backend polls Oracle for new rows | Works but adds 1-2s latency. Extra read load on the database for data that's immediately available in memory |
+| **E. Plain TCP** | Persistent socket, newline-delimited JSON | **Chosen** — see below |
+
+### Why Plain TCP Won
+
+- **Zero new dependencies.** `java.net.Socket` and `java.io.OutputStream` are in the JDK. The telemetry server stays zero-dependency
+- **Natural fit for a persistent data stream.** TCP provides reliable, ordered byte stream — no per-message connection overhead, no HTTP framing, no compilation step
+- **Sub-second latency.** Data goes from telemetry memory → socket write → backend socket read → WebSocket broadcast. Full pipeline (UDP arrival to portal display) under 100ms
+- **One channel for everything.** Same TCP connection carries continuous race state and discrete lifecycle events. No protocol splitting
+- **Simple failure model.** Connection drops are detected immediately by both sides. Telemetry reconnects with exponential backoff. Backend accepts new connection and resumes
+
+### JSON-lines Protocol Choice
+
+Newline-delimited JSON over alternatives:
+
+- **Length-prefixed binary:** More efficient but harder to debug. `tail -f` on a TCP stream shows readable JSON; binary requires tooling
+- **Protobuf/MessagePack:** Better compression but adds serialization dependencies. At ~1KB per message at 1Hz, bandwidth is irrelevant
+- **Custom binary format:** Unnecessary — the parsing cost is on the UDP side, not the TCP side
+
+### Single Backend Instance Assumption
+
+This architecture assumes a single backend instance. If multiple instances were needed, options would include a message broker (Redis Pub/Sub, Kafka), connecting to all instances, or a shared state store. None are needed for the PoC.
 
 ## Summary of Protocols
 

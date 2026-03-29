@@ -1,6 +1,6 @@
 # Challenges — Open Research Questions
 
-This document tracks the hard problems in the calibration and simulation pipelines that require more investigation, testing, or data before they can be resolved. Referenced from `CALIBRATION.md` and `MONTECARLO.md`.
+This document tracks the hard problems in the calibration and simulation pipelines that require investigation, testing, or data before they can be resolved. Referenced from `CALIBRATION.md` and `MONTECARLO.md`. See the Investigation Plan section at the end for status and phased investigation order.
 
 Manageable challenges (sample size requirements, overtake filtering, defending modeling, Monte Carlo convergence, simulation re-trigger frequency, UDP loss recovery) have been resolved into actionable measures within `CALIBRATION.md` and `MONTECARLO.md` respectively.
 
@@ -153,3 +153,61 @@ tyre_deg_effective = tyre_deg_base + damage_tyre_interaction(damage_level, tyre_
 **For the POC:** Start with independent damage and tyre effects (no cross-term). If residual analysis shows a pattern where damaged cars have systematically worse tyre deg than predicted, add the interaction term.
 
 **Why this is critical:** Data scarcity makes this hard to validate — damage events are rare, and you need damage _during a stint_ to measure the cross-term. Could remain unresolved for many sessions.
+
+---
+
+## Investigation Plan & Status Tracker
+
+These challenges are not implementation tasks — they require accumulated session data and experimentation. The investigation order follows data dependencies.
+
+### Status Overview
+
+| # | Challenge | Difficulty | Status | Depends On | Earliest Investigation |
+|---|-----------|------------|--------|------------|----------------------|
+| 1 | Additive vs Multiplicative Model | Medium | Open | Calibration pipeline, 5+ sessions | After calibration runs |
+| 2 | Game Settings Sensitivity | Medium | Open | Simulation engine | After simulation runs |
+| 3 | State Space at Per-Sector Granularity | Medium | Open | Simulation engine | After simulation runs |
+| 4 | AI vs Player Physics Divergence | Difficult | Open | Data ingestion, a few sessions | After first sessions ingested |
+| 5 | Fuel vs Tyre Multicollinearity | Difficult | Open | Calibration pipeline, 5+ sessions | After calibration runs |
+| 6 | Determinism Hypothesis | Difficult | Open | Calibration pipeline, 5+ sessions | After calibration runs |
+| 7 | Dirty Air: Game vs Reality | Difficult | Open | Data ingestion, a few sessions | After first sessions ingested |
+| 8 | Damage-Tyre Interaction | Difficult | Open | Data ingestion, 20+ sessions with damage | Long-term |
+
+### Wave 1 — First sessions ingested
+
+**Challenge 4: AI vs Player Physics Divergence** — Compare `tyresWear` deltas, tyre temperatures, fuel consumption, and damage response between AI and player. Outcome determines single vs dual calibration.
+
+**Challenge 7: Dirty Air Model** — Plot sector time vs `deltaToCarInFront` for AI cars. Check consistency across tracks and whether player/AI experience dirty air differently. Find the negligible-effect gap threshold.
+
+### Wave 2 — After calibration pipeline runs on 5+ sessions
+
+**Challenge 1: Additive vs Multiplicative Model** — Fit additive model, compute residuals, check if residuals correlate with base pace. Fit log-linear model, compare R².
+
+**Challenge 5: Fuel vs Tyre Multicollinearity** — Cross-stint comparison, fuel burn rate subtraction, two-stage regression. Outcome determines reliability of tyre deg coefficients.
+
+**Challenge 6: Determinism Hypothesis** — Examine residual variance after fitting all knobs. Compare player vs AI residuals. Target: < 0.1s std dev (player), < 0.05s (AI).
+
+### Wave 3 — After simulation engine produces results
+
+**Challenge 2: Game Settings Sensitivity** — Run identical scenarios at different AI difficulty levels. Test damage/tyre wear simulation modes.
+
+**Challenge 3: State Space at Per-Sector Granularity** — Compare per-sector vs per-lap simulation predictions. Profile memory and CPU usage.
+
+### Wave 4 — Long-term (20+ sessions with damage events)
+
+**Challenge 8: Damage-Tyre Interaction** — Compare `tyresWear` delta per lap before/after damage events within same stint.
+
+### POC Defaults (Before Investigation)
+
+Until each challenge is investigated, the system uses these defaults:
+
+| Challenge | Default Assumption |
+|-----------|-------------------|
+| 1. Model form | Additive (switch if residuals show patterns) |
+| 2. Settings | Single calibration per settings profile |
+| 3. Granularity | Per-sector (fall back to per-lap if needed) |
+| 4. AI vs Player | Dual calibration for tyre deg only, shared for other knobs |
+| 5. Fuel/Tyre | Two-stage regression with known fuel burn rate subtraction |
+| 6. Determinism | Assumed deterministic within each regime |
+| 7. Dirty Air | Empirical piecewise function (no real-F1 assumptions) |
+| 8. Damage-Tyre | Independent effects (no cross-term until evidence found) |

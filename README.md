@@ -153,4 +153,3 @@ Runs on http://localhost:4200, proxies `/api` and `/ws` calls to the backend.
 
 - `design/` — Architecture decisions, database schema, calibration pipeline, Monte Carlo simulation design
 - `docs/` — F1 25 telemetry UDP specification and packet structures
-- `reports/` — Design rationale and research reports

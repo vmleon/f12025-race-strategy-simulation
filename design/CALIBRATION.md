@@ -65,6 +65,25 @@ Each term is a function with coefficients — those coefficients are the **knobs
 
 **Additive vs multiplicative model:** The additive form is a simplification. In real physics (and likely in the game), aero effects like damage and dirty air apply as percentage-based downforce reductions, which would be better modeled multiplicatively. The additive model is the starting point — if residual analysis shows systematic patterns (e.g., damage effects scaling with base pace), switch to a log-linear or multiplicative form. See `CHALLENGES.md` (Challenge 1) for details.
 
+## Empirical Fitting: Game Physics vs Real-World Assumptions
+
+F1 25 is a game, not reality. Every coefficient must come from observed game telemetry, not from real-world F1 data or intuition. The game's internal formulas are a black box — calibration treats them as such.
+
+It's tempting to use real F1 knowledge to parameterize the simulation. "Dirty air costs about 0.3 seconds per sector within 1.5 seconds of the car ahead." "DRS gives roughly 0.5-0.8 seconds on a long straight." "Floor damage is catastrophic for ground-effect cars." These statements are true for real Formula 1 — they are **not necessarily true for F1 2025 the video game**.
+
+The game's physics engine must run in real-time on consumer hardware, feel fun and balanced, and work consistently across 20+ tracks. Its dirty air model, DRS effect, tyre degradation curves, fuel consumption, and damage impacts are all **approximations with unknown parameters** that may loosely correlate with reality or diverge significantly.
+
+### What Must Be Fitted Empirically
+
+| Effect | Real F1 Knowledge | Game Reality | Fitting Approach |
+|--------|-------------------|-------------|-----------------|
+| **Dirty air** | ~35-50% downforce loss within 1 car length, reduced post-2022 | Unknown thresholds, magnitude, and track variation | Compare sector times at different `deltaToCarInFront` vs clean-air baseline. Start with piecewise model: linear below threshold, zero above |
+| **DRS advantage** | Near zero (Monaco) to ~0.8s (Monza), depends on straight length | Exists but exact gain per sector per track unknown | Compare `drsAllowed=1` vs `drsAllowed=0` for same driver/conditions. Clean binary comparison |
+| **Damage effects** | Floor damage costs 1-2s/lap; front wing depends on element lost | Reported as 0-100% but mapping to time loss unknown, may not be linear | Correlate sector times with damage percentages. Challenge: data scarcity |
+| **Tyre temperature** | Narrow optimal window (~10-15°C), grip drops outside | Temperature reported but unclear if game models grip as f(temp) or just decorative | Fit quadratic model (optimal window with drop-off). Drop knob if no sensitivity found |
+
+Assumptions from real F1 knowledge are starting hypotheses to test, not facts to encode. If residual analysis shows the game behaves differently from expectations, trust the data.
+
 ## Working Assumption: Structured Game Physics
 
 F1 25 is a game, not reality. The game engine applies internal formulas to compute physics effects. Within each physics regime (player vs AI):
@@ -121,13 +140,17 @@ How sector time increases as tyres age and wear.
 
 #### Multicollinearity: Fuel vs Tyre Age
 
-Within a single stint, `fuelInTank` and `tyresAgeLaps` are almost perfectly linearly correlated — both change by a near-constant amount per lap. A multivariate regression on within-stint data **cannot reliably separate** the fuel effect from tyre degradation.
+Within a single stint, `fuelInTank` and `tyresAgeLaps` are almost perfectly linearly correlated — both change by a near-constant amount per lap. A multivariate regression on within-stint data **cannot reliably separate** the fuel effect from tyre degradation. The regression will still converge, but the individual coefficients will be unstable — small changes in the data cause large swings in the estimated values, even though their combined effect is well-estimated.
+
+**Why this matters for strategy:** The simulation uses tyre degradation coefficients to evaluate pit stop timing ("pit now or push 5 more laps?"). If the tyre deg curve includes hidden fuel effects, the model thinks old tyres are slower than they actually are — because it attributes fuel-related slowness to tyre age — making strategy predictions unreliable.
 
 Approaches to decouple:
 
-1. **Cross-stint comparison** — compare sector times at the same tyre age but different fuel loads (e.g., lap 5 of stint 1 vs lap 5 of stint 2, where stint 2 starts with less fuel)
-2. **Stint-based analysis** — within a single stint, compute fuel load deterministically from lap count and burn rate (which is near-constant). Subtract the estimated fuel effect, then fit tyre deg on the residual
+1. **Cross-stint comparison** — compare sector times at the same tyre age but different fuel loads (e.g., lap 5 of stint 1 vs lap 5 of stint 2, where stint 2 starts with less fuel). Requires enough sessions with varied pit strategies
+2. **Known fuel burn rate subtraction** — measure fuel consumption rate from `fuelInTank` deltas between consecutive laps. If near-constant (which F1 25 appears to enforce), subtract the estimated fuel effect analytically, then fit tyre deg on the residual. A two-stage approach: (1) measure burn rate, (2) compute expected fuel penalty per lap, (3) subtract from sector times, (4) fit tyre deg on residual
 3. **Pit stop resets** — a pit stop resets tyre age to 0 but fuel stays at the refueled level (no refueling in F1 25). Comparing pre/post pit sector times isolates tyre vs fuel
+
+**POC approach:** Start with approach #2 (fuel burn rate subtraction) because it requires the least data and can be applied within individual stints. Use approach #1 (cross-stint comparison) as validation once enough sessions accumulate
 
 ### 3. Fuel Effect (per track)
 
