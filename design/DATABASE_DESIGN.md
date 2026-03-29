@@ -2,7 +2,7 @@
 
 ## Overview
 
-Seven tables: six mapping 1:1 to the data categories defined in `MONTECARLO.md` (session metadata, participants, per-sector snapshots, events, tyre sets inventory, final classifications) plus a `calibration_coefficients` table for fitted model values from `CALIBRATION.md`. Stints are derivable from sector data. Weather transitions are visible in per-sector snapshots.
+Nine tables: six mapping 1:1 to the data categories defined in `MONTECARLO.md` (session metadata, participants, per-sector snapshots, events, tyre sets inventory, final classifications), a `calibration_coefficients` table for fitted model values from `CALIBRATION.md`, and `drivers` + `driver_sessions` for driver identity management. Stints are derivable from sector data. Weather transitions are visible in per-sector snapshots.
 
 ## Key Design Decisions
 
@@ -54,6 +54,15 @@ The flag is recomputed each calibration run via per-driver IQR analysis (see `CA
 ### 11. Separate `driver_ratings` table for skill ratings
 
 A per-driver skill rating (0–100) used as a cold-start prior for outlier detection before enough data exists to compute IQR. This is a separate table rather than a column on `participants` because ratings are a cross-session concept — the same driver appears across many sessions, and the rating is set once globally (with optional per-track overrides). Keeping it separate avoids modifying the high-volume participant data path and keeps the rating lifecycle independent of session ingestion.
+
+### 12. Separate `drivers` table with session junction
+
+Drivers are first-class entities decoupled from session participation. A `drivers` table stores identity (name, email, created_at), and `driver_sessions` is a junction table linking drivers to specific session participants via `(driver_id, session_uid)` with a compound PK.
+
+- **Rationale:** Participants are per-session records (car index, team, AI flag). Driver identity is a cross-session concept — the same person races across multiple sessions and tracks. Normalizing driver identity enables cross-session analytics (win rates, consistency trends) without scanning participants.
+- **Unique name constraint:** Enforced at DB level (`uq_drivers_name`). The API catches duplicate key violations.
+- **FK to participants:** `driver_sessions` references `participants(session_uid, car_index)` — linking to the specific car the driver controlled in that session.
+- **No cascade delete:** Deleting a driver does not cascade to `driver_sessions` to avoid silently orphaning session records. Explicit cleanup is required.
 
 ## DDL
 
@@ -396,6 +405,34 @@ CREATE INDEX idx_sector_outlier
 -- Calibration coefficients: lookup by track + knob + regime + method
 CREATE INDEX idx_calib_lookup
     ON calibration_coefficients (track_id, knob_name, calibration_regime, method_name);
+
+-- =============================================================
+-- 9. DRIVERS — driver identity, decoupled from session participation
+-- =============================================================
+CREATE TABLE drivers (
+    driver_id    NUMBER GENERATED ALWAYS AS IDENTITY,
+    name         VARCHAR2(100) NOT NULL,
+    email        VARCHAR2(255),
+    created_at   TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+
+    CONSTRAINT pk_drivers PRIMARY KEY (driver_id),
+    CONSTRAINT uq_drivers_name UNIQUE (name)
+);
+
+-- =============================================================
+-- 10. DRIVER_SESSIONS — junction: which driver raced in which session
+-- =============================================================
+CREATE TABLE driver_sessions (
+    driver_id    NUMBER        NOT NULL,
+    session_uid  NUMBER(20)    NOT NULL,
+    car_index    NUMBER(2)     NOT NULL,
+
+    CONSTRAINT pk_driver_sessions PRIMARY KEY (driver_id, session_uid),
+    CONSTRAINT fk_ds_driver FOREIGN KEY (driver_id)
+        REFERENCES drivers (driver_id),
+    CONSTRAINT fk_ds_participant FOREIGN KEY (session_uid, car_index)
+        REFERENCES participants (session_uid, car_index)
+);
 ```
 
 ## Simulation Query Mapping

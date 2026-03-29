@@ -15,11 +15,12 @@
                   │        │  (Spring Boot)│
                   │        └──────┬──────┘
                   │               │ WebSocket
-                  │               ▼
-                  │        ┌─────────────┐
-                  │        │   Portal    │
-                  │        │  (Angular)  │
-                  │        └─────────────┘
+                  │               ├──────────────┐
+                  │               ▼              ▼
+                  │        ┌─────────────┐ ┌──────────────┐
+                  │        │   Portal    │ │  iOS Client  │
+                  │        │  (Angular)  │ │  (SwiftUI)   │
+                  │        └─────────────┘ └──────────────┘
                   │
            ┌──────┴──────┐
            │  Simulator  │←── reads coefficients from DB
@@ -141,6 +142,53 @@ Both telemetry and backend connect to the same Oracle schema (section 7 above). 
 
 **Duplicate dependencies are accepted:** Both projects independently declare their JDBC driver and other shared dependencies. This is a conscious trade-off for build isolation.
 
+## 9. Portal Live Dashboard (Angular)
+
+The portal's Race view is a modular Angular component tree that renders live race state received via WebSocket.
+
+### Architecture
+
+```
+RaceComponent (parent)
+├── Session Selector          — switches between active sessions
+├── CircuitMapComponent       — SVG track with car positions
+├── PenaltiesPanelComponent   — active/served penalties per car
+├── DamagePanelComponent      — car damage levels
+├── TyresPanelComponent       — compound, wear, temperatures
+├── WeatherPanelComponent     — current/forecast conditions
+└── StrategyWidgetComponent   — Monte Carlo simulation results
+```
+
+- **Reactivity:** Angular signals (`signal()`, `computed()`) for granular state tracking. The race service exposes signals that child components bind to directly — no manual subscription management.
+- **Session selector:** Queries `GET /api/sessions` for active sessions. Selecting a session switches the WebSocket subscription and reloads all child components with new state.
+- **Circuit map:** SVG-based rendering with a fixed viewBox. Car positions are mapped to track coordinates using sector progress. Renders DRS zones, yellow flag sectors, pit entry/exit. Team colours from a static lookup table.
+- **Strategy widget:** Displays the latest Monte Carlo simulation result — predicted finishing position with 95% confidence intervals, iteration count, convergence status. Links to the full Strategy view for detailed comparison.
+- **Info panels:** Each panel subscribes to a slice of the race state (penalties, damage, tyres, weather) and renders a focused view. Standalone components with no cross-dependencies.
+
+## 10. iOS Voice Client (SwiftUI)
+
+A native iOS app that receives race engineer messages via WebSocket and speaks them aloud using text-to-speech. This is the delivery mechanism for the race engineer voice described in `RACE_ENGINEER_VOICE.md`.
+
+### Architecture
+
+Three-layer design:
+
+```
+UI (SwiftUI)
+├── ConnectView     — server URL input, connection button
+├── LiveView        — message history, connection status
+└── SettingsView    — voice rate, volume
+Services
+├── WebSocketService  — persistent connection, JSON decode, reconnect
+└── SpeechService     — TTS queue with priority interruption
+Protocol
+└── EngineerMessage   — shared message model (priority, text, sessionUid)
+```
+
+- **WebSocketService:** `@Observable` for SwiftUI binding. Connection states: disconnected → connecting → connected (with reconnecting as a transient state). Exponential backoff reconnect: delay = min(2^attempt, 30) seconds, max 10 attempts. Automatically converts HTTP/HTTPS URLs to WS/WSS. Filters incoming messages by `sessionUid` to prevent cross-session contamination.
+- **SpeechService:** `AVSpeechSynthesizer` with a priority queue. IMMEDIATE-priority messages interrupt current speech; NORMAL-priority messages queue behind active speech. Audio session configured as `.playback` with `.duckOthers` (lowers game audio during speech). Voice: English (GB), rate 0.48, 0.1s inter-message delay.
+- **Thread safety:** `@unchecked Sendable` + `@MainActor` for safe concurrent access from WebSocket callbacks to UI state updates.
+
 ## Decision Rationale: TCP Push Architecture
 
 Five options were evaluated for the telemetry-to-backend data path. Plain TCP won.
@@ -188,3 +236,4 @@ This architecture assumes a single backend instance. If multiple instances were 
 | Backend | Simulator | TxEventQ | Backend → DB → Simulator | JSON (queue) | On trigger |
 | Simulator | Backend | TxEventQ | Simulator → DB → Backend | JSON (queue) | On completion |
 | Backend | Calibration | TxEventQ | Backend → DB → Consumer | JSON (queue) | On session end |
+| Backend | iOS Client | WebSocket | Backend → iOS | JSON | ~1Hz (live) |

@@ -457,3 +457,38 @@ coefficients
 ```
 
 This can be a table in Oracle alongside the telemetry data, or a separate configuration store — the simulation just needs to load the current coefficients for the relevant track and regime before running.
+
+## Implementation: Standalone Python CLI
+
+Calibration is implemented as a standalone Python component (`python -m calibration run <trackId>`), invoked as a subprocess by the Backend when a session ends (see `INTEGRATION.md` §5). The pipeline reads from and writes to the same Oracle schema used by telemetry and simulation.
+
+### Pipeline Architecture
+
+The pipeline runs as a single atomic transaction per track:
+
+```
+connect → set autocommit=False → outlier detection → 4 fitting steps → commit (or rollback on failure)
+```
+
+All four fitting steps execute within one transaction to ensure coefficients are never partially updated. If any step fails, the entire run rolls back.
+
+### Fitting Steps
+
+Each step has a minimum sample threshold — if insufficient data exists, the step is skipped and existing coefficients (or cold-start defaults) remain in place.
+
+| Step | Knob | Min samples | Data filter |
+|------|------|-------------|-------------|
+| 1 | Base pace (per sector) | 5 | "Clean data": tyre age ≤5 laps, gap ahead >2s or leading, no damage |
+| 2 | Tyre degradation (per compound, per sector) | 10 | Linear regression: `time_ms = baseline + slope × tyre_age` |
+| 3 | Fuel effect (per track) | 5 | Linear regression: `time_ms = baseline + slope × fuel_kg` |
+| 4 | Pit stop duration (per regime) | 3 | Mean/variance of time loss vs baseline sector times |
+
+All steps filter by `ai_controlled` to produce separate PLAYER and AI coefficients (see Dual Calibration above).
+
+### Pit Stop Grouping
+
+Pit stop duration is derived from sector snapshots by stateful parsing of `pit_status` flags. The pipeline reconstructs individual pit stop events by detecting transitions through pit entry → pit lane → pit exit across consecutive sectors. The time loss is computed as the difference between the in-lap/out-lap sector times and the driver's baseline sector times for the same conditions.
+
+### Settings Hash Fingerprinting
+
+Each coefficient is stored with a `game_settings_hash` — a hash of `(ai_difficulty, car_damage_setting, car_damage_rate, low_fuel_mode)` from the session metadata. This fingerprints the game configuration under which the data was collected. Coefficients are only used for simulation when the current session's settings match the stored hash, preventing model contamination across different difficulty/damage configurations.

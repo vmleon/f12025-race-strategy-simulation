@@ -317,6 +317,34 @@ Car damage from collisions, kerb strikes, or component wear directly affects pac
 - **Retirement probability** — Engine and gearbox damage above certain levels risk mechanical failure. The simulation models retirement probability as a function of damage level and remaining race distance — a car with 60% engine damage on lap 5 is far more likely to retire than one with 20% on the final lap.
 - **Compound effect with tyres** — Aero damage may increase tyre degradation (less downforce = more sliding = more wear). Whether this interaction exists in the game is unverified — it is plausible in real F1 but the game may treat damage and tyre wear independently. See `CHALLENGES.md` (Challenge 8) for how to test this.
 
+### Penalties
+
+Race penalties affect both strategy decisions and final results. The simulation models three penalty types from the game's PENA events:
+
+| Type | Effect | Serving |
+|------|--------|---------|
+| **Time penalty** | Seconds added to final race time | Automatic — applied after the chequered flag |
+| **Drive-through** | Must transit pit lane at speed limit | Manual — driver chooses when to serve |
+| **Stop-go** | Must transit pit lane + stop for N seconds | Manual — driver chooses when to serve |
+
+**State separation:** The simulation tracks penalties in two distinct buckets per car:
+
+- `penalty_time_ms` — accumulated time penalties. Deterministic, applied once at end of iteration to `total_time_ms`. Does not affect position during the race.
+- `pending_penalties` — drive-through and stop-go penalties awaiting service. Each has a `laps_to_serve` grace window (default 3 laps). These affect strategy because the driver must pit to serve them.
+
+**Serving logic:** Pending penalties are evaluated at sector 0 (start of each lap):
+
+- **AI cars** serve immediately on the next available lap — no strategic delay
+- **Human players** serve on the final lap of their window (maximizing time on track before incurring the pit lane time loss)
+- **Disqualification:** if `laps_to_serve` reaches 0 without serving, the car is retired (marked DNF)
+
+**Cost model:**
+
+- Drive-through cost = `pit_lane_transit_time` (calibrated from pit stop duration fitting, ~20s default)
+- Stop-go cost = `pit_lane_transit_time` + `penalty.seconds × 1000` (typically 5–10s additional stationary time)
+
+**Design rationale:** Time penalties are separated from serve-able penalties because they have fundamentally different simulation mechanics. Time penalties are deterministic end-of-race adjustments that don't change the race trajectory. Serve-able penalties inject a mandatory pit stop that alters race timing and strategy — the simulation must model when (and whether) the car serves, and the pace consequences of the detour.
+
 ## Recovery Data (in-memory only)
 
 ### 7. SessionHistory (recovery buffer, not persisted)
