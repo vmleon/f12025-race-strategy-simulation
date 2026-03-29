@@ -33,6 +33,8 @@ database/backups/*.sql
 
 # Python
 __pycache__/
+venv/
+.venv/
 
 # Env
 .env
