@@ -20,6 +20,22 @@ class PitStrategy(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class Penalty(BaseModel):
+    """A pending penalty for a car.
+
+    penalty_type: "time" | "drive_through" | "stop_go"
+    seconds: penalty seconds (for time penalty: seconds added to result;
+             for stop_go: stationary stop duration, typically 5 or 10)
+    laps_to_serve: laps remaining to serve before disqualification
+                   (only relevant for drive_through / stop_go)
+    """
+    penalty_type: str = Field(alias="penaltyType")
+    seconds: float = 0.0
+    laps_to_serve: int = Field(default=3, alias="lapsToServe")
+
+    model_config = {"populate_by_name": True}
+
+
 class CarSnapshot(BaseModel):
     car_index: int = Field(alias="carIndex")
     driver_name: str = Field(alias="driverName")
@@ -34,6 +50,7 @@ class CarSnapshot(BaseModel):
     engine_damage: int = Field(alias="engineDamage")
     num_pit_stops: int = Field(alias="numPitStops")
     total_time_ms: float = Field(alias="totalTimeMs")
+    penalties: list[Penalty] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
 

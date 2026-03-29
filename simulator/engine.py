@@ -17,6 +17,7 @@ CONVERGENCE_CHECK_INTERVAL = 200
 SECTORS_PER_LAP = 3
 
 PIT_STOP_TIME_MS = 22_000.0
+PIT_LANE_TRANSIT_TIME_MS = 20_000.0  # drive-through cost (no tyre change)
 BASE_DNF_RATE_PER_SECTOR = 0.0001
 
 
@@ -103,6 +104,10 @@ class MonteCarloEngine:
                         continue
 
                     if sector == 0:
+                        self._process_penalties(car)
+                        if car.retired:
+                            car.position = len(cars)
+                            continue
                         self._check_pit_stop(car, lap, snapshot)
 
                     sector_time = self._predict_sector_time(
@@ -125,6 +130,7 @@ class MonteCarloEngine:
                 if not car.retired:
                     car.current_lap = lap + 1
 
+        self._apply_time_penalties(cars)
         self._assign_final_positions(cars)
 
     # ── sector time prediction (additive model) ─────────────────────────
@@ -269,6 +275,43 @@ class MonteCarloEngine:
         car.tyre_compound = new_compound
         car.tyre_age_laps = 0
         car.num_pit_stops += 1
+
+    # ── penalty handling ────────────────────────────────────────────────
+
+    def _process_penalties(self, car: CarState) -> None:
+        """Process pending drive-through / stop-go penalties at sector 0."""
+        remaining: list = []
+        for penalty in car.pending_penalties:
+            if penalty.laps_to_serve <= 0:
+                # Window expired — disqualified
+                car.retired = True
+                return
+
+            if car.ai_controlled or penalty.laps_to_serve == 1:
+                # AI serves immediately; anyone serves on last lap of window
+                self._serve_penalty(car, penalty)
+            else:
+                # Decrement window, keep pending
+                remaining.append(penalty.model_copy(
+                    update={"laps_to_serve": penalty.laps_to_serve - 1}
+                ))
+        car.pending_penalties = remaining
+
+    def _serve_penalty(self, car: CarState, penalty) -> None:
+        pit_transit = self.coefficients.get("pit_stop_time_loss", car.regime)
+        if pit_transit <= 0:
+            pit_transit = PIT_LANE_TRANSIT_TIME_MS
+
+        if penalty.penalty_type == "drive_through":
+            car.total_time_ms += pit_transit
+        elif penalty.penalty_type == "stop_go":
+            car.total_time_ms += pit_transit + penalty.seconds * 1000.0
+
+    @staticmethod
+    def _apply_time_penalties(cars: list[CarState]) -> None:
+        for car in cars:
+            if not car.retired:
+                car.total_time_ms += car.penalty_time_ms
 
     # ── overtake resolution ──────────────────────────────────────────────
 

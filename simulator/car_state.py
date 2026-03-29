@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from simulator.models import CarSnapshot
+from simulator.models import CarSnapshot, Penalty
 
 
 class CarState:
@@ -12,6 +12,7 @@ class CarState:
         "fuel_kg", "fuel_burn_per_sector_kg",
         "front_wing_damage", "floor_damage", "engine_damage",
         "num_pit_stops", "retired", "total_time_ms", "current_lap",
+        "pending_penalties", "penalty_time_ms",
     )
 
     def __init__(
@@ -30,6 +31,8 @@ class CarState:
         num_pit_stops: int,
         total_time_ms: float,
         current_lap: int,
+        pending_penalties: list[Penalty] | None = None,
+        penalty_time_ms: float = 0.0,
     ) -> None:
         self.car_index = car_index
         self.driver_name = driver_name
@@ -46,6 +49,8 @@ class CarState:
         self.retired = False
         self.total_time_ms = total_time_ms
         self.current_lap = current_lap
+        self.pending_penalties = list(pending_penalties) if pending_penalties else []
+        self.penalty_time_ms = penalty_time_ms
 
     @property
     def regime(self) -> str:
@@ -53,6 +58,12 @@ class CarState:
 
     @staticmethod
     def from_snapshot(cs: CarSnapshot, current_lap: int) -> CarState:
+        penalties = list(cs.penalties) if cs.penalties else []
+        penalty_time_ms = 0.0
+        for p in penalties:
+            if p.penalty_type == "time":
+                penalty_time_ms += p.seconds * 1000.0
+        active_penalties = [p for p in penalties if p.penalty_type != "time"]
         return CarState(
             car_index=cs.car_index,
             driver_name=cs.driver_name,
@@ -68,4 +79,6 @@ class CarState:
             num_pit_stops=cs.num_pit_stops,
             total_time_ms=cs.total_time_ms,
             current_lap=current_lap,
+            pending_penalties=active_penalties,
+            penalty_time_ms=penalty_time_ms,
         )

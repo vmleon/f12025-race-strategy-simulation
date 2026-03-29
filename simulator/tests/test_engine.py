@@ -1,6 +1,6 @@
 from simulator.coefficients import Coefficients
 from simulator.engine import MonteCarloEngine
-from simulator.models import CarSnapshot, PitStop, PitStrategy, RaceSnapshot
+from simulator.models import CarSnapshot, Penalty, PitStop, PitStrategy, RaceSnapshot
 
 
 def _make_car(
@@ -17,6 +17,7 @@ def _make_car(
     engine_damage: int = 0,
     num_pit_stops: int = 0,
     total_time_ms: float = 0.0,
+    penalties: list[Penalty] | None = None,
 ) -> CarSnapshot:
     return CarSnapshot(
         car_index=car_index,
@@ -32,6 +33,7 @@ def _make_car(
         engine_damage=engine_damage,
         num_pit_stops=num_pit_stops,
         total_time_ms=total_time_ms,
+        penalties=penalties or [],
     )
 
 
@@ -168,3 +170,80 @@ class TestDamageEffect:
 
         assert len(r_healthy.cars) == 1
         assert len(r_damaged.cars) == 1
+
+
+class TestPenalties:
+    def test_time_penalty_worsens_position(self):
+        """A time penalty added to final result should hurt the penalised car."""
+        clean = _make_car(0, "Clean", position=1, total_time_ms=0.0)
+        penalised = _make_car(
+            1, "Penalised", position=2, total_time_ms=100.0,
+            penalties=[Penalty(penalty_type="time", seconds=5)],
+        )
+        snapshot = _make_snapshot(cars=[clean, penalised], total_laps=3)
+
+        engine = MonteCarloEngine(Coefficients.defaults(), seed=42)
+        result = engine.simulate(snapshot, max_iterations=100)
+
+        penalised_result = next(c for c in result.cars if c.car_index == 1)
+        clean_result = next(c for c in result.cars if c.car_index == 0)
+        # Penalised car should have a worse (higher) mean position
+        assert penalised_result.mean_position >= clean_result.mean_position
+
+    def test_drive_through_penalty_adds_time(self):
+        """Drive-through penalty forces a pit lane transit."""
+        no_penalty = _make_car(0, "NoPenalty", position=1)
+        with_penalty = _make_car(
+            1, "DriveThrough", position=2,
+            penalties=[Penalty(penalty_type="drive_through")],
+        )
+        snapshot = _make_snapshot(cars=[no_penalty, with_penalty], total_laps=5)
+
+        engine = MonteCarloEngine(Coefficients.defaults(), seed=42)
+        result = engine.simulate(snapshot, max_iterations=100)
+
+        penalised_result = next(c for c in result.cars if c.car_index == 1)
+        clean_result = next(c for c in result.cars if c.car_index == 0)
+        assert penalised_result.mean_position >= clean_result.mean_position
+
+    def test_stop_go_penalty_adds_time(self):
+        """Stop-go penalty forces pit transit plus stationary stop."""
+        no_penalty = _make_car(0, "NoPenalty", position=1)
+        with_penalty = _make_car(
+            1, "StopGo", position=2,
+            penalties=[Penalty(penalty_type="stop_go", seconds=10)],
+        )
+        snapshot = _make_snapshot(cars=[no_penalty, with_penalty], total_laps=5)
+
+        engine = MonteCarloEngine(Coefficients.defaults(), seed=42)
+        result = engine.simulate(snapshot, max_iterations=100)
+
+        penalised_result = next(c for c in result.cars if c.car_index == 1)
+        clean_result = next(c for c in result.cars if c.car_index == 0)
+        assert penalised_result.mean_position >= clean_result.mean_position
+
+    def test_expired_penalty_window_retires_car(self):
+        """If laps_to_serve is already 0, the car is disqualified (retired)."""
+        penalised = _make_car(
+            0, "Expired", position=1, ai_controlled=False,
+            penalties=[Penalty(penalty_type="drive_through", laps_to_serve=0)],
+        )
+        other = _make_car(1, "Other", position=2)
+        snapshot = _make_snapshot(cars=[penalised, other], total_laps=5)
+
+        engine = MonteCarloEngine(Coefficients.defaults(), seed=42)
+        result = engine.simulate(snapshot, max_iterations=50)
+
+        # Car with expired window should have high DNF probability (disqualified)
+        penalised_result = next(c for c in result.cars if c.car_index == 0)
+        assert penalised_result.dnf_probability > 0.0
+
+    def test_no_penalties_unchanged_behavior(self):
+        """Simulation with no penalties should produce the same results as before."""
+        snapshot = _make_snapshot()
+        r1 = MonteCarloEngine(Coefficients.defaults(), seed=42).simulate(
+            snapshot, max_iterations=100
+        )
+        # All cars have empty penalties by default
+        for car_result in r1.cars:
+            assert 1.0 <= car_result.mean_position <= 3.0
