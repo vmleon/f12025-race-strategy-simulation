@@ -8,6 +8,7 @@ import numpy as np
 
 from simulator.car_state import CarState
 from simulator.coefficients import Coefficients
+from simulator.models import Penalty
 from simulator.models import CarResult, RaceSnapshot, SimulationResult
 
 DEFAULT_ITERATIONS = 1_000
@@ -280,6 +281,8 @@ class MonteCarloEngine:
 
     def _process_penalties(self, car: CarState) -> None:
         """Process pending drive-through / stop-go penalties at sector 0."""
+        if not car.pending_penalties:
+            return
         remaining: list = []
         for penalty in car.pending_penalties:
             if penalty.laps_to_serve <= 0:
@@ -297,7 +300,7 @@ class MonteCarloEngine:
                 ))
         car.pending_penalties = remaining
 
-    def _serve_penalty(self, car: CarState, penalty) -> None:
+    def _serve_penalty(self, car: CarState, penalty: Penalty) -> None:
         pit_transit = self.coefficients.get("pit_stop_time_loss", car.regime)
         if pit_transit <= 0:
             pit_transit = PIT_LANE_TRANSIT_TIME_MS
@@ -310,7 +313,7 @@ class MonteCarloEngine:
     @staticmethod
     def _apply_time_penalties(cars: list[CarState]) -> None:
         for car in cars:
-            if not car.retired:
+            if not car.retired and car.penalty_time_ms > 0:
                 car.total_time_ms += car.penalty_time_ms
 
     # ── overtake resolution ──────────────────────────────────────────────

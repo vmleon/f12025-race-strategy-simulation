@@ -5,6 +5,7 @@ import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,6 +19,11 @@ public class SessionController {
     private final SessionStateHolder sessionStateHolder;
     private final RaceWebSocketHandler raceWebSocketHandler;
     private final JdbcTemplate jdbc;
+
+    private static final RowMapper<SessionDto> SESSION_ROW_MAPPER = (rs, rowNum) -> new SessionDto(
+            rs.getString("session_uid"), rs.getInt("track_id"),
+            rs.getString("session_type"), rs.getInt("total_laps"),
+            rs.getInt("ai_difficulty"), rs.getString("created_at"));
 
     public SessionController(SessionStateHolder sessionStateHolder,
                              RaceWebSocketHandler raceWebSocketHandler,
@@ -59,33 +65,19 @@ public class SessionController {
     public List<SessionDto> listSessions(
             @RequestParam(required = false) Integer trackId,
             @RequestParam(defaultValue = "20") int limit) {
-        if (trackId != null) {
-            return jdbc.query("""
-                    SELECT session_uid, track_id, session_type, total_laps, ai_difficulty,
-                           TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS') created_at
-                    FROM sessions
-                    WHERE track_id = ?
-                    ORDER BY created_at DESC
-                    FETCH FIRST ? ROWS ONLY
-                    """,
-                    (rs, rowNum) -> new SessionDto(
-                            rs.getString("session_uid"), rs.getInt("track_id"),
-                            rs.getString("session_type"), rs.getInt("total_laps"),
-                            rs.getInt("ai_difficulty"), rs.getString("created_at")),
-                    trackId, limit);
-        }
-        return jdbc.query("""
+        String trackFilter = trackId != null ? "\n    WHERE track_id = ?" : "";
+        String sql = """
                 SELECT session_uid, track_id, session_type, total_laps, ai_difficulty,
                        TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS') created_at
-                FROM sessions
+                FROM sessions%s
                 ORDER BY created_at DESC
                 FETCH FIRST ? ROWS ONLY
-                """,
-                (rs, rowNum) -> new SessionDto(
-                        rs.getString("session_uid"), rs.getInt("track_id"),
-                        rs.getString("session_type"), rs.getInt("total_laps"),
-                        rs.getInt("ai_difficulty"), rs.getString("created_at")),
-                limit);
+                """.formatted(trackFilter);
+
+        if (trackId != null) {
+            return jdbc.query(sql, SESSION_ROW_MAPPER, trackId, limit);
+        }
+        return jdbc.query(sql, SESSION_ROW_MAPPER, limit);
     }
 
     @GetMapping("/{sessionUid}")
@@ -96,10 +88,7 @@ public class SessionController {
                 FROM sessions
                 WHERE session_uid = ?
                 """,
-                (rs, rowNum) -> new SessionDto(
-                        rs.getString("session_uid"), rs.getInt("track_id"),
-                        rs.getString("session_type"), rs.getInt("total_laps"),
-                        rs.getInt("ai_difficulty"), rs.getString("created_at")),
+                SESSION_ROW_MAPPER,
                 sessionUid);
         if (sessions.isEmpty()) return ResponseEntity.notFound().build();
 

@@ -5,6 +5,7 @@ import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,6 +18,20 @@ public class CalibrationController {
 
     private final JdbcTemplate jdbc;
     private final QueueService queueService;
+
+    private static final RowMapper<CalibrationStatusDto> CALIBRATION_ROW_MAPPER = (rs, rowNum) -> {
+        int sector = rs.getInt("sector_number");
+        return new CalibrationStatusDto(
+                rs.getString("knob_name"),
+                rs.getString("calibration_regime"),
+                rs.wasNull() ? null : sector,
+                rs.getDouble("value"),
+                rs.getDouble("confidence"),
+                rs.getInt("is_default") == 1,
+                rs.getInt("session_count"),
+                rs.getInt("data_point_count"),
+                rs.getString("trained_at"));
+    };
 
     public CalibrationController(JdbcTemplate jdbc, QueueService queueService) {
         this.jdbc = jdbc;
@@ -31,41 +46,8 @@ public class CalibrationController {
 
     @GetMapping("/status")
     public List<CalibrationStatusDto> status(@RequestParam(required = false) Integer trackId) {
-        if (trackId != null) {
-            return jdbc.query("""
-                    SELECT knob_name, calibration_regime, sector_number, value,
-                           confidence, is_default, session_count, data_point_count,
-                           TO_CHAR(trained_at, 'YYYY-MM-DD"T"HH24:MI:SS') trained_at
-                    FROM (
-                        SELECT knob_name, calibration_regime, sector_number, value,
-                               confidence, is_default, session_count, data_point_count, trained_at,
-                               ROW_NUMBER() OVER (
-                                   PARTITION BY knob_name, calibration_regime, NVL(sector_number, -1)
-                                   ORDER BY trained_at DESC
-                               ) rn
-                        FROM calibration_coefficients
-                        WHERE track_id = ?
-                    )
-                    WHERE rn = 1
-                    ORDER BY knob_name, calibration_regime, sector_number
-                    """,
-                    (rs, rowNum) -> {
-                        int sector = rs.getInt("sector_number");
-                        return new CalibrationStatusDto(
-                                rs.getString("knob_name"),
-                                rs.getString("calibration_regime"),
-                                rs.wasNull() ? null : sector,
-                                rs.getDouble("value"),
-                                rs.getDouble("confidence"),
-                                rs.getInt("is_default") == 1,
-                                rs.getInt("session_count"),
-                                rs.getInt("data_point_count"),
-                                rs.getString("trained_at"));
-                    },
-                    trackId);
-        }
-        // Without trackId: return summary across all tracks
-        return jdbc.query("""
+        String trackFilter = trackId != null ? "\n            WHERE track_id = ?" : "";
+        String sql = """
                 SELECT knob_name, calibration_regime, sector_number, value,
                        confidence, is_default, session_count, data_point_count,
                        TO_CHAR(trained_at, 'YYYY-MM-DD"T"HH24:MI:SS') trained_at
@@ -76,24 +58,16 @@ public class CalibrationController {
                                PARTITION BY knob_name, calibration_regime, NVL(sector_number, -1)
                                ORDER BY trained_at DESC
                            ) rn
-                    FROM calibration_coefficients
+                    FROM calibration_coefficients%s
                 )
                 WHERE rn = 1
                 ORDER BY knob_name, calibration_regime, sector_number
-                """,
-                (rs, rowNum) -> {
-                    int sector = rs.getInt("sector_number");
-                    return new CalibrationStatusDto(
-                            rs.getString("knob_name"),
-                            rs.getString("calibration_regime"),
-                            rs.wasNull() ? null : sector,
-                            rs.getDouble("value"),
-                            rs.getDouble("confidence"),
-                            rs.getInt("is_default") == 1,
-                            rs.getInt("session_count"),
-                            rs.getInt("data_point_count"),
-                            rs.getString("trained_at"));
-                });
+                """.formatted(trackFilter);
+
+        if (trackId != null) {
+            return jdbc.query(sql, CALIBRATION_ROW_MAPPER, trackId);
+        }
+        return jdbc.query(sql, CALIBRATION_ROW_MAPPER);
     }
 
     @PostMapping("/run")

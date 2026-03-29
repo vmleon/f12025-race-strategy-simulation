@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -29,7 +31,7 @@ class Penalty(BaseModel):
     laps_to_serve: laps remaining to serve before disqualification
                    (only relevant for drive_through / stop_go)
     """
-    penalty_type: str = Field(alias="penaltyType")
+    penalty_type: Literal["time", "drive_through", "stop_go"] = Field(alias="penaltyType")
     seconds: float = 0.0
     laps_to_serve: int = Field(default=3, alias="lapsToServe")
 
