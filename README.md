@@ -8,31 +8,37 @@ A proof-of-concept system that ingests real-time telemetry from the F1 2025 game
 graph LR
     Game["F1 2025 Game<br/><i>UDP @ 20777</i>"]
     Ingest["Telemetry Server<br/><i>Plain Java 23</i>"]
-    DB[("Oracle AI DB 26ai<br/><i>8 tables</i>")]
+    DB[("Oracle AI DB 26ai<br/><i>8 tables + TxEventQ</i>")]
     Backend["Backend API<br/><i>Spring Boot 3.5.3</i>"]
+    Calibration["Calibration<br/><i>Python CLI</i>"]
+    Simulator["Simulator<br/><i>FastAPI, port 8081</i>"]
     Portal["Web Portal<br/><i>Angular 21</i>"]
-    Client["iOS Client<br/><i>planned</i>"]
+    Client["iOS Client<br/><i>SwiftUI</i>"]
 
     Game -- "UDP packets<br/>~100 Hz" --> Ingest
     Ingest -- "sector snapshots<br/>events, sessions" --> DB
     Ingest -- "TCP push<br/>port 9090" --> Backend
     DB -- "historical data" --> Ingest
+    DB -- "TxEventQ" --> Calibration
+    DB -- "TxEventQ" --> Simulator
     DB -- "coefficients +<br/>race state" --> Backend
     Backend -- "REST + WebSocket<br/>port 8080" --> Portal
-    Backend -- "REST" --> Client
+    Backend -- "WebSocket" --> Client
 ```
 
 ### Data Flow
 
-The system operates as four connected pipelines:
+The system operates as five connected pipelines:
 
 **1. Ingestion** — The telemetry server listens for UDP packets from the F1 2025 game (~80–100 packets/sec). It maintains an in-memory snapshot of all 20 cars and writes to the database only on **sector transitions** (3 per lap × 20 cars ≈ 60 rows/lap). Discrete events (safety car, penalties, retirements, collisions) are captured immediately. Live race state is pushed to the backend via **TCP (port 9090)** at ~1 Hz.
 
-**2. Calibration** — After each session ends, the backend auto-triggers the calibration pipeline, which reads all accumulated sector snapshots for the track and fits 11 model knobs (tyre degradation per compound, fuel effect, dirty air, DRS advantage, damage penalties, overtake probability, safety car rate). Coefficients are fitted **separately for Player and AI cars** because the game uses different physics models for each.
+**2. Calibration** — The backend enqueues calibration requests via **Oracle TxEventQ**. A Python CLI consumer (`calibration/`) reads all accumulated sector snapshots for the track and fits 11 model knobs (tyre degradation per compound, fuel effect, dirty air, DRS advantage, damage penalties, overtake probability, safety car rate). Coefficients are fitted **separately for Player and AI cars** because the game uses different physics models for each.
 
-**3. Simulation** — During a race the Monte Carlo engine (1,000–10,000 iterations with early stopping) loads the fitted coefficients and current race state, then simulates at per-sector granularity. Each iteration samples from the calibrated distributions to project sector times, overtakes, and pit stop outcomes. The output is a probability distribution of finishing positions for each car. Simulations auto-trigger on lap completions, pit stops, safety car deployments, and disruptive events (with 3-second debounce).
+**3. Simulation** — During a race the backend enqueues simulation requests via **TxEventQ**. The simulator service (`simulator/`, FastAPI on port 8081) runs a Monte Carlo engine (1,000–10,000 iterations with early stopping) that loads the fitted coefficients and current race state, then simulates at per-sector granularity. Each iteration samples from the calibrated distributions to project sector times, overtakes, and pit stop outcomes. The output is a probability distribution of finishing positions for each car. Simulations auto-trigger on lap completions, pit stops, safety car deployments, and disruptive events (with 3-second debounce).
 
-**4. Presentation** — The backend broadcasts simulation results, calibration status, and live race state to the portal via WebSocket. The portal provides four views: live race table, strategy comparison, calibration dashboard, and session browser.
+**4. Presentation** — The backend broadcasts simulation results, calibration status, and live race state to the portal via WebSocket. The portal provides five views: live race table, strategy comparison, calibration dashboard, session browser, and drivers overview.
+
+**5. Race Engineer** — The iOS client connects to the backend via WebSocket, receives race engineer messages (strategy advice, warnings, status updates), and speaks them aloud using text-to-speech — acting as a real-time voice assistant for the driver.
 
 ```mermaid
 graph TD
@@ -51,14 +57,15 @@ graph TD
         CC[("calibration_coefficients")]
         DR[("driver_ratings")]
         Aux[("sessions · participants<br/>events · tyre_sets<br/>final_classifications")]
+        Q[("TxEventQ<br/><i>SIMULATION_REQUEST<br/>CALIBRATION_REQUEST<br/>SESSION_LIFECYCLE</i>")]
     end
 
     subgraph Calibration
-        Fit["Fit 11 Knobs<br/><i>per track, per regime<br/>(PLAYER / AI)</i>"]
+        Fit["Fit 11 Knobs<br/><i>Python CLI<br/>per track, per regime<br/>(PLAYER / AI)</i>"]
     end
 
     subgraph Simulation
-        MC["Monte Carlo<br/><i>per-sector, 20 cars<br/>1k–10k iterations</i>"]
+        MC["Monte Carlo<br/><i>FastAPI worker<br/>per-sector, 20 cars<br/>1k–10k iterations</i>"]
         Out["P(position) per car<br/><i>mean ± CI, P(podium),<br/>P(points), P(DNF)</i>"]
         MC --> Out
     end
@@ -66,31 +73,37 @@ graph TD
     subgraph Presentation
         WS["WebSocket<br/><i>/ws/race</i>"]
         REST["REST API<br/><i>/api/*</i>"]
-        Views["Portal Views<br/><i>Race · Strategy<br/>Calibration · Sessions</i>"]
+        Views["Portal Views<br/><i>Race · Strategy · Calibration<br/>Sessions · Drivers</i>"]
+        iOS["iOS Client<br/><i>WebSocket + TTS</i>"]
         WS --> Views
+        WS --> iOS
         REST --> Views
     end
 
     Snap --> SS
     Snap --> Aux
     TCP --> WS
+    Q -- "CALIBRATION_REQUEST" --> Fit
     SS -- "accumulated<br/>sessions" --> Fit
     Fit --> CC
+    Q -- "SIMULATION_REQUEST" --> MC
     CC --> MC
     SS -- "current race<br/>state" --> MC
-    Out --> WS
-    Out --> REST
+    Out --> Q
+    Q -- "SIMULATION_RESULT" --> WS
 ```
 
 ## Modules
 
 | Module | Role | Tech |
 |--------|------|------|
-| `telemetry/` | UDP server: receives F1 2025 packets, maintains in-memory state, snapshots on sector transitions, pushes live state via TCP, runs calibration pipeline | Plain Java 23, Oracle UCP, Oracle JDBC |
-| `backend/` | REST/WebSocket API: bridges portal with database and Monte Carlo simulation engine, orchestrates calibration and simulation triggers | Spring Boot 3.5.3, Java 23 |
-| `portal/` | Web UI: live race table, strategy comparison, calibration dashboard, session browser | Angular 21 |
-| `database/` | Oracle AI Database 26ai schema (8 tables), Liquibase migrations | Liquibase, SQL |
-| `client/` | iOS app: real-time race engineer display for the driver | Planned |
+| `telemetry/` | UDP server: receives F1 2025 packets, maintains in-memory state, snapshots on sector transitions, pushes live state via TCP | Plain Java 23, Oracle UCP, Oracle JDBC |
+| `backend/` | REST/WebSocket API: bridges portal and clients with database, orchestrates calibration and simulation triggers via TxEventQ | Spring Boot 3.5.3, Java 23 |
+| `calibration/` | Batch CLI: outlier detection + sklearn/numpy fitting of physics model coefficients per track | Python 3.12+, sklearn, numpy |
+| `simulator/` | Monte Carlo race strategy simulation service, consumes TxEventQ requests | Python 3.12+, FastAPI |
+| `portal/` | Web UI: live race table, strategy comparison, calibration dashboard, session browser, drivers overview | Angular 21 |
+| `database/` | Oracle AI Database 26ai schema (8 tables + TxEventQ queues), Liquibase migrations | Liquibase, SQL |
+| `client/` | iOS app: real-time race engineer voice assistant for the driver | SwiftUI, WebSocket, AVSpeechSynthesizer |
 
 ### Key Design Choices
 
@@ -107,9 +120,10 @@ graph TD
 ### Prerequisites
 
 - Java 23
+- Python 3.12+
 - Node 22+
-- Python 3.10+ (for `manage.py`)
 - Podman (for Oracle database container)
+- Xcode (for iOS client)
 
 ### 1. Database
 
@@ -141,13 +155,29 @@ cd backend && ./gradlew bootRun
 
 Runs on http://localhost:8080. Connects to telemetry via TCP on port 9090.
 
-### 4. Portal
+### 4. Simulator
+
+```bash
+python -m simulator
+```
+
+Runs on http://localhost:8081. Consumes simulation requests from TxEventQ. Can run without Oracle for testing:
+
+```bash
+SIMULATOR_USE_DB=false python -m simulator
+```
+
+### 5. Portal
 
 ```bash
 cd portal && npm start
 ```
 
 Runs on http://localhost:4200, proxies `/api` and `/ws` calls to the backend.
+
+### 6. iOS Client
+
+Xcode project in `client/Virtual Race Engineer/`. Open in Xcode and run on a device or simulator.
 
 ## Docs
 
