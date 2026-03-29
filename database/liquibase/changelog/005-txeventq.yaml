@@ -4,6 +4,7 @@ databaseChangeLog:
       author: victormartin
       changes:
         - sql:
+            splitStatements: false
             sql: |
               BEGIN
                 BEGIN
@@ -28,6 +29,7 @@ databaseChangeLog:
               END;
       rollback:
         - sql:
+            splitStatements: false
             sql: |
               BEGIN
                 DBMS_AQADM.STOP_QUEUE(queue_name => 'PDBADMIN.SESSION_LIFECYCLE');
@@ -39,6 +41,7 @@ databaseChangeLog:
       author: victormartin
       changes:
         - sql:
+            splitStatements: false
             sql: |
               BEGIN
                 BEGIN
@@ -54,6 +57,7 @@ databaseChangeLog:
               END;
       rollback:
         - sql:
+            splitStatements: false
             sql: |
               BEGIN
                 DBMS_AQADM.STOP_QUEUE(queue_name => 'PDBADMIN.CALIBRATION_REQUEST');
@@ -65,6 +69,7 @@ databaseChangeLog:
       author: victormartin
       changes:
         - sql:
+            splitStatements: false
             sql: |
               BEGIN
                 BEGIN
@@ -80,6 +85,7 @@ databaseChangeLog:
               END;
       rollback:
         - sql:
+            splitStatements: false
             sql: |
               BEGIN
                 DBMS_AQADM.STOP_QUEUE(queue_name => 'PDBADMIN.SIMULATION_REQUEST');
@@ -91,6 +97,7 @@ databaseChangeLog:
       author: victormartin
       changes:
         - sql:
+            splitStatements: false
             sql: |
               BEGIN
                 BEGIN
@@ -106,6 +113,7 @@ databaseChangeLog:
               END;
       rollback:
         - sql:
+            splitStatements: false
             sql: |
               BEGIN
                 DBMS_AQADM.STOP_QUEUE(queue_name => 'PDBADMIN.SIMULATION_RESULT');

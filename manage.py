@@ -79,7 +79,7 @@ def _container_running():
 
 def _get_password():
     load_dotenv(ENV_FILE)
-    return os.environ.get("LOCAL_DB_PASSWORD", "")
+    return os.environ.get("F1STRATEGY_DB_PASSWORD", "")
 
 
 def _format_sql_value(val):
@@ -132,7 +132,7 @@ def setup():
 
     # Generate password
     password = secrets.token_urlsafe(12)
-    set_key(ENV_FILE, "LOCAL_DB_PASSWORD", password)
+    set_key(ENV_FILE, "F1STRATEGY_DB_PASSWORD", password)
     console.print("[green]Generated database password and saved to .env[/green]")
 
     # Create container
@@ -206,7 +206,7 @@ def clean():
         console.print(f"[yellow]Container '{CONTAINER_NAME}' does not exist.[/yellow]")
 
     if os.path.exists(ENV_FILE):
-        set_key(ENV_FILE, "LOCAL_DB_PASSWORD", "")
+        set_key(ENV_FILE, "F1STRATEGY_DB_PASSWORD", "")
         console.print("[green]Password cleared from .env[/green]")
 
 

@@ -60,6 +60,7 @@ podman run --network host f1strategy-telemetry
 **Native:**
 
 ```bash
+export $(grep F1STRATEGY_DB_PASSWORD .env | tr -d "'")
 cd backend
 ./gradlew bootRun               # Spring Boot on port 8080
 ```
