@@ -88,8 +88,8 @@ import { StrategyWidgetComponent } from './strategy-widget/strategy-widget.compo
               </thead>
               <tbody>
                 @for (car of cars(); track car.idx) {
-                  <tr [class.in-pit]="car.pitStatus !== 0" [class.ai]="car.ai">
-                    <td class="pos">{{ car.pos }}</td>
+                  <tr [class.in-pit]="car.pitStatus !== 0" [class.ai]="car.ai" [class.out]="(car.resultStatus ?? 2) >= 4">
+                    <td class="pos">{{ (car.resultStatus ?? 2) >= 4 ? 'OUT' : car.pos }}</td>
                     <td class="driver">{{ car.name || 'Car ' + car.idx }}</td>
                     <td>{{ car.lap }}</td>
                     <td class="sector-time">{{ formatSector(car.lastSectorMs, 0) }}</td>
@@ -241,6 +241,12 @@ import { StrategyWidgetComponent } from './strategy-widget/strategy-widget.compo
     }
     .race-table tr.ai {
       opacity: 0.7;
+    }
+    .race-table tr.out {
+      opacity: 0.4;
+    }
+    .race-table tr.out .pos {
+      color: #e53935;
     }
     .pos {
       font-weight: bold;
