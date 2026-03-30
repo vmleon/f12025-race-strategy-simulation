@@ -19,7 +19,14 @@ public class ConnectionFactory {
         pool.setConnectionFactoryClassName("oracle.jdbc.pool.OracleDataSource");
         pool.setURL(config.getProperty("db.url"));
         pool.setUser(config.getProperty("db.user"));
-        pool.setPassword(config.getProperty("db.password", ""));
+        String password = config.getProperty("db.password", "");
+        if (password.isEmpty()) {
+            password = System.getenv().getOrDefault("F1STRATEGY_DB_PASSWORD", "");
+        }
+        pool.setPassword(password);
+        System.out.println("DB config: url=" + config.getProperty("db.url")
+                + " user=" + config.getProperty("db.user")
+                + " password=" + (password.isEmpty() ? "(empty)" : "(set, length=" + password.length() + ")"));
         pool.setInitialPoolSize(Integer.parseInt(config.getProperty("db.pool.initialSize", "2")));
         pool.setMinPoolSize(Integer.parseInt(config.getProperty("db.pool.minSize", "2")));
         pool.setMaxPoolSize(Integer.parseInt(config.getProperty("db.pool.maxSize", "10")));

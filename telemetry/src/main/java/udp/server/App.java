@@ -4,8 +4,11 @@ import java.io.InputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -187,7 +190,27 @@ public class App {
         }));
 
         System.out.println("UDP Server listening on " + host + ":" + port);
+        for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+            if (ni.isLoopback() || !ni.isUp()) continue;
+            for (InetAddress addr : Collections.list(ni.getInetAddresses())) {
+                if (addr.getAddress().length == 4) { // IPv4 only
+                    System.out.println("Telemetry listening at " + addr.getHostAddress() + ":" + port);
+                }
+            }
+        }
         System.out.println("Buffer size: " + bufferSizeInBytes + " bytes");
+
+        // Database connectivity check
+        try (Connection conn = connFactory.getConnection()) {
+            System.out.println("Database: OK (" + conn.getMetaData().getURL() + ")");
+        } catch (Exception e) {
+            System.err.println("Database: FAILED (" + e.getMessage() + ")");
+            Throwable cause = e.getCause();
+            while (cause != null) {
+                System.err.println("  Caused by: " + cause.getMessage());
+                cause = cause.getCause();
+            }
+        }
 
         byte[] buffer = new byte[bufferSizeInBytes];
 

@@ -23,6 +23,18 @@ application {
     mainClass = 'udp.server.App'
 }
 
+run {
+    def envFile = rootProject.file('../.env')
+    if (envFile.exists()) {
+        envFile.readLines().each { line ->
+            def m = line =~ /^(\w+)=['\"]?(.+?)['\"]?$/
+            if (m.matches()) {
+                environment m.group(1), m.group(2)
+            }
+        }
+    }
+}
+
 tasks.named('test') {
     useJUnitPlatform()
 }
