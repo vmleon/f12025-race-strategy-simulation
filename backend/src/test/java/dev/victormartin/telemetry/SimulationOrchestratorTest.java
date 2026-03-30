@@ -108,6 +108,26 @@ class SimulationOrchestratorTest {
     }
 
     @Test
+    void snapshotSkipsInactiveCars() throws Exception {
+        String json = """
+                {"type":"state","trackId":3,"totalLaps":50,"weather":0,"trackTemp":32,"airTemp":24,
+                 "safetyCarStatus":0,"cars":[
+                   {"idx":0,"pos":1,"lap":10,"sector":0,"lastSectorMs":[28000,33000,0],
+                    "tyre":"M","tyreAge":7,"pitStatus":0,"fuel":40.0,"pits":0,
+                    "fwDmg":0,"flDmg":0,"engDmg":0,"name":"Player","ai":false,"resultStatus":2},
+                   {"idx":1,"pos":0,"lap":0,"sector":0,"lastSectorMs":[0,0,0],
+                    "tyre":"M","tyreAge":0,"pitStatus":0,"fuel":0.0,"pits":0,
+                    "fwDmg":0,"flDmg":0,"engDmg":0,"name":"","ai":true,"resultStatus":0}
+                ]}""";
+        JsonNode state = objectMapper.readTree(json);
+        RaceSnapshot snapshot = orchestrator.assembleSnapshot(state);
+
+        assertNotNull(snapshot);
+        assertEquals(1, snapshot.cars().size());
+        assertEquals("Player", snapshot.cars().get(0).driverName());
+    }
+
+    @Test
     void resetClearsTriggerState() throws Exception {
         JsonNode state1 = objectMapper.readTree(buildStateJson(5, 0, 0));
         orchestrator.detectTrigger(state1);

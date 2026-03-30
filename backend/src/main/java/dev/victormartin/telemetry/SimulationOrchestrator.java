@@ -264,9 +264,9 @@ public class SimulationOrchestrator {
                 int engDmg = c.has("engDmg") ? c.get("engDmg").asInt() : 0;
                 int pits = c.has("pits") ? c.get("pits").asInt() : 0;
 
-                // Skip retired cars (resultStatus 3=finished, 4=DNF, 5=DSQ, 6=DNS, 7=withdrawn)
+                // Skip inactive (0-1) and retired (4+) cars
                 int resultStatus = c.has("resultStatus") ? c.get("resultStatus").asInt() : 2;
-                if (resultStatus >= 4) continue;
+                if (resultStatus <= 1 || resultStatus >= 4) continue;
 
                 // Compute cumulative time estimate from position (simplified: leader=0, +1s per position)
                 double totalTimeMs = (pos - 1) * 1000.0;
