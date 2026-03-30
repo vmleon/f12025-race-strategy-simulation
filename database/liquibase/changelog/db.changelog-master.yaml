@@ -14,12 +14,3 @@ databaseChangeLog:
   - include:
       file: 005-txeventq.yaml
       relativeToChangelogFile: true
-  - include:
-      file: 006-session-type.yaml
-      relativeToChangelogFile: true
-  - include:
-      file: 007-flashback-columns.yaml
-      relativeToChangelogFile: true
-  - include:
-      file: 008-drivers.yaml
-      relativeToChangelogFile: true

@@ -1,45 +1,34 @@
 databaseChangeLog:
   - changeSet:
-      id: 004-01-outlier-column
-      author: victormartin
-      changes:
-        - sql:
-            sql: |
-              ALTER TABLE sector_snapshots ADD (
-                  outlier  NUMBER(1)  DEFAULT 0 NOT NULL
-                  CONSTRAINT chk_outlier CHECK (outlier IN (0, 1))
-              )
-
-  - changeSet:
-      id: 004-02-idx-events-session-code
+      id: 004-01-idx-events-session-code
       author: victormartin
       changes:
         - sql:
             sql: CREATE INDEX idx_events_session_code ON session_events (session_uid, event_code)
 
   - changeSet:
-      id: 004-03-idx-sector-compound-valid
+      id: 004-02-idx-sector-compound-valid
       author: victormartin
       changes:
         - sql:
             sql: CREATE INDEX idx_sector_compound_valid ON sector_snapshots (tyre_compound_actual, lap_invalid, safety_car_status)
 
   - changeSet:
-      id: 004-04-idx-sector-gap-ahead
+      id: 004-03-idx-sector-gap-ahead
       author: victormartin
       changes:
         - sql:
             sql: CREATE INDEX idx_sector_gap_ahead ON sector_snapshots (gap_to_car_ahead_ms)
 
   - changeSet:
-      id: 004-05-idx-sector-outlier
+      id: 004-04-idx-sector-outlier
       author: victormartin
       changes:
         - sql:
             sql: CREATE INDEX idx_sector_outlier ON sector_snapshots (outlier, lap_invalid, safety_car_status, pit_status)
 
   - changeSet:
-      id: 004-06-idx-calib-lookup
+      id: 004-05-idx-calib-lookup
       author: victormartin
       changes:
         - sql:

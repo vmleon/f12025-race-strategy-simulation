@@ -69,6 +69,8 @@ databaseChangeLog:
                   safety_car_status    NUMBER(1),
                   recovered            NUMBER(1)     DEFAULT 0 NOT NULL,
                   frame_identifier     NUMBER(10),
+                  outlier              NUMBER(1)     DEFAULT 0 NOT NULL,
+                  session_type         NUMBER(2)     NOT NULL,
                   created_at           TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
                   CONSTRAINT pk_sector_snapshots
                       PRIMARY KEY (session_uid, car_index, lap_number, sector_number),
@@ -79,7 +81,9 @@ databaseChangeLog:
                   CONSTRAINT chk_sector_number
                       CHECK (sector_number IN (0, 1, 2)),
                   CONSTRAINT chk_recovered
-                      CHECK (recovered IN (0, 1, 2, 3))
+                      CHECK (recovered IN (0, 1, 2, 3)),
+                  CONSTRAINT chk_outlier
+                      CHECK (outlier IN (0, 1))
               )
 
   - changeSet:
@@ -104,6 +108,8 @@ databaseChangeLog:
                   penalty_seconds  NUMBER(3),
                   other_car_index  NUMBER(2),
                   lap_number       NUMBER(3),
+                  flashback_frame_id      NUMBER(10),
+                  flashback_session_time  NUMBER(10,3),
                   created_at       TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
                   CONSTRAINT pk_session_events PRIMARY KEY (event_id),
                   CONSTRAINT fk_event_session
