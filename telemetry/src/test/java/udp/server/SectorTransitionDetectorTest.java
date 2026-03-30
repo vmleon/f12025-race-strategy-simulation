@@ -224,6 +224,68 @@ class SectorTransitionDetectorTest {
         assertEquals(0, snapshot.brakeTempRl());
     }
 
+    private LapData[] buildLapDataWithResultStatus(int sector, int lapNum, int car0ResultStatus) {
+        int totalSize = PacketHeader.HEADER_SIZE + LapData.NUM_CARS * LapData.SIZE + 2;
+        ByteBuffer buf = ByteBuffer.allocate(totalSize);
+        buf.order(ByteOrder.LITTLE_ENDIAN);
+
+        // Header
+        buf.putShort((short) 2025);
+        buf.put((byte) 25);
+        buf.put(new byte[4]);
+        buf.putLong(0x1234L);
+        buf.putFloat(10.0f);
+        buf.putInt(50);
+        buf.putInt(50);
+        buf.put((byte) 0);
+        buf.put((byte) 255);
+
+        for (int car = 0; car < 22; car++) {
+            buf.putInt(85000);
+            buf.putInt(30000);
+            buf.putShort((short) 28000);
+            buf.put((byte) 0);
+            buf.putShort((short) 30000);
+            buf.put((byte) 0);
+            buf.putShort((short) 0);
+            buf.put((byte) 0);
+            buf.putShort((short) 0);
+            buf.put((byte) 0);
+            buf.putFloat(1500.0f);
+            buf.putFloat(5000.0f);
+            buf.putFloat(0.0f);
+            buf.put((byte) (car + 1));
+            buf.put((byte) lapNum);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+            buf.put((byte) sector);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+            buf.put((byte) (car + 1));
+            buf.put((byte) 4);
+            buf.put((byte) (car == 0 ? car0ResultStatus : 2)); // resultStatus
+            buf.put((byte) 0);
+            buf.putShort((short) 0);
+            buf.putShort((short) 0);
+            buf.put((byte) 0);
+            buf.putFloat(310.0f);
+            buf.put((byte) 1);
+        }
+
+        return LapData.parseAll(buf.array(), buf.array().length);
+    }
+
+    @Test
+    void buildLapDataWithInactiveResultStatus() {
+        LapData[] laps = buildLapDataWithResultStatus(0, 1, 0); // car 0: resultStatus=0 (inactive)
+        assertEquals(0, laps[0].resultStatus);
+        assertEquals(2, laps[1].resultStatus); // other cars remain active
+    }
+
     @Test
     void resetClearsState() {
         SectorTransitionDetector detector = new SectorTransitionDetector();

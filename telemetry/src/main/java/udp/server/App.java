@@ -82,6 +82,7 @@ public class App {
                                     var transitions = sectorDetector.detect(laps, historyBuffer);
                                     List<DbWriter.SectorSnapshot> snapshots = new ArrayList<>();
                                     for (var t : transitions) {
+                                        if (laps[t.carIndex()].resultStatus <= 1) continue;
                                         DbWriter.SectorSnapshot snapshot = SectorTransitionDetector.captureSnapshot(
                                                 header.sessionUID, t, carState, historyBuffer, header.frameIdentifier);
                                         snapshots.add(snapshot);
