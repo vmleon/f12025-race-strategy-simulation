@@ -471,7 +471,14 @@ export class RaceComponent implements OnInit, OnDestroy {
         if (msg.safetyCarStatus != null) this.safetyCarStatus.set(msg.safetyCarStatus);
         if (msg.trackLength != null) this.trackLength.set(msg.trackLength);
         if (msg.cars) {
-          this.cars.set([...msg.cars].sort((a, b) => a.pos - b.pos));
+          const active = msg.cars.filter((c) => (c.resultStatus ?? 2) >= 2);
+          const racing = active
+            .filter((c) => (c.resultStatus ?? 2) < 4)
+            .sort((a, b) => a.pos - b.pos);
+          const out = active
+            .filter((c) => (c.resultStatus ?? 2) >= 4)
+            .sort((a, b) => a.pos - b.pos);
+          this.cars.set([...racing, ...out]);
         }
         if (msg.forecast) {
           this.forecast.set(msg.forecast);
