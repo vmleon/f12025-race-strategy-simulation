@@ -92,8 +92,8 @@ class SessionControllerTest {
     void listSessionsReturnsFromDb() throws Exception {
         when(jdbc.query(contains("FROM sessions"), any(RowMapper.class), any(Object.class)))
                 .thenReturn(List.of(
-                        new SessionController.SessionDto("uid1", 5, "RACE", 57, 95, "2026-03-20T14:30:00"),
-                        new SessionController.SessionDto("uid2", 3, "RACE", 44, 90, "2026-03-19T10:00:00")));
+                        new SessionController.SessionDto("uid1", 5, "RACE", 57, 95, "2026-03-20T14:30:00", 1L, "Victor"),
+                        new SessionController.SessionDto("uid2", 3, "RACE", 44, 90, "2026-03-19T10:00:00", null, null)));
 
         mockMvc.perform(get("/api/sessions"))
                 .andExpect(status().isOk())
@@ -107,7 +107,7 @@ class SessionControllerTest {
     void listSessionsWithTrackIdFilter() throws Exception {
         when(jdbc.query(contains("track_id = ?"), any(RowMapper.class), eq(5), eq(20)))
                 .thenReturn(List.of(
-                        new SessionController.SessionDto("uid1", 5, "RACE", 57, 95, "2026-03-20T14:30:00")));
+                        new SessionController.SessionDto("uid1", 5, "RACE", 57, 95, "2026-03-20T14:30:00", 1L, "Victor")));
 
         mockMvc.perform(get("/api/sessions?trackId=5"))
                 .andExpect(status().isOk())
@@ -129,7 +129,7 @@ class SessionControllerTest {
     void getSessionReturnsDetailWithParticipants() throws Exception {
         when(jdbc.query(contains("session_uid = ?"), any(RowMapper.class), eq("uid1")))
                 .thenReturn(List.of(
-                        new SessionController.SessionDto("uid1", 5, "RACE", 57, 95, "2026-03-20T14:30:00")));
+                        new SessionController.SessionDto("uid1", 5, "RACE", 57, 95, "2026-03-20T14:30:00", 1L, "Victor")));
         when(jdbc.query(contains("FROM participants"), any(RowMapper.class), eq("uid1")))
                 .thenReturn(List.of(
                         new SessionController.ParticipantDto(0, "Hamilton", 3, false),

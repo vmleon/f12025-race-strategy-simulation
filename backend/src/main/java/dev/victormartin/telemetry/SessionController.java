@@ -20,10 +20,14 @@ public class SessionController {
     private final RaceWebSocketHandler raceWebSocketHandler;
     private final JdbcTemplate jdbc;
 
-    private static final RowMapper<SessionDto> SESSION_ROW_MAPPER = (rs, rowNum) -> new SessionDto(
-            rs.getString("session_uid"), rs.getInt("track_id"),
-            rs.getString("session_type"), rs.getInt("total_laps"),
-            rs.getInt("ai_difficulty"), rs.getString("created_at"));
+    private static final RowMapper<SessionDto> SESSION_ROW_MAPPER = (rs, rowNum) -> {
+        long did = rs.getLong("driver_id");
+        return new SessionDto(
+                rs.getString("session_uid"), rs.getInt("track_id"),
+                rs.getString("session_type"), rs.getInt("total_laps"),
+                rs.getInt("ai_difficulty"), rs.getString("created_at"),
+                rs.wasNull() ? null : did, rs.getString("driver_name"));
+    };
 
     public SessionController(SessionStateHolder sessionStateHolder,
                              RaceWebSocketHandler raceWebSocketHandler,
@@ -49,7 +53,8 @@ public class SessionController {
     // ── Database-backed endpoints ────────────────────────────────────────
 
     public record SessionDto(String sessionUid, int trackId, String sessionType,
-                             int totalLaps, int aiDifficulty, String createdAt) {}
+                             int totalLaps, int aiDifficulty, String createdAt,
+                             Long driverId, String driverName) {}
 
     public record SessionDetailDto(String sessionUid, int trackId, String sessionType,
                                    int totalLaps, int aiDifficulty, String createdAt,
@@ -65,12 +70,15 @@ public class SessionController {
     public List<SessionDto> listSessions(
             @RequestParam(required = false) Integer trackId,
             @RequestParam(defaultValue = "20") int limit) {
-        String trackFilter = trackId != null ? "\n    WHERE track_id = ?" : "";
+        String trackFilter = trackId != null ? "\n    WHERE s.track_id = ?" : "";
         String sql = """
-                SELECT session_uid, track_id, session_type, total_laps, ai_difficulty,
-                       TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS') created_at
-                FROM sessions%s
-                ORDER BY created_at DESC
+                SELECT s.session_uid, s.track_id, s.session_type, s.total_laps, s.ai_difficulty,
+                       TO_CHAR(s.created_at, 'YYYY-MM-DD"T"HH24:MI:SS') created_at,
+                       d.driver_id, d.name driver_name
+                FROM sessions s
+                LEFT JOIN driver_sessions ds ON ds.session_uid = s.session_uid
+                LEFT JOIN drivers d ON d.driver_id = ds.driver_id%s
+                ORDER BY s.created_at DESC
                 FETCH FIRST ? ROWS ONLY
                 """.formatted(trackFilter);
 
