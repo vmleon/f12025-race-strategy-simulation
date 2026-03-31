@@ -1,5 +1,5 @@
 import { Component, OnInit, signal } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
+import { DatePipe, DecimalPipe } from '@angular/common';
 import {
   SessionService,
   SessionDto,
@@ -13,7 +13,7 @@ import { tyreCompoundName } from '../tyre-compounds';
 
 @Component({
   selector: 'app-sessions',
-  imports: [DecimalPipe],
+  imports: [DatePipe, DecimalPipe],
   template: `
     <div class="header">
       <h2>Sessions</h2>
@@ -52,7 +52,7 @@ import { tyreCompoundName } from '../tyre-compounds';
                 <td>{{ sessionTypeLabel(s.sessionType) }}</td>
                 <td>{{ s.totalLaps }}</td>
                 <td>{{ s.aiDifficulty }}</td>
-                <td>{{ s.createdAt }}</td>
+                <td>{{ s.createdAt | date: 'd MMM yyyy, HH:mm' }}</td>
                 <td><button class="detail-btn" (click)="selectSession(s.sessionUid)">Details</button></td>
               </tr>
             }
@@ -66,7 +66,7 @@ import { tyreCompoundName } from '../tyre-compounds';
 
       <div class="detail-header">
         <h3>{{ trackLabel(selectedSession()!.trackId) }} — {{ sessionTypeLabel(selectedSession()!.sessionType) }}</h3>
-        <span class="meta">{{ selectedSession()!.totalLaps }} laps | AI {{ selectedSession()!.aiDifficulty }} | {{ selectedSession()!.createdAt }}</span>
+        <span class="meta">{{ selectedSession()!.totalLaps }} laps | AI {{ selectedSession()!.aiDifficulty }} | {{ selectedSession()!.createdAt | date: 'd MMM yyyy, HH:mm' }}</span>
       </div>
 
       @if (selectedSession()!.participants.length > 0) {

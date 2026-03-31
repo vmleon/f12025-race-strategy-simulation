@@ -1,4 +1,5 @@
 import { Component, OnInit, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import {
   DriverService,
   DriverDto,
@@ -14,6 +15,7 @@ import { trackName } from '../track-names';
 
 @Component({
   selector: 'app-drivers',
+  imports: [DatePipe],
   template: `
     @if (!selectedDriver()) {
       <!-- ── List view ──────────────────────────────────────────── -->
@@ -54,7 +56,7 @@ import { trackName } from '../track-names';
                 <td><a class="link" (click)="selectDriver(d.driverId)">{{ d.name }}</a></td>
                 <td>{{ d.email ?? '—' }}</td>
                 <td>{{ d.sessionCount }}</td>
-                <td>{{ d.createdAt }}</td>
+                <td>{{ d.createdAt | date: 'd MMM yyyy, HH:mm' }}</td>
                 <td class="actions">
                   <button class="small-btn" (click)="startEdit(d)">Edit</button>
                   <button class="small-btn danger" (click)="deleteDriver(d)">Delete</button>
@@ -72,7 +74,7 @@ import { trackName } from '../track-names';
 
       <div class="detail-header">
         <h3>{{ selectedDriver()!.name }}</h3>
-        <span class="meta">{{ selectedDriver()!.email ?? 'No email' }} | Created {{ selectedDriver()!.createdAt }}</span>
+        <span class="meta">{{ selectedDriver()!.email ?? 'No email' }} | Created {{ selectedDriver()!.createdAt | date: 'd MMM yyyy, HH:mm' }}</span>
       </div>
 
       <h4>Associated Sessions</h4>
@@ -93,7 +95,7 @@ import { trackName } from '../track-names';
                 <td>{{ trackLabel(s.trackId) }}</td>
                 <td>{{ s.sessionType }}</td>
                 <td>{{ s.carIndex }}</td>
-                <td>{{ s.createdAt }}</td>
+                <td>{{ s.createdAt | date: 'd MMM yyyy, HH:mm' }}</td>
                 <td>
                   <button class="small-btn danger" (click)="removeSession(s.sessionUid)">Remove</button>
                 </td>
@@ -112,7 +114,7 @@ import { trackName } from '../track-names';
           <select (change)="onSessionSelect($event)">
             <option value="">Select session…</option>
             @for (s of availableSessions(); track s.sessionUid) {
-              <option [value]="s.sessionUid">{{ trackLabel(s.trackId) }} — {{ s.sessionType }} ({{ s.createdAt }})</option>
+              <option [value]="s.sessionUid">{{ trackLabel(s.trackId) }} — {{ s.sessionType }} ({{ s.createdAt | date: 'd MMM yyyy, HH:mm' }})</option>
             }
           </select>
         </label>
