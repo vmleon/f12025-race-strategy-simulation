@@ -9,6 +9,7 @@ export interface CarSnapshot {
   lap: number;
   sector: number;
   lastSectorMs: number[];
+  lastLapTimeMs?: number;
   tyre: string;
   tyreAge: number;
   fuel?: number;
