@@ -59,7 +59,7 @@ public class SessionController {
 
     public record SectorSnapshotDto(int carIndex, int lapNumber, int sectorNumber,
                                     double sectorTimeMs, int carPosition, String tyreCompoundActual,
-                                    int tyreAgeLaps, int weather) {}
+                                    int tyreCompoundVisual, int tyreAgeLaps, int weather) {}
 
     @GetMapping
     public List<SessionDto> listSessions(
@@ -117,7 +117,8 @@ public class SessionController {
             @RequestParam(required = false) Integer lap) {
         var sql = new StringBuilder("""
                 SELECT car_index, lap_number, sector_number, sector_time_ms,
-                       car_position, tyre_compound_actual, tyre_age_laps, weather
+                       car_position, tyre_compound_actual, tyre_compound_visual,
+                       tyre_age_laps, weather
                 FROM sector_snapshots
                 WHERE session_uid = ?
                 """);
@@ -139,6 +140,7 @@ public class SessionController {
                         rs.getInt("car_index"), rs.getInt("lap_number"),
                         rs.getInt("sector_number"), rs.getDouble("sector_time_ms"),
                         rs.getInt("car_position"), rs.getString("tyre_compound_actual"),
+                        rs.getInt("tyre_compound_visual"),
                         rs.getInt("tyre_age_laps"), rs.getInt("weather")),
                 params.toArray());
     }

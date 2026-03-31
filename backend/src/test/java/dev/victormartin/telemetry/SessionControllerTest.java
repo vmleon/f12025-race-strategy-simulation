@@ -148,7 +148,7 @@ class SessionControllerTest {
     void getSectorsReturnsData() throws Exception {
         when(jdbc.query(contains("FROM sector_snapshots"), any(RowMapper.class), any(Object[].class)))
                 .thenReturn(List.of(
-                        new SessionController.SectorSnapshotDto(0, 1, 0, 28500.0, 1, "SOFT", 3, 0)));
+                        new SessionController.SectorSnapshotDto(0, 1, 0, 28500.0, 1, "SOFT", 16, 3, 0)));
 
         mockMvc.perform(get("/api/sessions/uid1/sectors"))
                 .andExpect(status().isOk())
