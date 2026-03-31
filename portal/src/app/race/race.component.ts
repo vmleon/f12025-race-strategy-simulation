@@ -16,6 +16,7 @@ import { DamagePanelComponent } from './damage-panel/damage-panel.component';
 import { TyresPanelComponent } from './tyres-panel/tyres-panel.component';
 import { WeatherPanelComponent } from './weather-panel/weather-panel.component';
 import { StrategyWidgetComponent } from './strategy-widget/strategy-widget.component';
+import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.component';
 
 @Component({
   selector: 'app-race',
@@ -27,6 +28,7 @@ import { StrategyWidgetComponent } from './strategy-widget/strategy-widget.compo
     TyresPanelComponent,
     WeatherPanelComponent,
     StrategyWidgetComponent,
+    GapIndicatorComponent,
   ],
   template: `
     <div class="race-header">
@@ -63,12 +65,15 @@ import { StrategyWidgetComponent } from './strategy-widget/strategy-widget.compo
       <div class="race-layout">
         <div class="left-column">
           <div class="race-content">
-            <app-circuit-map
-              [cars]="cars()"
-              [trackLength]="trackLength()"
-              [safetyCarStatus]="safetyCarStatus()"
-              [yellowSector]="yellowSector()"
-            />
+            <div class="circuit-column">
+              <app-circuit-map
+                [cars]="cars()"
+                [trackLength]="trackLength()"
+                [safetyCarStatus]="safetyCarStatus()"
+                [yellowSector]="yellowSector()"
+              />
+              <app-gap-indicator [ahead]="gapAhead()" [behind]="gapBehind()" />
+            </div>
             <table class="race-table">
               <thead>
                 <tr>
@@ -214,8 +219,10 @@ import { StrategyWidgetComponent } from './strategy-widget/strategy-widget.compo
       gap: 1.5rem;
       align-items: flex-start;
     }
-    .race-content app-circuit-map {
+    .circuit-column {
       flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
     }
     .race-table {
       flex: 1;
@@ -350,6 +357,14 @@ export class RaceComponent implements OnInit, OnDestroy {
   simulating = signal(false);
   simLastUpdated = signal<string | null>(null);
 
+  // Sector history tracking
+  private sectorHistory = new Map<number, { lap: number; sector: number; timeMs: number }[]>();
+  private prevSectors = new Map<number, number>();
+  private prevLaps = new Map<number, number>();
+
+  gapAhead = signal<GapRow | null>(null);
+  gapBehind = signal<GapRow | null>(null);
+
   playerCar = computed(() => this.cars().find((c) => !c.ai) ?? null);
   penaltyEvents = computed(() => this.events().filter((e) => e.event === 'PENA'));
 
@@ -454,6 +469,105 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.simConverged.set(false);
     this.simulating.set(false);
     this.simLastUpdated.set(null);
+    this.sectorHistory.clear();
+    this.prevSectors.clear();
+    this.prevLaps.clear();
+    this.gapAhead.set(null);
+    this.gapBehind.set(null);
+  }
+
+  private updateSectorHistory(cars: CarSnapshot[]) {
+    for (const car of cars) {
+      const prevSector = this.prevSectors.get(car.idx);
+      const prevLap = this.prevLaps.get(car.idx);
+      this.prevSectors.set(car.idx, car.sector);
+      this.prevLaps.set(car.idx, car.lap);
+
+      if (prevSector === undefined || prevLap === undefined) continue;
+      if (car.sector === prevSector && car.lap === prevLap) continue;
+
+      let completedSector: number;
+      let completedLap: number;
+      let timeMs: number;
+
+      if (prevSector === 0 && car.sector === 1) {
+        completedSector = 0;
+        completedLap = car.lap;
+        timeMs = car.lastSectorMs[0];
+      } else if (prevSector === 1 && car.sector === 2) {
+        completedSector = 1;
+        completedLap = car.lap;
+        timeMs = car.lastSectorMs[1] - car.lastSectorMs[0];
+      } else if (prevSector === 2 && car.sector === 0) {
+        completedSector = 2;
+        completedLap = prevLap;
+        if (car.lastLapTimeMs && car.lastSectorMs[1] > 0) {
+          timeMs = car.lastLapTimeMs - car.lastSectorMs[1];
+        } else {
+          continue;
+        }
+      } else {
+        continue;
+      }
+
+      if (timeMs <= 0) continue;
+
+      const history = this.sectorHistory.get(car.idx) ?? [];
+      history.push({ lap: completedLap, sector: completedSector, timeMs });
+      if (history.length > 6) history.splice(0, history.length - 6);
+      this.sectorHistory.set(car.idx, history);
+    }
+  }
+
+  private updateGapDeltas() {
+    const allCars = this.cars();
+    const player = allCars.find((c) => !c.ai);
+    if (!player) {
+      this.gapAhead.set(null);
+      this.gapBehind.set(null);
+      return;
+    }
+
+    const activeCars = allCars.filter((c) => (c.resultStatus ?? 2) < 4);
+    const sorted = [...activeCars].sort((a, b) => a.pos - b.pos);
+    const playerIdx = sorted.findIndex((c) => c.idx === player.idx);
+
+    const carAhead = playerIdx > 0 ? sorted[playerIdx - 1] : null;
+    const carBehind = playerIdx < sorted.length - 1 ? sorted[playerIdx + 1] : null;
+
+    this.gapAhead.set(carAhead ? this.computeGapRow(player, carAhead) : null);
+    this.gapBehind.set(carBehind ? this.computeGapRow(player, carBehind) : null);
+  }
+
+  private computeGapRow(player: CarSnapshot, other: CarSnapshot): GapRow {
+    const playerHist = this.sectorHistory.get(player.idx) ?? [];
+    const otherHist = this.sectorHistory.get(other.idx) ?? [];
+
+    const otherMap = new Map<string, number>();
+    for (const e of otherHist) {
+      otherMap.set(`${e.lap}-${e.sector}`, e.timeMs);
+    }
+
+    const common: { playerMs: number; otherMs: number }[] = [];
+    for (let i = playerHist.length - 1; i >= 0 && common.length < 3; i--) {
+      const e = playerHist[i];
+      const otherMs = otherMap.get(`${e.lap}-${e.sector}`);
+      if (otherMs !== undefined) {
+        common.unshift({ playerMs: e.timeMs, otherMs });
+      }
+    }
+
+    const deltas: (number | null)[] = [];
+    for (let i = 0; i < 3; i++) {
+      if (i < common.length) {
+        deltas.push(common[i].otherMs - common[i].playerMs);
+      } else {
+        deltas.push(null);
+      }
+    }
+
+    const code = (other.name ?? `Car ${other.idx}`).substring(0, 3).toUpperCase();
+    return { driverCode: code, deltas };
   }
 
   private onMessage(msg: RaceMessage) {
@@ -485,6 +599,8 @@ export class RaceComponent implements OnInit, OnDestroy {
             .filter((c) => (c.resultStatus ?? 2) >= 4)
             .sort((a, b) => a.pos - b.pos);
           this.cars.set([...racing, ...out]);
+          this.updateSectorHistory(msg.cars!);
+          this.updateGapDeltas();
         }
         if (msg.forecast) {
           this.forecast.set(msg.forecast);
@@ -495,6 +611,11 @@ export class RaceComponent implements OnInit, OnDestroy {
         this.cars.set([]);
         this.events.set([]);
         this.forecast.set([]);
+        this.sectorHistory.clear();
+        this.prevSectors.clear();
+        this.prevLaps.clear();
+        this.gapAhead.set(null);
+        this.gapBehind.set(null);
         if (msg.trackId != null) this.trackId.set(msg.trackId);
         this.fetchActiveSessions();
         break;
