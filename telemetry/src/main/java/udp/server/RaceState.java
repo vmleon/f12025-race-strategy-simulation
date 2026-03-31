@@ -48,6 +48,7 @@ public class RaceState {
         int lap;
         int sector;
         long[] lastSectorMs = new long[3];
+        long lastLapTimeMs;
         String tyreCompound = "M";
         int tyreAge;
         int pitStatus;
@@ -99,6 +100,7 @@ public class RaceState {
             cars[i].lastSectorMs[0] = lap.sector1TimeInMS();
             cars[i].lastSectorMs[1] = lap.sector2TimeInMS();
             cars[i].lastSectorMs[2] = 0; // sector 3 not directly available
+            cars[i].lastLapTimeMs = lap.lastLapTimeInMS;
             cars[i].pitStatus = lap.pitStatus;
             cars[i].numPitStops = lap.numPitStops;
             cars[i].resultStatus = lap.resultStatus;
@@ -214,7 +216,8 @@ public class RaceState {
               .append(",\"lastSectorMs\":[").append(c.lastSectorMs[0])
               .append(',').append(c.lastSectorMs[1])
               .append(',').append(c.lastSectorMs[2])
-              .append("],\"tyre\":\"").append(c.tyreCompound)
+              .append("],\"lastLapTimeMs\":").append(c.lastLapTimeMs)
+              .append(",\"tyre\":\"").append(c.tyreCompound)
               .append("\",\"tyreAge\":").append(c.tyreAge)
               .append(",\"pitStatus\":").append(c.pitStatus)
               .append(",\"fuel\":").append(String.format("%.1f", c.fuelInTank))
@@ -299,6 +302,7 @@ public class RaceState {
             cars[i].lastSectorMs[0] = 28000 + i * 100;
             cars[i].lastSectorMs[1] = 33000 + i * 100;
             cars[i].lastSectorMs[2] = 0;
+            cars[i].lastLapTimeMs = 85000 + i * 300;
             cars[i].tyreCompound = compounds[i % compounds.length];
             cars[i].tyreAge = 7 + i;
             cars[i].pitStatus = 0;
