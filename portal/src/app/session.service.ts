@@ -13,6 +13,8 @@ export interface SessionDto {
   totalLaps: number;
   aiDifficulty: number;
   createdAt: string;
+  driverId: number | null;
+  driverName: string | null;
 }
 
 export interface ParticipantDto {
@@ -24,6 +26,7 @@ export interface ParticipantDto {
 
 export interface SessionDetailDto extends SessionDto {
   participants: ParticipantDto[];
+  assignedCarIndex: number | null;
 }
 
 export interface SectorSnapshotDto {
