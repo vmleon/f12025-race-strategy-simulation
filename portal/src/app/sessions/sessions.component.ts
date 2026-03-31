@@ -6,6 +6,7 @@ import {
   SessionDetailDto,
   SectorSnapshotDto,
 } from '../session.service';
+import { DriverService, DriverDto } from '../driver.service';
 import { trackName } from '../track-names';
 import { sessionTypeName } from '../session-types';
 import { teamName } from '../team-names';
@@ -43,6 +44,7 @@ import { formatTime } from '../format-time';
               <th>Laps</th>
               <th>AI Difficulty</th>
               <th>Date</th>
+              <th>Driver</th>
               <th></th>
             </tr>
           </thead>
@@ -54,6 +56,23 @@ import { formatTime } from '../format-time';
                 <td>{{ s.totalLaps }}</td>
                 <td>{{ s.aiDifficulty }}</td>
                 <td>{{ s.createdAt | date: 'd MMM yyyy, HH:mm' }}</td>
+                <td>
+                  @if (assigningSessionUid() === s.sessionUid) {
+                    <select (change)="selectedDriverId.set(+val($event))">
+                      <option value="0">-- select --</option>
+                      @for (d of drivers(); track d.driverId) {
+                        <option [value]="d.driverId">{{ d.name }}</option>
+                      }
+                    </select>
+                    <button class="small-btn" (click)="assignDriver(s)">OK</button>
+                    <button class="small-btn" (click)="cancelAssign()">Cancel</button>
+                  } @else if (s.driverName) {
+                    {{ s.driverName }}
+                    <button class="small-btn danger" (click)="unassignDriver(s)" title="Unassign">&times;</button>
+                  } @else {
+                    <button class="small-btn" (click)="startAssign(s.sessionUid)">Assign</button>
+                  }
+                </td>
                 <td><button class="detail-btn" (click)="selectSession(s.sessionUid)">Details</button></td>
               </tr>
             }
@@ -172,6 +191,24 @@ import { formatTime } from '../format-time';
     .part-table tr.ai { opacity: 0.7; }
     .mono { font-family: monospace; }
     .empty { color: #888; }
+    .small-btn {
+      padding: 0.15rem 0.4rem;
+      background: #333;
+      color: #eee;
+      border: 1px solid #555;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .small-btn.danger { color: #e55; }
+    select {
+      background: #222;
+      color: #eee;
+      border: 1px solid #555;
+      border-radius: 3px;
+      padding: 0.15rem 0.3rem;
+      font-size: 0.85rem;
+    }
   `,
 })
 export class SessionsComponent implements OnInit {
@@ -180,11 +217,18 @@ export class SessionsComponent implements OnInit {
   sectors = signal<SectorSnapshotDto[]>([]);
   filterTrackId = signal<number | null>(null);
   loading = signal(false);
+  drivers = signal<DriverDto[]>([]);
+  assigningSessionUid = signal<string | null>(null);
+  selectedDriverId = signal<number | null>(null);
 
-  constructor(private sessionService: SessionService) {}
+  constructor(
+    private sessionService: SessionService,
+    private driverService: DriverService,
+  ) {}
 
   ngOnInit() {
     this.loadSessions();
+    this.driverService.list().subscribe((d) => this.drivers.set(d));
   }
 
   onFilterChange(event: Event) {
@@ -218,6 +262,37 @@ export class SessionsComponent implements OnInit {
   back() {
     this.selectedSession.set(null);
     this.sectors.set([]);
+  }
+
+  startAssign(sessionUid: string) {
+    this.assigningSessionUid.set(sessionUid);
+    this.selectedDriverId.set(null);
+  }
+
+  cancelAssign() {
+    this.assigningSessionUid.set(null);
+  }
+
+  assignDriver(session: SessionDto) {
+    const driverId = this.selectedDriverId();
+    if (!driverId) return;
+    this.driverService.associateSession(driverId, session.sessionUid, 0).subscribe({
+      next: () => {
+        this.assigningSessionUid.set(null);
+        this.loadSessions();
+      },
+    });
+  }
+
+  unassignDriver(session: SessionDto) {
+    if (!session.driverId) return;
+    this.driverService.removeSession(session.driverId, session.sessionUid).subscribe({
+      next: () => this.loadSessions(),
+    });
+  }
+
+  val(event: Event): string {
+    return (event.target as HTMLInputElement).value;
   }
 
   trackLabel(id: number): string {
