@@ -1,5 +1,5 @@
 import { Component, OnInit, signal } from '@angular/core';
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import {
   SessionService,
   SessionDto,
@@ -10,10 +10,11 @@ import { trackName } from '../track-names';
 import { sessionTypeName } from '../session-types';
 import { teamName } from '../team-names';
 import { tyreCompoundName } from '../tyre-compounds';
+import { formatTime } from '../format-time';
 
 @Component({
   selector: 'app-sessions',
-  imports: [DatePipe, DecimalPipe],
+  imports: [DatePipe],
   template: `
     <div class="header">
       <h2>Sessions</h2>
@@ -101,7 +102,7 @@ import { tyreCompoundName } from '../tyre-compounds';
               <th>Car</th>
               <th>Lap</th>
               <th>Sector</th>
-              <th>Time (ms)</th>
+              <th>Time</th>
               <th>Pos</th>
               <th>Tyre</th>
               <th>Age</th>
@@ -113,7 +114,7 @@ import { tyreCompoundName } from '../tyre-compounds';
                 <td>{{ s.carIndex }}</td>
                 <td>{{ s.lapNumber }}</td>
                 <td>{{ s.sectorNumber }}</td>
-                <td class="mono">{{ s.sectorTimeMs | number : '1.0-0' }}</td>
+                <td class="mono">{{ formatTimeMs(s.sectorTimeMs) }}</td>
                 <td>{{ s.carPosition }}</td>
                 <td>{{ tyreLabel(s.tyreCompoundVisual) }}</td>
                 <td>{{ s.tyreAgeLaps }}</td>
@@ -233,5 +234,9 @@ export class SessionsComponent implements OnInit {
 
   tyreLabel(code: number): string {
     return tyreCompoundName(code);
+  }
+
+  formatTimeMs(ms: number): string {
+    return formatTime(ms);
   }
 }
