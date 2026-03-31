@@ -7,6 +7,9 @@ import {
   SectorSnapshotDto,
 } from '../session.service';
 import { trackName } from '../track-names';
+import { sessionTypeName } from '../session-types';
+import { teamName } from '../team-names';
+import { tyreCompoundName } from '../tyre-compounds';
 
 @Component({
   selector: 'app-sessions',
@@ -46,7 +49,7 @@ import { trackName } from '../track-names';
             @for (s of sessions(); track s.sessionUid) {
               <tr>
                 <td>{{ trackLabel(s.trackId) }}</td>
-                <td>{{ s.sessionType }}</td>
+                <td>{{ sessionTypeLabel(s.sessionType) }}</td>
                 <td>{{ s.totalLaps }}</td>
                 <td>{{ s.aiDifficulty }}</td>
                 <td>{{ s.createdAt }}</td>
@@ -62,7 +65,7 @@ import { trackName } from '../track-names';
       <button class="back-btn" (click)="back()">&larr; Back to list</button>
 
       <div class="detail-header">
-        <h3>{{ trackLabel(selectedSession()!.trackId) }} — {{ selectedSession()!.sessionType }}</h3>
+        <h3>{{ trackLabel(selectedSession()!.trackId) }} — {{ sessionTypeLabel(selectedSession()!.sessionType) }}</h3>
         <span class="meta">{{ selectedSession()!.totalLaps }} laps | AI {{ selectedSession()!.aiDifficulty }} | {{ selectedSession()!.createdAt }}</span>
       </div>
 
@@ -82,7 +85,7 @@ import { trackName } from '../track-names';
               <tr [class.ai]="p.aiControlled">
                 <td>{{ p.carIndex }}</td>
                 <td>{{ p.driverName }}</td>
-                <td>{{ p.teamId }}</td>
+                <td>{{ teamLabel(p.teamId) }}</td>
                 <td>{{ p.aiControlled ? 'Yes' : 'No' }}</td>
               </tr>
             }
@@ -112,7 +115,7 @@ import { trackName } from '../track-names';
                 <td>{{ s.sectorNumber }}</td>
                 <td class="mono">{{ s.sectorTimeMs | number : '1.0-0' }}</td>
                 <td>{{ s.carPosition }}</td>
-                <td>{{ s.tyreCompoundActual }}</td>
+                <td>{{ tyreLabel(s.tyreCompoundVisual) }}</td>
                 <td>{{ s.tyreAgeLaps }}</td>
               </tr>
             }
@@ -218,5 +221,17 @@ export class SessionsComponent implements OnInit {
 
   trackLabel(id: number): string {
     return trackName(id);
+  }
+
+  sessionTypeLabel(code: string): string {
+    return sessionTypeName(Number(code));
+  }
+
+  teamLabel(id: number): string {
+    return teamName(id);
+  }
+
+  tyreLabel(code: number): string {
+    return tyreCompoundName(code);
   }
 }
