@@ -33,6 +33,7 @@ export interface SectorSnapshotDto {
   sectorTimeMs: number;
   carPosition: number;
   tyreCompoundActual: string;
+  tyreCompoundVisual: number;
   tyreAgeLaps: number;
   weather: number;
 }
