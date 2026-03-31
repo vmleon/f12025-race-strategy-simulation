@@ -58,7 +58,8 @@ public class SessionController {
 
     public record SessionDetailDto(String sessionUid, int trackId, String sessionType,
                                    int totalLaps, int aiDifficulty, String createdAt,
-                                   List<ParticipantDto> participants) {}
+                                   List<ParticipantDto> participants,
+                                   Long driverId, String driverName, Integer assignedCarIndex) {}
 
     public record ParticipantDto(int carIndex, String driverName, int teamId, boolean aiControlled) {}
 
@@ -91,10 +92,13 @@ public class SessionController {
     @GetMapping("/{sessionUid}")
     public ResponseEntity<SessionDetailDto> getSession(@PathVariable String sessionUid) {
         var sessions = jdbc.query("""
-                SELECT session_uid, track_id, session_type, total_laps, ai_difficulty,
-                       TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS') created_at
-                FROM sessions
-                WHERE session_uid = ?
+                SELECT s.session_uid, s.track_id, s.session_type, s.total_laps, s.ai_difficulty,
+                       TO_CHAR(s.created_at, 'YYYY-MM-DD"T"HH24:MI:SS') created_at,
+                       d.driver_id, d.name driver_name
+                FROM sessions s
+                LEFT JOIN driver_sessions ds ON ds.session_uid = s.session_uid
+                LEFT JOIN drivers d ON d.driver_id = ds.driver_id
+                WHERE s.session_uid = ?
                 """,
                 SESSION_ROW_MAPPER,
                 sessionUid);
@@ -115,7 +119,10 @@ public class SessionController {
         return ResponseEntity.ok(new SessionDetailDto(
                 session.sessionUid(), session.trackId(), session.sessionType(),
                 session.totalLaps(), session.aiDifficulty(), session.createdAt(),
-                participants));
+                participants, session.driverId(), session.driverName(),
+                session.driverId() != null ? jdbc.queryForObject(
+                        "SELECT car_index FROM driver_sessions WHERE driver_id = ? AND session_uid = ?",
+                        Integer.class, session.driverId(), sessionUid) : null));
     }
 
     @GetMapping("/{sessionUid}/sectors")

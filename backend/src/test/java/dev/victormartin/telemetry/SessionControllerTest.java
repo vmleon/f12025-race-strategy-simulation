@@ -134,13 +134,18 @@ class SessionControllerTest {
                 .thenReturn(List.of(
                         new SessionController.ParticipantDto(0, "Hamilton", 3, false),
                         new SessionController.ParticipantDto(1, "Verstappen", 1, true)));
+        when(jdbc.queryForObject(contains("car_index"), eq(Integer.class), eq(1L), eq("uid1")))
+                .thenReturn(0);
 
         mockMvc.perform(get("/api/sessions/uid1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sessionUid").value("uid1"))
                 .andExpect(jsonPath("$.participants.length()").value(2))
                 .andExpect(jsonPath("$.participants[0].driverName").value("Hamilton"))
-                .andExpect(jsonPath("$.participants[1].aiControlled").value(true));
+                .andExpect(jsonPath("$.participants[1].aiControlled").value(true))
+                .andExpect(jsonPath("$.driverId").value(1))
+                .andExpect(jsonPath("$.driverName").value("Victor"))
+                .andExpect(jsonPath("$.assignedCarIndex").value(0));
     }
 
     @SuppressWarnings("unchecked")
