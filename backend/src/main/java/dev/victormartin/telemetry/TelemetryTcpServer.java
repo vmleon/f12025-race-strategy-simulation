@@ -12,6 +12,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import dev.victormartin.telemetry.engineer.RaceEngineerService;
@@ -24,6 +26,7 @@ public class TelemetryTcpServer implements CommandLineRunner {
     private final SimulationOrchestrator simulationOrchestrator;
     private final RaceEngineerService raceEngineerService;
     private final QueueService queueService;
+    private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${telemetry.tcp.port:9090}")
@@ -33,12 +36,14 @@ public class TelemetryTcpServer implements CommandLineRunner {
                               SessionStateHolder sessionStateHolder,
                               SimulationOrchestrator simulationOrchestrator,
                               RaceEngineerService raceEngineerService,
-                              QueueService queueService) {
+                              QueueService queueService,
+                              JdbcTemplate jdbc) {
         this.raceWebSocketHandler = raceWebSocketHandler;
         this.sessionStateHolder = sessionStateHolder;
         this.simulationOrchestrator = simulationOrchestrator;
         this.raceEngineerService = raceEngineerService;
         this.queueService = queueService;
+        this.jdbc = jdbc;
     }
 
     @Override
@@ -89,6 +94,18 @@ public class TelemetryTcpServer implements CommandLineRunner {
                     sessionStateHolder.onSessionStarted(sessionUid, trackId);
                     raceEngineerService.onSessionStarted(sessionUid, trackId);
                     queueService.enqueue("PDBADMIN.SESSION_LIFECYCLE", line);
+                    try {
+                        var drivers = jdbc.query(
+                                "SELECT driver_id FROM drivers",
+                                (rs, rowNum) -> rs.getLong("driver_id"));
+                        if (drivers.size() == 1) {
+                            jdbc.update(
+                                    "INSERT INTO driver_sessions (driver_id, session_uid, car_index) VALUES (?, ?, 0)",
+                                    drivers.getFirst(), sessionUid);
+                        }
+                    } catch (DuplicateKeyException ignored) {
+                        // Already assigned — idempotent
+                    }
                 }
                 case "sessionEnded" -> {
                     String endedUid = node.get("sessionUid").asText();
