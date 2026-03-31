@@ -89,6 +89,22 @@ import { formatTime } from '../format-time';
         <span class="meta">{{ selectedSession()!.totalLaps }} laps | AI {{ selectedSession()!.aiDifficulty }} | {{ selectedSession()!.createdAt | date: 'd MMM yyyy, HH:mm' }}</span>
       </div>
 
+      <div class="driver-assign">
+        <strong>Driver:</strong>
+        @if (selectedSession()!.driverName) {
+          {{ selectedSession()!.driverName }} (car {{ selectedSession()!.assignedCarIndex }})
+          <button class="small-btn danger" (click)="unassignDriverDetail()">Unassign</button>
+        } @else {
+          <select (change)="selectedDriverId.set(+val($event))">
+            <option value="0">-- select driver --</option>
+            @for (d of drivers(); track d.driverId) {
+              <option [value]="d.driverId">{{ d.name }}</option>
+            }
+          </select>
+          <button class="small-btn" (click)="assignDriverDetail()">Assign</button>
+        }
+      </div>
+
       @if (selectedSession()!.participants.length > 0) {
         <h4>Participants</h4>
         <table class="part-table">
@@ -209,6 +225,13 @@ import { formatTime } from '../format-time';
       padding: 0.15rem 0.3rem;
       font-size: 0.85rem;
     }
+    .driver-assign {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
   `,
 })
 export class SessionsComponent implements OnInit {
@@ -281,6 +304,23 @@ export class SessionsComponent implements OnInit {
         this.assigningSessionUid.set(null);
         this.loadSessions();
       },
+    });
+  }
+
+  assignDriverDetail() {
+    const session = this.selectedSession();
+    const driverId = this.selectedDriverId();
+    if (!session || !driverId) return;
+    this.driverService.associateSession(driverId, session.sessionUid, 0).subscribe({
+      next: () => this.selectSession(session.sessionUid),
+    });
+  }
+
+  unassignDriverDetail() {
+    const session = this.selectedSession();
+    if (!session?.driverId) return;
+    this.driverService.removeSession(session.driverId, session.sessionUid).subscribe({
+      next: () => this.selectSession(session.sessionUid),
     });
   }
 
