@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import configparser
 import os
 
 import oracledb
@@ -9,17 +10,26 @@ from simulator.strategy import TyreSet
 
 _pool: oracledb.ConnectionPool | None = None
 
+_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.properties")
+
+
+def _read_config() -> configparser.ConfigParser:
+    config = configparser.ConfigParser()
+    config.read(_CONFIG_PATH)
+    return config
+
 
 def get_pool() -> oracledb.ConnectionPool:
     """Returns a shared connection pool, creating it on first call."""
     global _pool
     if _pool is None:
+        cfg = _read_config()
         _pool = oracledb.create_pool(
-            user=os.environ.get("ORACLE_USER", "F1SIM"),
-            password=os.environ.get("ORACLE_PASSWORD", "F1SIM"),
-            dsn=os.environ.get("ORACLE_DSN", "localhost:1521/FREEPDB1"),
-            min=1,
-            max=4,
+            user=cfg.get("database", "user", fallback="pdbadmin"),
+            password=cfg.get("database", "password", fallback=""),
+            dsn=cfg.get("database", "dsn", fallback="localhost:1521/FREEPDB1"),
+            min=cfg.getint("database", "pool.min", fallback=1),
+            max=cfg.getint("database", "pool.max", fallback=4),
         )
     return _pool
 
