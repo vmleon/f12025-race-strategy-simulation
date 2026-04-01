@@ -15,13 +15,10 @@ struct ConnectView: View {
         VStack(spacing: 32) {
             Spacer()
 
-            Image(systemName: "antenna.radiowaves.left.and.right")
-                .font(.system(size: 64))
-                .foregroundColor(.accentColor)
-
-            Text("Virtual Race Engineer")
-                .font(.title)
-                .fontWeight(.bold)
+            Image("Logo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 200, height: 200)
 
             VStack(spacing: 16) {
                 TextField("Backend URL", text: $host)
