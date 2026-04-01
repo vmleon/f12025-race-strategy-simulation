@@ -1,6 +1,6 @@
 from simulator.coefficients import Coefficients
 from simulator.engine import MonteCarloEngine
-from simulator.models import CarSnapshot, PitStop, RaceSnapshot, StrategyCandidate
+from simulator.models import CarSnapshot, PitStop, RaceSnapshot, StrategyCandidate, TyreSetInfo
 from simulator.strategy import (
     StrategyEvaluator,
     TyreSet,
@@ -117,3 +117,64 @@ class TestCheckFeasibility:
 
     def test_empty_strategy_always_feasible(self):
         assert check_feasibility(StrategyCandidate(label="No stop", stops=[]), []) is None
+
+
+class TestTyreSetInfoInSnapshot:
+    def test_car_snapshot_with_tyre_sets(self):
+        car = CarSnapshot(
+            car_index=0,
+            driver_name="Player",
+            ai_controlled=False,
+            position=1,
+            tyre_compound=16,
+            tyre_age_laps=5,
+            fuel_kg=80.0,
+            fuel_burn_per_sector_kg=0.18,
+            front_wing_damage=0,
+            floor_damage=0,
+            engine_damage=0,
+            num_pit_stops=0,
+            total_time_ms=0.0,
+            tyre_sets=[
+                TyreSetInfo(
+                    visual_tyre_compound=16,
+                    available=True,
+                    wear=10,
+                    life_span=20,
+                    usable_life=25,
+                    lap_delta_time=0,
+                    fitted=False,
+                ),
+                TyreSetInfo(
+                    visual_tyre_compound=18,
+                    available=True,
+                    wear=0,
+                    life_span=30,
+                    usable_life=35,
+                    lap_delta_time=200,
+                    fitted=False,
+                ),
+            ],
+        )
+        assert len(car.tyre_sets) == 2
+        assert car.tyre_sets[0].visual_tyre_compound == 16
+
+    def test_car_snapshot_without_tyre_sets_defaults_empty(self):
+        car = _make_car(0)
+        assert car.tyre_sets == []
+
+    def test_tyre_set_info_json_aliases(self):
+        ts = TyreSetInfo(
+            visual_tyre_compound=17,
+            available=True,
+            wear=5,
+            life_span=22,
+            usable_life=28,
+            lap_delta_time=-150,
+            fitted=False,
+        )
+        data = ts.model_dump(by_alias=True)
+        assert data["visualTyreCompound"] == 17
+        assert data["lapDeltaTime"] == -150
+        assert data["lifeSpan"] == 22
+        assert data["usableLife"] == 28

@@ -38,6 +38,18 @@ class Penalty(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class TyreSetInfo(BaseModel):
+    visual_tyre_compound: int = Field(alias="visualTyreCompound")
+    available: bool
+    wear: int
+    life_span: int = Field(alias="lifeSpan")
+    usable_life: int = Field(alias="usableLife")
+    lap_delta_time: int = Field(alias="lapDeltaTime")
+    fitted: bool
+
+    model_config = {"populate_by_name": True}
+
+
 class CarSnapshot(BaseModel):
     car_index: int = Field(alias="carIndex")
     driver_name: str = Field(alias="driverName")
@@ -53,6 +65,7 @@ class CarSnapshot(BaseModel):
     num_pit_stops: int = Field(alias="numPitStops")
     total_time_ms: float = Field(alias="totalTimeMs")
     penalties: list[Penalty] = Field(default_factory=list)
+    tyre_sets: list[TyreSetInfo] = Field(default_factory=list, alias="tyreSets")
 
     model_config = {"populate_by_name": True}
 
