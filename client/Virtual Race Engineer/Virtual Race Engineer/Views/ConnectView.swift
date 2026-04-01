@@ -13,7 +13,7 @@ struct ConnectView: View {
 
             Image(systemName: "antenna.radiowaves.left.and.right")
                 .font(.system(size: 64))
-                .foregroundStyle(.accent)
+                .foregroundColor(.accentColor)
 
             Text("Virtual Race Engineer")
                 .font(.title)
