@@ -151,3 +151,10 @@ class StrategyEvaluationRequest(BaseModel):
     candidates: list[StrategyCandidate]
 
     model_config = {"populate_by_name": True}
+
+
+class AutoStrategyRequest(BaseModel):
+    snapshot: RaceSnapshot
+    player_car_index: int = Field(alias="playerCarIndex")
+
+    model_config = {"populate_by_name": True}

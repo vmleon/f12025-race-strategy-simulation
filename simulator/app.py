@@ -10,7 +10,9 @@ from fastapi import FastAPI, HTTPException
 from simulator.coefficients import Coefficients
 from simulator.db import close_pool, get_pool, load_coefficients_for_track
 from simulator.engine import MonteCarloEngine
+from simulator.candidate_generator import generate_candidates
 from simulator.models import (
+    AutoStrategyRequest,
     RaceSnapshot,
     SimulationResult,
     StrategyEvaluation,
@@ -23,13 +25,14 @@ logger = logging.getLogger("simulator")
 
 _shutdown_event = threading.Event()
 _worker_thread: threading.Thread | None = None
+_strategy_worker_thread: threading.Thread | None = None
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global _worker_thread
+    global _worker_thread, _strategy_worker_thread
     if _use_db:
-        from simulator.worker import run_worker
+        from simulator.worker import run_worker, run_strategy_worker
 
         _worker_thread = threading.Thread(
             target=run_worker,
@@ -38,10 +41,20 @@ async def lifespan(application: FastAPI):
             daemon=True,
         )
         _worker_thread.start()
+
+        _strategy_worker_thread = threading.Thread(
+            target=run_strategy_worker,
+            args=(get_pool(), _shutdown_event),
+            name="strategy-worker",
+            daemon=True,
+        )
+        _strategy_worker_thread.start()
     yield
     _shutdown_event.set()
     if _worker_thread is not None:
         _worker_thread.join(timeout=10)
+    if _strategy_worker_thread is not None:
+        _strategy_worker_thread.join(timeout=10)
     close_pool()
 
 
@@ -80,6 +93,21 @@ def evaluate_strategies(request: StrategyEvaluationRequest) -> StrategyEvaluatio
     evaluator = StrategyEvaluator(engine)
     return evaluator.evaluate(
         request.snapshot, request.player_car_index, request.candidates
+    )
+
+
+@app.post("/auto-evaluate-strategies", response_model_by_alias=True)
+def auto_evaluate_strategies(request: AutoStrategyRequest) -> StrategyEvaluation:
+    candidates = generate_candidates(request.snapshot, request.player_car_index)
+    if not candidates:
+        return StrategyEvaluation(
+            player_car_index=request.player_car_index, strategies=[]
+        )
+    coefficients = _load_coefficients(request.snapshot.track_id)
+    engine = MonteCarloEngine(coefficients)
+    evaluator = StrategyEvaluator(engine)
+    return evaluator.evaluate(
+        request.snapshot, request.player_car_index, candidates
     )
 
 
