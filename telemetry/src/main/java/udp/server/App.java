@@ -123,6 +123,8 @@ public class App {
                                                 + event.vehicleIdx + ",\"penaltyType\":" + event.penaltyType
                                                 + ",\"infringementType\":" + event.infringementType
                                                 + ",\"time\":" + event.time + ",\"lap\":" + event.lapNum + "}");
+                                        case "CHQF" -> raceState.queueEvent(
+                                                "{\"type\":\"event\",\"event\":\"CHQF\"}");
                                         default -> {}
                                     }
                                 }

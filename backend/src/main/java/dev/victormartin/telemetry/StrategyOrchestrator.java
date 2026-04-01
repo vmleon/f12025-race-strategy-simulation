@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import dev.victormartin.telemetry.engineer.RaceEngineerService;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 import dev.victormartin.telemetry.simulation.StrategyEvaluation;
 
@@ -27,6 +28,7 @@ public class StrategyOrchestrator {
     private final QueueService queueService;
     private final JdbcTemplate jdbc;
     private final RaceWebSocketHandler raceWebSocketHandler;
+    private final RaceEngineerService raceEngineerService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -49,10 +51,12 @@ public class StrategyOrchestrator {
     private volatile StrategyLeaderboard leaderboard;
 
     public StrategyOrchestrator(QueueService queueService, JdbcTemplate jdbc,
-                                 RaceWebSocketHandler raceWebSocketHandler) {
+                                 RaceWebSocketHandler raceWebSocketHandler,
+                                 RaceEngineerService raceEngineerService) {
         this.queueService = queueService;
         this.jdbc = jdbc;
         this.raceWebSocketHandler = raceWebSocketHandler;
+        this.raceEngineerService = raceEngineerService;
     }
 
     public void onStateUpdate(String json) {
@@ -103,6 +107,7 @@ public class StrategyOrchestrator {
         leaderboard = new StrategyLeaderboard(evaluatedAtLap, false, evaluation);
         System.out.println("StrategyOrchestrator: leaderboard updated at lap " + evaluatedAtLap);
         broadcastLeaderboard();
+        raceEngineerService.onStrategyEvaluation(evaluatedAtLap, evaluation);
     }
 
     public StrategyLeaderboard getLeaderboard() {
