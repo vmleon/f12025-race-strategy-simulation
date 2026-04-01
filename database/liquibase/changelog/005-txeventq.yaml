@@ -119,3 +119,59 @@ databaseChangeLog:
                 DBMS_AQADM.STOP_QUEUE(queue_name => 'PDBADMIN.SIMULATION_RESULT');
                 DBMS_AQADM.DROP_SHARDED_QUEUE(queue_name => 'PDBADMIN.SIMULATION_RESULT');
               END;
+
+  - changeSet:
+      id: 005-05-strategy-request-queue
+      author: victormartin
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN
+                  DBMS_AQADM.CREATE_SHARDED_QUEUE(
+                    queue_name     => 'PDBADMIN.STRATEGY_REQUEST',
+                    multiple_consumers => FALSE
+                  );
+                EXCEPTION
+                  WHEN OTHERS THEN
+                    IF SQLCODE != -24006 THEN RAISE; END IF;
+                END;
+                DBMS_AQADM.START_QUEUE(queue_name => 'PDBADMIN.STRATEGY_REQUEST');
+              END;
+      rollback:
+        - sql:
+            splitStatements: false
+            sql: |
+              BEGIN
+                DBMS_AQADM.STOP_QUEUE(queue_name => 'PDBADMIN.STRATEGY_REQUEST');
+                DBMS_AQADM.DROP_SHARDED_QUEUE(queue_name => 'PDBADMIN.STRATEGY_REQUEST');
+              END;
+
+  - changeSet:
+      id: 005-06-strategy-result-queue
+      author: victormartin
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              BEGIN
+                BEGIN
+                  DBMS_AQADM.CREATE_SHARDED_QUEUE(
+                    queue_name     => 'PDBADMIN.STRATEGY_RESULT',
+                    multiple_consumers => FALSE
+                  );
+                EXCEPTION
+                  WHEN OTHERS THEN
+                    IF SQLCODE != -24006 THEN RAISE; END IF;
+                END;
+                DBMS_AQADM.START_QUEUE(queue_name => 'PDBADMIN.STRATEGY_RESULT');
+              END;
+      rollback:
+        - sql:
+            splitStatements: false
+            sql: |
+              BEGIN
+                DBMS_AQADM.STOP_QUEUE(queue_name => 'PDBADMIN.STRATEGY_RESULT');
+                DBMS_AQADM.DROP_SHARDED_QUEUE(queue_name => 'PDBADMIN.STRATEGY_RESULT');
+              END;
