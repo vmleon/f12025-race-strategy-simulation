@@ -5,7 +5,7 @@ import {
   CarSnapshot,
   RaceMessage,
   WeatherForecastSample,
-  SimulationCarResult,
+  RankedStrategy,
 } from '../race.service';
 import { SessionService, ActiveSessionDto } from '../session.service';
 import { trackName } from '../track-names';
@@ -140,12 +140,9 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
           <app-damage-panel [car]="playerCar()" />
           <app-penalties-panel [car]="playerCar()" [events]="penaltyEvents()" />
           <app-strategy-widget
-            [playerResult]="simPlayerResult()"
-            [iterations]="simIterations()"
-            [converged]="simConverged()"
-            [simulating]="simulating()"
-            [lastUpdated]="simLastUpdated()"
-            [playerTyre]="playerCar()?.tyre ?? null"
+            [strategies]="strategyStrategies()"
+            [evaluatedAtLap]="strategyEvaluatedAtLap()"
+            [stale]="strategyStale()"
           />
         </div>
       </div>
@@ -351,11 +348,9 @@ export class RaceComponent implements OnInit, OnDestroy {
   activeSessions = signal<ActiveSessionDto[]>([]);
   selectedSessionUid = signal<string | null>(null);
 
-  simPlayerResult = signal<SimulationCarResult | null>(null);
-  simIterations = signal(0);
-  simConverged = signal(false);
-  simulating = signal(false);
-  simLastUpdated = signal<string | null>(null);
+  strategyStrategies = signal<RankedStrategy[]>([]);
+  strategyEvaluatedAtLap = signal(0);
+  strategyStale = signal(false);
 
   // Sector history tracking
   private sectorHistory = new Map<number, { lap: number; sector: number; timeMs: number }[]>();
@@ -464,11 +459,9 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.trackLength.set(0);
     this.yellowSector.set(null);
     this.forecast.set([]);
-    this.simPlayerResult.set(null);
-    this.simIterations.set(0);
-    this.simConverged.set(false);
-    this.simulating.set(false);
-    this.simLastUpdated.set(null);
+    this.strategyStrategies.set([]);
+    this.strategyEvaluatedAtLap.set(0);
+    this.strategyStale.set(false);
     this.sectorHistory.clear();
     this.prevSectors.clear();
     this.prevLaps.clear();
@@ -628,19 +621,11 @@ export class RaceComponent implements OnInit, OnDestroy {
       case 'event':
         this.events.update((evs) => [msg, ...evs].slice(0, 10));
         break;
-      case 'simulationResult':
-        if (msg.result) {
-          const player = this.playerCar();
-          const playerIdx = player?.idx;
-          const playerSimResult =
-            playerIdx != null
-              ? msg.result.cars.find((c) => c.carIndex === playerIdx)
-              : msg.result.cars[0];
-          this.simPlayerResult.set(playerSimResult ?? null);
-          this.simIterations.set(msg.result.iterations);
-          this.simConverged.set(msg.result.converged);
-          this.simulating.set(false);
-          this.simLastUpdated.set(new Date().toLocaleTimeString());
+      case 'strategyEvaluation':
+        if (msg.evaluation) {
+          this.strategyStrategies.set(msg.evaluation.strategies);
+          this.strategyEvaluatedAtLap.set(msg.evaluatedAtLap ?? 0);
+          this.strategyStale.set(msg.stale ?? false);
         }
         break;
     }
