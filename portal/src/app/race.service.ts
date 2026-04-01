@@ -63,6 +63,34 @@ export interface SimulationResult {
   cars: SimulationCarResult[];
 }
 
+export interface StrategyPitStop {
+  onLap: number;
+  newCompound: number;
+}
+
+export interface StrategyCandidate {
+  label: string;
+  stops: StrategyPitStop[];
+}
+
+export interface RankedStrategy {
+  rank: number;
+  candidate: StrategyCandidate;
+  meanPosition: number;
+  positionStdDev: number;
+  ci95Low: number;
+  ci95High: number;
+  dnfProbability: number;
+  top3Probability: number;
+  pointsFinishProbability: number;
+  expectedPoints: number;
+}
+
+export interface StrategyEvaluationResult {
+  playerCarIndex: number;
+  strategies: RankedStrategy[];
+}
+
 export interface RaceMessage {
   type:
     | 'state'
@@ -71,7 +99,8 @@ export interface RaceMessage {
     | 'event'
     | 'simulationResult'
     | 'calibrationComplete'
-    | 'calibrationFailed';
+    | 'calibrationFailed'
+    | 'strategyEvaluation';
   sessionUid?: string;
   trackId?: number;
   totalLaps?: number;
@@ -98,6 +127,10 @@ export interface RaceMessage {
   // calibration fields
   elapsedMs?: number;
   exitCode?: number;
+  // strategy evaluation fields
+  evaluatedAtLap?: number;
+  stale?: boolean;
+  evaluation?: StrategyEvaluationResult;
 }
 
 @Injectable({ providedIn: 'root' })
