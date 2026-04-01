@@ -95,15 +95,15 @@ graph TD
 
 ## Modules
 
-| Module | Role | Tech |
-|--------|------|------|
-| `telemetry/` | UDP server: receives F1 2025 packets, maintains in-memory state, snapshots on sector transitions, pushes live state via TCP | Plain Java 23, Oracle UCP, Oracle JDBC |
-| `backend/` | REST/WebSocket API: bridges portal and clients with database, orchestrates calibration and simulation triggers via TxEventQ | Spring Boot 3.5.3, Java 23 |
-| `calibration/` | Batch CLI: outlier detection + sklearn/numpy fitting of physics model coefficients per track | Python 3.12+, sklearn, numpy |
-| `simulator/` | Monte Carlo race strategy simulation service, consumes TxEventQ requests | Python 3.12+, FastAPI |
-| `portal/` | Web UI: live race table, strategy comparison, calibration dashboard, session browser, drivers overview | Angular 21 |
-| `database/` | Oracle AI Database 26ai schema (8 tables + TxEventQ queues), Liquibase migrations | Liquibase, SQL |
-| `client/` | iOS app: real-time race engineer voice assistant for the driver | SwiftUI, WebSocket, AVSpeechSynthesizer |
+| Module         | Role                                                                                                                        | Tech                                    |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `telemetry/`   | UDP server: receives F1 2025 packets, maintains in-memory state, snapshots on sector transitions, pushes live state via TCP | Plain Java 23, Oracle UCP, Oracle JDBC  |
+| `backend/`     | REST/WebSocket API: bridges portal and clients with database, orchestrates calibration and simulation triggers via TxEventQ | Spring Boot 3.5.3, Java 23              |
+| `calibration/` | Batch CLI: outlier detection + sklearn/numpy fitting of physics model coefficients per track                                | Python 3.12+, sklearn, numpy            |
+| `simulator/`   | Monte Carlo race strategy simulation service, consumes TxEventQ requests                                                    | Python 3.12+, FastAPI                   |
+| `portal/`      | Web UI: live race table, strategy comparison, calibration dashboard, session browser, drivers overview                      | Angular 21                              |
+| `database/`    | Oracle AI Database 26ai schema (8 tables + TxEventQ queues), Liquibase migrations                                           | Liquibase, SQL                          |
+| `client/`      | iOS app: real-time race engineer voice assistant for the driver                                                             | SwiftUI, WebSocket, AVSpeechSynthesizer |
 
 ### Key Design Choices
 
@@ -129,8 +129,30 @@ graph TD
 
 ```bash
 pip install -r requirements.txt   # one-time: install oracledb driver
+```
+
+```bash
 python manage.py local setup      # start Oracle container + run Liquibase migrations
+```
+
+```bash
 python manage.py local status     # verify DB is ready
+```
+
+Backup and restore:
+
+```bash
+python manage.py local export     # export all data to database/backups/
+```
+
+```bash
+python manage.py local import     # import latest backup (or specify path)
+```
+
+Cleanup:
+
+```bash
+python manage.py local clean      # stop & remove Oracle container
 ```
 
 ### 2. Telemetry Server
