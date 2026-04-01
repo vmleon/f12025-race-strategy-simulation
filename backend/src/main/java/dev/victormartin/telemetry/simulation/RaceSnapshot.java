@@ -18,6 +18,16 @@ public record RaceSnapshot(
         PitStrategy pitStrategy     // strategy to evaluate for the player car
 ) {
 
+    public record TyreSet(
+            int visualTyreCompound,
+            boolean available,
+            int wear,
+            int lifeSpan,
+            int usableLife,
+            int lapDeltaTime,
+            boolean fitted
+    ) {}
+
     public record CarSnapshot(
             int carIndex,
             String driverName,
@@ -31,7 +41,8 @@ public record RaceSnapshot(
             int floorDamage,
             int engineDamage,
             int numPitStops,
-            double totalTimeMs
+            double totalTimeMs,
+            List<TyreSet> tyreSets
     ) {}
 
     public record PitStrategy(

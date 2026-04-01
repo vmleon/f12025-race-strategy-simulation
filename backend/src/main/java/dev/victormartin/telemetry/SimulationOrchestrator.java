@@ -274,7 +274,7 @@ public class SimulationOrchestrator {
                 cars.add(new RaceSnapshot.CarSnapshot(
                         idx, name, ai, pos, tyreCompound, tyreAge,
                         fuel, fuelBurnPerSector, fwDmg, flDmg, engDmg,
-                        pits, totalTimeMs));
+                        pits, totalTimeMs, List.of()));
             }
 
             if (cars.isEmpty()) return null;
