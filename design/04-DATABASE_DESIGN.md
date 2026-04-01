@@ -4,6 +4,8 @@
 
 Nine tables: six mapping 1:1 to the data categories defined in `03-MONTECARLO.md` (session metadata, participants, per-sector snapshots, events, tyre sets inventory, final classifications), a `calibration_coefficients` table for fitted model values from `05-CALIBRATION.md`, and `drivers` + `driver_sessions` for driver identity management. Stints are derivable from sector data. Weather transitions are visible in per-sector snapshots.
 
+In addition to tables, the schema includes six Oracle TxEventQ queues for asynchronous inter-component messaging: `SESSION_LIFECYCLE` (multi-consumer), `CALIBRATION_REQUEST`, `SIMULATION_REQUEST`, `SIMULATION_RESULT`, `STRATEGY_REQUEST`, and `STRATEGY_RESULT` (all single-consumer). Queue definitions are managed via Liquibase (`005-txeventq.yaml`). See `06-INTEGRATION.md` for queue usage and data flow.
+
 ## Key Design Decisions
 
 ### 1. Natural composite PK on `sector_snapshots`, no surrogate key

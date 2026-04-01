@@ -52,11 +52,51 @@ To compare strategies, the simulation runs a full Monte Carlo batch for each can
 
 After all candidates have been simulated, results are ranked by mean finishing position and expected championship points ([Brawn & Parr, 2016](10-REFERENCES.md#brawn2016)). Each ranked strategy includes position distribution, confidence intervals, DNF probability, and top-3 / points-finish probabilities — giving the player a complete picture of each option's risk/reward profile.
 
-The candidate strategies themselves are provided by the caller (the Backend). Strategy generation (e.g. exploring different pit windows and compound permutations) is the Backend's responsibility; the Simulator only evaluates what it receives. This separation keeps the simulation engine focused on a single concern: running Monte Carlo iterations.
+Candidate strategies are generated automatically by the Simulator's `candidate_generator` module. Given the current race state (remaining laps, tyre set availability, current compound, pit history), the generator produces plausible strategies:
+
+- **0-stop:** Only if the two-compound rule is already satisfied (at least one prior pit stop with a different compound) and the fitted set's usable life exceeds the remaining laps
+- **1-stop:** Varies pit lap across the remaining race distance in steps of 2–5 laps (depending on distance). Each available compound is tried. Compounds that are fitted or would violate the two-compound rule are excluded
+- **2-stop:** Only if 15+ laps remain. Cross-product of available compounds for both stops, with lap windows stepped at 5+ lap intervals and a minimum stint length of 5 laps
+- **Pruning:** Compounds with a lap delta time >5 seconds versus the fitted set are excluded. Total candidates are capped at 50, prioritizing 0/1-stop strategies over 2-stop when truncating
+
+This generation logic lives in the Simulator (`candidate_generator.py`) rather than the Backend, keeping strategy knowledge co-located with the evaluation engine. The Backend's `StrategyOrchestrator` assembles the race snapshot (enriched with tyre set availability from the database) and passes it to the Simulator via the `STRATEGY_REQUEST` queue — see `06-INTEGRATION.md` section 6b for the full flow.
 
 The residual variance controls how spread out the outcomes are — tight residuals (well-calibrated model) produce consistent predictions, wide residuals (poor calibration or genuinely noisy game physics) produce uncertain outcomes. The required iteration count depends on convergence — see Convergence and Iteration Count above.
 
 **Important:** Monte Carlo does not self-calibrate. The quality of the simulation depends entirely on the quality of the model coefficients ("knobs") fitted from historical data. See `05-CALIBRATION.md` for the calibration pipeline that transforms raw telemetry into fitted coefficients for each term in the lap time function.
+
+### Use Case: Race Simulation (Position Prediction)
+
+```mermaid
+sequenceDiagram
+    participant Telemetry as Telemetry (TCP)
+    participant SimOrch as SimulationOrchestrator
+    participant Q1 as SIMULATION_REQUEST queue
+    participant Sim as Simulator (Python)
+    participant DB as Oracle DB
+    participant Q2 as SIMULATION_RESULT queue
+    participant Consumer as SimulationResultConsumer
+    participant Portal as Portal / iOS
+
+    Telemetry->>SimOrch: TCP state update (~1Hz)
+    Note over SimOrch: Detect trigger:<br/>leader lap ✓ | pit stop ✓<br/>safety car ✓ | collision ✓
+    SimOrch->>SimOrch: Debounce (3s)
+    Note over SimOrch: Assemble RaceSnapshot<br/>(20 cars: position, fuel,<br/>tyres, damage, weather)
+    SimOrch->>Q1: Enqueue {jobId, raceSnapshot}
+
+    Q1->>Sim: Dequeue request
+    activate Sim
+    Sim->>DB: Load calibration_coefficients<br/>for track_id
+    DB-->>Sim: Fitted coefficients<br/>(base pace, tyre deg, fuel, ...)
+    Note over Sim: MonteCarloEngine.simulate()<br/>1K iterations × remaining laps<br/>× 3 sectors × 20 cars
+    Note over Sim: Aggregate: position distributions,<br/>CI, DNF probability per car
+    Sim->>Q2: Enqueue {jobId, result}
+    deactivate Sim
+
+    Q2->>Consumer: Dequeue result
+    Consumer->>SimOrch: completeJob(jobId, result)
+    SimOrch->>Portal: WebSocket: simulationResult<br/>(position predictions per car)
+```
 
 ## Simulation Granularity
 
@@ -130,49 +170,49 @@ These values are computed offline from accumulated historical data and updated a
 
 The core dataset. Captured when we detect a `sector` field transition in LapData (0→1, 1→2, 2→0). The 2025 F1 season has 20 active cars (10 teams). The game's UDP arrays hold up to 22 slots — downstream code must filter inactive car indices (check `driverStatus` or Participants data) to avoid processing empty slots.
 
-| Field                    | Source Packet   | Source Field                      | Why                                                   |
-| ------------------------ | --------------- | --------------------------------- | ----------------------------------------------------- |
-| Sector time (ms)         | LapData(2)      | sector1/2TimeMSPart + MinutesPart | Core simulation input                                 |
-| Lap number               | LapData(2)      | currentLapNum                     | Ordering                                              |
+| Field                    | Source Packet   | Source Field                      | Why                                                                                               |
+| ------------------------ | --------------- | --------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Sector time (ms)         | LapData(2)      | sector1/2TimeMSPart + MinutesPart | Core simulation input                                                                             |
+| Lap number               | LapData(2)      | currentLapNum                     | Ordering                                                                                          |
 | Sector number            | LapData(2)      | sector (0, 1, 2)                  | Which sector just completed (recorded on transition: 0→1 records 0, 1→2 records 1, 2→0 records 2) |
-| Lap time (ms)            | LapData(2)      | lastLapTimeInMS                   | Full lap time (available after sector 2→0 transition) |
-| Car position             | LapData(2)      | carPosition                       | Track position at sector boundary                     |
-| Pit status               | LapData(2)      | pitStatus                         | In/out laps are slower                                |
-| Num pit stops            | LapData(2)      | numPitStops                       | Strategy tracking                                     |
-| Lap validity             | LapData(2)      | currentLapInvalid                 | Invalidate data (not delete)                          |
-| Corner cutting warnings  | LapData(2)      | cornerCuttingWarnings             | Additional invalidity signal                          |
-| Penalties (seconds)      | LapData(2)      | penalties                         | Affects final result                                  |
-| Driver status            | LapData(2)      | driverStatus                      | Garage, flying, in/out lap                            |
-| Speed trap (km/h)        | LapData(2)      | speedTrapFastestSpeed             | Straight-line performance proxy                       |
-| Gap to car ahead         | LapData(2)      | deltaToCarInFront (ms+min parts)  | Dirty air + DRS modeling per sector                   |
-| Gap to race leader       | LapData(2)      | deltaToRaceLeader (ms+min parts)  | Field spread, lapped traffic                          |
-| Tyre compound (actual)   | CarStatus(7)    | actualTyreCompound                | Strategy variable                                     |
-| Tyre compound (visual)   | CarStatus(7)    | visualTyreCompound                | Display (C1-C5, inter, wet)                           |
-| Tyre age (laps)          | CarStatus(7)    | tyresAgeLaps                      | Degradation curve input                               |
-| Fuel in tank (kg)        | CarStatus(7)    | fuelInTank                        | Fuel effect on pace                                   |
-| Fuel remaining (laps)    | CarStatus(7)    | fuelRemainingLaps                 | Strategy planning                                     |
-| ERS deploy mode          | CarStatus(7)    | ersDeployMode                     | Overtake mode ~1s advantage                           |
-| DRS allowed              | CarStatus(7)    | drsAllowed                        | DRS advantage this sector                             |
-| DRS activation distance  | CarStatus(7)    | drsActivationDistance             | Proximity to DRS zone                                 |
-| Tyre wear (4 wheels)     | CarDamage(10)   | tyresWear[4]                      | Degradation at sector boundary                        |
-| Tyre damage (4 wheels)   | CarDamage(10)   | tyresDamage[4]                    | Performance loss                                      |
-| Tyre blisters (4 wheels) | CarDamage(10)   | tyreBlisters[4]                   | Thermal degradation                                   |
-| Front left wing damage   | CarDamage(10)   | frontLeftWingDamage               | Aero performance loss, pit stop trigger               |
-| Front right wing damage  | CarDamage(10)   | frontRightWingDamage              | Aero performance loss, pit stop trigger               |
-| Rear wing damage         | CarDamage(10)   | rearWingDamage                    | Aero + DRS loss, pit stop trigger                     |
-| Floor damage             | CarDamage(10)   | floorDamage                       | Major downforce loss (ground effect)                  |
-| Diffuser damage          | CarDamage(10)   | diffuserDamage                    | Rear downforce loss                                   |
-| Sidepod damage           | CarDamage(10)   | sidepodDamage                     | Cooling + aero loss                                   |
-| Gearbox damage           | CarDamage(10)   | gearBoxDamage                     | Reliability risk, potential retirement                |
-| Engine damage            | CarDamage(10)   | engineDamage                      | Pace loss, reliability risk, potential retirement     |
-| Tyre surface temp (4)    | CarTelemetry(6) | tyresSurfaceTemperature[4]        | Grip level, degradation rate                          |
-| Tyre inner temp (4)      | CarTelemetry(6) | tyresInnerTemperature[4]          | Core tyre temp, optimal window tracking               |
-| Brake temp (4 wheels)    | CarTelemetry(6) | brakesTemperature[4]              | Affects tyre temp, brake wear indicator               |
-| Engine temperature       | CarTelemetry(6) | engineTemperature                 | Reliability risk, overheating signal                  |
-| Weather                  | Session(1)      | weather                           | Major pace factor                                     |
-| Track temperature        | Session(1)      | trackTemperature                  | Tyre behavior                                         |
-| Air temperature          | Session(1)      | airTemperature                    | Tyre behavior                                         |
-| Safety car status        | Session(1)      | safetyCarStatus                   | Bunches field, free pit stops                         |
+| Lap time (ms)            | LapData(2)      | lastLapTimeInMS                   | Full lap time (available after sector 2→0 transition)                                             |
+| Car position             | LapData(2)      | carPosition                       | Track position at sector boundary                                                                 |
+| Pit status               | LapData(2)      | pitStatus                         | In/out laps are slower                                                                            |
+| Num pit stops            | LapData(2)      | numPitStops                       | Strategy tracking                                                                                 |
+| Lap validity             | LapData(2)      | currentLapInvalid                 | Invalidate data (not delete)                                                                      |
+| Corner cutting warnings  | LapData(2)      | cornerCuttingWarnings             | Additional invalidity signal                                                                      |
+| Penalties (seconds)      | LapData(2)      | penalties                         | Affects final result                                                                              |
+| Driver status            | LapData(2)      | driverStatus                      | Garage, flying, in/out lap                                                                        |
+| Speed trap (km/h)        | LapData(2)      | speedTrapFastestSpeed             | Straight-line performance proxy                                                                   |
+| Gap to car ahead         | LapData(2)      | deltaToCarInFront (ms+min parts)  | Dirty air + DRS modeling per sector                                                               |
+| Gap to race leader       | LapData(2)      | deltaToRaceLeader (ms+min parts)  | Field spread, lapped traffic                                                                      |
+| Tyre compound (actual)   | CarStatus(7)    | actualTyreCompound                | Strategy variable                                                                                 |
+| Tyre compound (visual)   | CarStatus(7)    | visualTyreCompound                | Display (C1-C5, inter, wet)                                                                       |
+| Tyre age (laps)          | CarStatus(7)    | tyresAgeLaps                      | Degradation curve input                                                                           |
+| Fuel in tank (kg)        | CarStatus(7)    | fuelInTank                        | Fuel effect on pace                                                                               |
+| Fuel remaining (laps)    | CarStatus(7)    | fuelRemainingLaps                 | Strategy planning                                                                                 |
+| ERS deploy mode          | CarStatus(7)    | ersDeployMode                     | Overtake mode ~1s advantage                                                                       |
+| DRS allowed              | CarStatus(7)    | drsAllowed                        | DRS advantage this sector                                                                         |
+| DRS activation distance  | CarStatus(7)    | drsActivationDistance             | Proximity to DRS zone                                                                             |
+| Tyre wear (4 wheels)     | CarDamage(10)   | tyresWear[4]                      | Degradation at sector boundary                                                                    |
+| Tyre damage (4 wheels)   | CarDamage(10)   | tyresDamage[4]                    | Performance loss                                                                                  |
+| Tyre blisters (4 wheels) | CarDamage(10)   | tyreBlisters[4]                   | Thermal degradation                                                                               |
+| Front left wing damage   | CarDamage(10)   | frontLeftWingDamage               | Aero performance loss, pit stop trigger                                                           |
+| Front right wing damage  | CarDamage(10)   | frontRightWingDamage              | Aero performance loss, pit stop trigger                                                           |
+| Rear wing damage         | CarDamage(10)   | rearWingDamage                    | Aero + DRS loss, pit stop trigger                                                                 |
+| Floor damage             | CarDamage(10)   | floorDamage                       | Major downforce loss (ground effect)                                                              |
+| Diffuser damage          | CarDamage(10)   | diffuserDamage                    | Rear downforce loss                                                                               |
+| Sidepod damage           | CarDamage(10)   | sidepodDamage                     | Cooling + aero loss                                                                               |
+| Gearbox damage           | CarDamage(10)   | gearBoxDamage                     | Reliability risk, potential retirement                                                            |
+| Engine damage            | CarDamage(10)   | engineDamage                      | Pace loss, reliability risk, potential retirement                                                 |
+| Tyre surface temp (4)    | CarTelemetry(6) | tyresSurfaceTemperature[4]        | Grip level, degradation rate                                                                      |
+| Tyre inner temp (4)      | CarTelemetry(6) | tyresInnerTemperature[4]          | Core tyre temp, optimal window tracking                                                           |
+| Brake temp (4 wheels)    | CarTelemetry(6) | brakesTemperature[4]              | Affects tyre temp, brake wear indicator                                                           |
+| Engine temperature       | CarTelemetry(6) | engineTemperature                 | Reliability risk, overheating signal                                                              |
+| Weather                  | Session(1)      | weather                           | Major pace factor                                                                                 |
+| Track temperature        | Session(1)      | trackTemperature                  | Tyre behavior                                                                                     |
+| Air temperature          | Session(1)      | airTemperature                    | Tyre behavior                                                                                     |
+| Safety car status        | Session(1)      | safetyCarStatus                   | Bunches field, free pit stops                                                                     |
 
 ### 2. Session Events (one row per event)
 
@@ -321,11 +361,11 @@ Car damage from collisions, kerb strikes, or component wear directly affects pac
 
 Race penalties affect both strategy decisions and final results. The simulation models three penalty types from the game's PENA events:
 
-| Type | Effect | Serving |
-|------|--------|---------|
-| **Time penalty** | Seconds added to final race time | Automatic — applied after the chequered flag |
-| **Drive-through** | Must transit pit lane at speed limit | Manual — driver chooses when to serve |
-| **Stop-go** | Must transit pit lane + stop for N seconds | Manual — driver chooses when to serve |
+| Type              | Effect                                     | Serving                                      |
+| ----------------- | ------------------------------------------ | -------------------------------------------- |
+| **Time penalty**  | Seconds added to final race time           | Automatic — applied after the chequered flag |
+| **Drive-through** | Must transit pit lane at speed limit       | Manual — driver chooses when to serve        |
+| **Stop-go**       | Must transit pit lane + stop for N seconds | Manual — driver chooses when to serve        |
 
 **State separation:** The simulation tracks penalties in two distinct buckets per car:
 

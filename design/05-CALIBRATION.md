@@ -14,6 +14,56 @@ graph LR
     D --> E["Monte Carlo Simulation"]
 ```
 
+### Use Case: Calibration Pipeline
+
+```mermaid
+sequenceDiagram
+    participant Telemetry as Telemetry (TCP)
+    participant Backend as Backend (Spring Boot)
+    participant Q as CALIBRATION_REQUEST queue
+    participant Consumer as CalibrationQueueConsumer
+    participant Subprocess as python -m calibration
+    participant DB as Oracle DB
+    participant Portal as Portal / iOS
+
+    alt Automatic trigger
+        Telemetry->>Backend: TCP {"type":"sessionEnded"}
+        Backend->>Q: Enqueue {trackId, sessionUid}
+    else Manual trigger
+        Portal->>Backend: POST /api/calibration/run?trackId=X
+        Backend->>Q: Enqueue {trackId, trigger:"manual"}
+        Backend-->>Portal: 202 Accepted
+    end
+
+    Q->>Consumer: Dequeue calibration request
+    Consumer->>Subprocess: spawn subprocess<br/>python -m calibration run <trackId>
+    activate Subprocess
+
+    Subprocess->>DB: SELECT sector_snapshots<br/>+ participants + driver_ratings<br/>WHERE track_id = ?
+    DB-->>Subprocess: Historical telemetry data
+
+    Note over Subprocess: Step 1: Outlier detection<br/>(per-driver IQR analysis)
+    Subprocess->>DB: UPDATE sector_snapshots<br/>SET outlier = 1 WHERE ...
+
+    Note over Subprocess: Step 2: Fit base pace<br/>(mean + variance per sector,<br/>PLAYER and AI regimes)
+
+    Note over Subprocess: Step 3: Fit tyre degradation<br/>(linear regression per compound:<br/>sector_time vs tyre_age)
+
+    Note over Subprocess: Step 4: Fit fuel effect<br/>(linear regression:<br/>sector_time vs fuel_in_tank_kg)
+
+    Note over Subprocess: Step 5: Fit pit stop duration<br/>(time loss vs baseline)
+
+    Subprocess->>DB: INSERT calibration_coefficients<br/>(per knob × regime × sector)
+    deactivate Subprocess
+
+    Consumer->>Backend: Process exit code
+    alt Success (exit 0)
+        Backend->>Portal: WebSocket: calibrationComplete<br/>{elapsedMs}
+    else Failure (non-zero exit)
+        Backend->>Portal: WebSocket: calibrationFailed<br/>{exitCode}
+    end
+```
+
 Without calibration, the simulation would need hardcoded guesses (e.g. "front wing damage costs 0.5–3 seconds") with wide, uninformed distributions. With calibration, each effect is a fitted function derived from observed data, and the Monte Carlo sampling is limited to genuinely uncertain events (safety cars, overtake success, mechanical failures).
 
 ## Dual Calibration: AI Cars vs Player Car
@@ -79,12 +129,12 @@ The game's physics engine must run in real-time on consumer hardware, feel fun a
 
 ### What Must Be Fitted Empirically
 
-| Effect | Real F1 Knowledge | Game Reality | Fitting Approach |
-|--------|-------------------|-------------|-----------------|
-| **Dirty air** | ~35-50% downforce loss within 1 car length, reduced post-2022 | Unknown thresholds, magnitude, and track variation | Compare sector times at different `deltaToCarInFront` vs clean-air baseline. Start with piecewise model: linear below threshold, zero above |
-| **DRS advantage** | Near zero (Monaco) to ~0.8s (Monza), depends on straight length | Exists but exact gain per sector per track unknown | Compare `drsAllowed=1` vs `drsAllowed=0` for same driver/conditions. Clean binary comparison |
-| **Damage effects** | Floor damage costs 1-2s/lap; front wing depends on element lost | Reported as 0-100% but mapping to time loss unknown, may not be linear | Correlate sector times with damage percentages. Challenge: data scarcity |
-| **Tyre temperature** | Narrow optimal window (~10-15°C), grip drops outside | Temperature reported but unclear if game models grip as f(temp) or just decorative | Fit quadratic model (optimal window with drop-off). Drop knob if no sensitivity found |
+| Effect               | Real F1 Knowledge                                               | Game Reality                                                                       | Fitting Approach                                                                                                                            |
+| -------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Dirty air**        | ~35-50% downforce loss within 1 car length, reduced post-2022   | Unknown thresholds, magnitude, and track variation                                 | Compare sector times at different `deltaToCarInFront` vs clean-air baseline. Start with piecewise model: linear below threshold, zero above |
+| **DRS advantage**    | Near zero (Monaco) to ~0.8s (Monza), depends on straight length | Exists but exact gain per sector per track unknown                                 | Compare `drsAllowed=1` vs `drsAllowed=0` for same driver/conditions. Clean binary comparison                                                |
+| **Damage effects**   | Floor damage costs 1-2s/lap; front wing depends on element lost | Reported as 0-100% but mapping to time loss unknown, may not be linear             | Correlate sector times with damage percentages. Challenge: data scarcity                                                                    |
+| **Tyre temperature** | Narrow optimal window (~10-15°C), grip drops outside            | Temperature reported but unclear if game models grip as f(temp) or just decorative | Fit quadratic model (optimal window with drop-off). Drop knob if no sensitivity found                                                       |
 
 Assumptions from real F1 knowledge are starting hypotheses to test, not facts to encode. If residual analysis shows the game behaves differently from expectations, trust the data.
 
@@ -168,15 +218,15 @@ How carrying more fuel slows the car.
 
 How each damage type affects pace. Multiple sub-knobs:
 
-| Damage Component | Expected Effect                            | Fit From                                                      |
-| ---------------- | ------------------------------------------ | ------------------------------------------------------------- |
-| Front wing (L/R) | Aero loss, primarily in high-speed corners | Sector time vs `frontLeftWingDamage` / `frontRightWingDamage` |
-| Rear wing        | Aero + DRS loss                            | Sector time vs `rearWingDamage`                               |
+| Damage Component | Expected Effect                                                                    | Fit From                                                      |
+| ---------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Front wing (L/R) | Aero loss, primarily in high-speed corners                                         | Sector time vs `frontLeftWingDamage` / `frontRightWingDamage` |
+| Rear wing        | Aero + DRS loss                                                                    | Sector time vs `rearWingDamage`                               |
 | Floor            | Major downforce loss (ground effect) ([Mendez, 2023](10-REFERENCES.md#mendez2023)) | Sector time vs `floorDamage`                                  |
-| Diffuser         | Rear downforce loss                        | Sector time vs `diffuserDamage`                               |
-| Sidepod          | Cooling + aero                             | Sector time vs `sidepodDamage`                                |
-| Engine           | Straight-line speed loss                   | Sector time vs `engineDamage`                                 |
-| Gearbox          | Reliability risk (not direct pace)         | Retirement probability vs `gearBoxDamage`                     |
+| Diffuser         | Rear downforce loss                                                                | Sector time vs `diffuserDamage`                               |
+| Sidepod          | Cooling + aero                                                                     | Sector time vs `sidepodDamage`                                |
+| Engine           | Straight-line speed loss                                                           | Sector time vs `engineDamage`                                 |
+| Gearbox          | Reliability risk (not direct pace)                                                 | Retirement probability vs `gearBoxDamage`                     |
 
 - **Form:** Linear or piecewise linear per damage component. If the game applies percentage-based aero/power reduction, a multiplicative model may fit better (see additive vs multiplicative note above)
 - **Challenge:** Damage events are sparse — most sector snapshots have zero damage. Needs multiple sessions with collisions/incidents to build enough data points
@@ -479,12 +529,12 @@ All four fitting steps execute within one transaction to ensure coefficients are
 
 Each step has a minimum sample threshold — if insufficient data exists, the step is skipped and existing coefficients (or cold-start defaults) remain in place.
 
-| Step | Knob | Min samples | Data filter |
-|------|------|-------------|-------------|
-| 1 | Base pace (per sector) | 5 | "Clean data": tyre age ≤5 laps, gap ahead >2s or leading, no damage |
-| 2 | Tyre degradation (per compound, per sector) | 10 | Linear regression: `time_ms = baseline + slope × tyre_age` |
-| 3 | Fuel effect (per track) | 5 | Linear regression: `time_ms = baseline + slope × fuel_kg` |
-| 4 | Pit stop duration (per regime) | 3 | Mean/variance of time loss vs baseline sector times |
+| Step | Knob                                        | Min samples | Data filter                                                         |
+| ---- | ------------------------------------------- | ----------- | ------------------------------------------------------------------- |
+| 1    | Base pace (per sector)                      | 5           | "Clean data": tyre age ≤5 laps, gap ahead >2s or leading, no damage |
+| 2    | Tyre degradation (per compound, per sector) | 10          | Linear regression: `time_ms = baseline + slope × tyre_age`          |
+| 3    | Fuel effect (per track)                     | 5           | Linear regression: `time_ms = baseline + slope × fuel_kg`           |
+| 4    | Pit stop duration (per regime)              | 3           | Mean/variance of time loss vs baseline sector times                 |
 
 All steps filter by `ai_controlled` to produce separate PLAYER and AI coefficients (see Dual Calibration above).
 
