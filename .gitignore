@@ -42,3 +42,9 @@ venv/
 
 # Superpowers
 .superpowers/
+
+# Generated config (from templates via manage.py setup)
+telemetry/src/main/resources/config.properties
+backend/src/main/resources/application.properties
+simulator/config.properties
+calibration/config.properties

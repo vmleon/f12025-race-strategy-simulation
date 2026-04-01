@@ -2,9 +2,9 @@ spring.application.name=backend
 server.port=8080
 
 spring.datasource.type=oracle.ucp.jdbc.PoolDataSourceImpl
-spring.datasource.url=${F1STRATEGY_DB_URL:jdbc:oracle:thin:@localhost:1521/FREEPDB1}
-spring.datasource.username=${F1STRATEGY_DB_USER:pdbadmin}
-spring.datasource.password=${F1STRATEGY_DB_PASSWORD:}
+spring.datasource.url=jdbc:oracle:thin:@localhost:1521/FREEPDB1
+spring.datasource.username=pdbadmin
+spring.datasource.password={{DB_PASSWORD}}
 spring.datasource.driver-class-name=oracle.jdbc.OracleDriver
 spring.datasource.oracleucp.connection-factory-class-name=oracle.jdbc.pool.OracleDataSource
 spring.datasource.oracleucp.initial-pool-size=2

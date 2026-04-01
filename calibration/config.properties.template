@@ -1,0 +1,6 @@
+[database]
+user = pdbadmin
+password = {{DB_PASSWORD}}
+dsn = localhost:1521/FREEPDB1
+pool.min = 1
+pool.max = 4
