@@ -41,19 +41,45 @@ class SessionControllerTest {
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
+    @SuppressWarnings("unchecked")
     @Test
-    void activeReturnsListOfSessions() throws Exception {
+    void activeReturnsEnrichedSessions() throws Exception {
         when(sessionStateHolder.getActiveSessions())
                 .thenReturn(List.of(
                         new SessionStateHolder.SessionInfo("abc123", 5),
                         new SessionStateHolder.SessionInfo("def456", 3)));
 
+        when(jdbc.queryForObject(contains("session_type"), eq(Integer.class), eq("abc123")))
+                .thenReturn(10);
+        when(jdbc.queryForObject(contains("session_type"), eq(Integer.class), eq("def456")))
+                .thenReturn(1);
+
         mockMvc.perform(get("/api/sessions/active"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].sessionUid").value("abc123"))
-                .andExpect(jsonPath("$[0].trackId").value(5))
-                .andExpect(jsonPath("$[1].sessionUid").value("def456"));
+                .andExpect(jsonPath("$[0].trackName").value("Monaco"))
+                .andExpect(jsonPath("$[0].sessionType").value("Race"))
+                .andExpect(jsonPath("$[1].sessionUid").value("def456"))
+                .andExpect(jsonPath("$[1].trackName").value("Bahrain"))
+                .andExpect(jsonPath("$[1].sessionType").value("Practice 1"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void activeReturnsFallbackWhenDbUnavailable() throws Exception {
+        when(sessionStateHolder.getActiveSessions())
+                .thenReturn(List.of(new SessionStateHolder.SessionInfo("abc123", 5)));
+
+        when(jdbc.queryForObject(contains("session_type"), eq(Integer.class), eq("abc123")))
+                .thenThrow(new org.springframework.dao.EmptyResultDataAccessException(1));
+
+        mockMvc.perform(get("/api/sessions/active"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].sessionUid").value("abc123"))
+                .andExpect(jsonPath("$[0].trackName").value("Monaco"))
+                .andExpect(jsonPath("$[0].sessionType").value(""));
     }
 
     @Test

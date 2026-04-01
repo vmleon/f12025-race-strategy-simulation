@@ -37,9 +37,25 @@ public class SessionController {
         this.jdbc = jdbc;
     }
 
+    public record ActiveSessionDto(String sessionUid, String trackName, String sessionType) {}
+
     @GetMapping("/active")
-    public List<SessionStateHolder.SessionInfo> activeSessions() {
-        return sessionStateHolder.getActiveSessions();
+    public List<ActiveSessionDto> activeSessions() {
+        return sessionStateHolder.getActiveSessions().stream()
+                .map(s -> {
+                    String sessionType = "";
+                    try {
+                        int typeId = jdbc.queryForObject(
+                                "SELECT session_type FROM sessions WHERE session_uid = ?",
+                                Integer.class, s.sessionUid());
+                        sessionType = GameMappings.sessionTypeName(typeId);
+                    } catch (Exception ignored) {}
+                    return new ActiveSessionDto(
+                            s.sessionUid(),
+                            GameMappings.trackName(s.trackId()),
+                            sessionType);
+                })
+                .toList();
     }
 
     @GetMapping("/active/state")
