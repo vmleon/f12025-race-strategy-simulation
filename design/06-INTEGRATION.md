@@ -250,9 +250,9 @@ sequenceDiagram
 - **Flow:**
   1. `StrategyOrchestrator.onStateUpdate()` detects trigger → assembles `RaceSnapshot` enriched with tyre set availability from `tyre_sets` table → enqueues to `STRATEGY_REQUEST` with `jobId`, `playerCarIndex`, and full snapshot
   2. When the request is enqueued, the leaderboard is marked `stale=true` and broadcast via WebSocket so the portal shows an "updating" indicator
-  3. `run_strategy_worker()` (Python, daemon thread in simulator) dequeues → calls `generate_candidates()` to produce plausible strategies → calls `StrategyEvaluator.evaluate()` which runs a full Monte Carlo batch per candidate → enqueues result to `STRATEGY_RESULT` with `jobId`, `evaluatedAtLap`, and ranked strategies
+  3. `run_strategy_worker()` (Python, daemon thread in simulator) dequeues → calls `generate_candidates()` to produce plausible strategies → calls `StrategyEvaluator.evaluate()` which runs a full Monte Carlo batch per candidate → enqueues result to `STRATEGY_RESULT` with `jobId`, `evaluatedAtLap` (the lap from the race snapshot at trigger time, not at result completion), and ranked strategies
   4. `StrategyResultConsumer` (Java, daemon thread in backend) dequeues → calls `StrategyOrchestrator.completeJob()` → updates leaderboard (`stale=false`) → broadcasts via WebSocket → notifies `RaceEngineerService` for voice message generation
-- **Candidate generation (`candidate_generator.py`):** Generates 0-stop (if two-compound rule already met and tyres can last), 1-stop (varying pit lap across remaining distance), and 2-stop (if 15+ laps remain) strategies. Enforces F1 two-compound rule, prunes compounds slower than 5s/lap vs fitted set, caps at 50 candidates
+- **Candidate generation (`candidate_generator.py`):** Generates 0-stop (if two-compound rule already met and tyres can last), 1-stop (varying pit lap across remaining distance), and 2-stop (if 15+ laps remain) strategies. Enforces F1 two-compound rule, prunes compounds whose lap delta exceeds ±5 s vs the fitted set, caps at 50 candidates
 - **Evaluation metrics per candidate:** mean finishing position, position std dev, 95% CI, DNF probability, top-3 probability, points-finish probability, expected F1 championship points
 - **Queues:** `PDBADMIN.STRATEGY_REQUEST` (single consumer) and `PDBADMIN.STRATEGY_RESULT` (single consumer). Both use Oracle TxEventQ with JSON payloads, same as the simulation queues
 
@@ -265,7 +265,9 @@ All components that access the database connect to the same Oracle AI Database 2
 - **Connection config per component:**
   - `telemetry/config.properties` — JDBC URL, username, password
   - `backend/src/main/resources/application.properties` — Spring datasource config (same DB, same schema)
-  - `simulator/db.py` — oracledb pool config (same DB, same schema)
+  - `simulator/config.properties` — oracledb pool config (same DB, same schema)
+  - `calibration/config.properties` — oracledb pool config (same DB, same schema)
+- **Config generation:** Each component stores a `.template` file (e.g. `telemetry/src/main/resources/config.properties.template`). `python manage.py local setup` generates the actual config files by injecting the DB password. `python manage.py local clean` removes them. Generated files are git-ignored.
 - **Concurrent access:** Telemetry writes continuously; backend reads on demand; calibration reads/writes after sessions; simulator reads coefficients and communicates via TxEventQ queues. No write conflicts — telemetry owns data ingestion, calibration owns coefficient updates
 - **Schema ownership:** A single DB user owns all tables. No per-component users for the POC
 
@@ -302,17 +304,21 @@ graph TD
     Race["RaceComponent"]
     Race --> Selector["Session Selector"]
     Race --> Circuit["CircuitMapComponent"]
+    Race --> Gap["GapIndicatorComponent"]
     Race --> Penalties["PenaltiesPanelComponent"]
     Race --> Damage["DamagePanelComponent"]
     Race --> Tyres["TyresPanelComponent"]
     Race --> Weather["WeatherPanelComponent"]
     Race --> Strategy["StrategyWidgetComponent"]
+    Strategy -.-> StrategyView["StrategyComponent (full leaderboard)"]
 ```
 
 - **Reactivity:** Angular signals ([Google, 2025](10-REFERENCES.md#angular-signals)) (`signal()`, `computed()`) for granular state tracking. The race service exposes signals that child components bind to directly — no manual subscription management.
 - **Session selector:** Queries `GET /api/sessions` for active sessions. Selecting a session switches the WebSocket subscription and reloads all child components with new state.
 - **Circuit map:** SVG-based rendering with a fixed viewBox. Car positions are mapped to track coordinates using sector progress. Renders DRS zones, yellow flag sectors, pit entry/exit. Team colours from a static lookup table.
-- **Strategy widget:** Displays the top 3 ranked strategies from the latest strategy evaluation — expected finishing position and podium probability for each. Shows the evaluation lap and a stale indicator while a new evaluation is in progress. Links to the full Strategy view for the complete leaderboard.
+- **Gap indicator:** Displays sector-by-sector time deltas (in milliseconds) between the player car and the car immediately ahead and behind. Sector 3 time is derived from `lastLapTimeMs` on lap transitions.
+- **Strategy widget:** Compact sidebar card showing the top 3 ranked strategies from the latest strategy evaluation — expected finishing position and podium probability for each. Shows the evaluation lap and a stale indicator while a new evaluation is in progress. Links to the full Strategy view.
+- **Strategy view (full leaderboard):** Separate routed component (`StrategyComponent`) displaying all evaluated strategies in a ranked table with comprehensive metrics: mean position, 95% CI, DNF probability, points-finish probability, and expected championship points.
 - **Info panels:** Each panel subscribes to a slice of the race state (penalties, damage, tyres, weather) and renders a focused view. Standalone components with no cross-dependencies.
 
 ## 10. iOS Voice Client (SwiftUI)

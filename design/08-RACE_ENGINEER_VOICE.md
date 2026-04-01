@@ -166,39 +166,32 @@ sequenceDiagram
 
 Scenarios ordered by frequency (routine first, rare last). Priority levels map to `EngineerMessage.Priority` in the queue system:
 
-| #   | Scenario                        | Trigger Condition                                 | Message Pattern                                                                    | Priority  |
-| --- | ------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------- | --------- |
-| 1   | Gap update (car behind closing) | Gap to car behind < 2.0s (first crossing)         | "{name} closing from behind. {gap}s back. Defend your position."                   | NORMAL    |
-| 2   | Tyre age warning                | Tyre age crosses 20-lap threshold                 | "{compound} tyres are {age} laps old. Consider a pit stop."                        | NORMAL    |
-| 3   | Tyre age critical               | Tyre age crosses 30-lap threshold                 | "Tyres are {age} laps old and degrading. Box soon."                                | HIGH      |
-| 4   | New tyres fitted                | Tyre age drops (pit stop detected)                | "Copy, new {compound} tyres on. Take it easy for the out lap."                     | NORMAL    |
-| 5   | Lap countdown (10 to go)        | Laps remaining == 10                              | "10 laps remaining. Keep it clean, manage your tyres."                             | NORMAL    |
-| 6   | Lap countdown (5 to go)         | Laps remaining == 5                               | "5 laps to go. Bring it home."                                                     | NORMAL    |
-| 7   | Lap countdown (last lap)        | Laps remaining == 1                               | "Last lap. Give it everything you've got."                                         | HIGH      |
-| 8   | Track limits warning            | Warning count increases                           | "Track limits warning. That's warning number {n}. Be careful."                     | NORMAL    |
-| 9   | Time penalty received           | Penalty seconds increase                          | "Penalty received. {n} seconds added. We'll talk strategy."                        | HIGH      |
-| 10  | Unserved pit penalty            | Unserved drive-through or stop-go increases       | "You have an unserved {type} penalty. Box this lap."                               | HIGH      |
-| 11  | Car retirement                  | RTMT event received                               | "{name} has retired. Watch for debris on track."                                   | NORMAL    |
-| 12  | Collision ahead                 | COLL event received                               | "Collision ahead. Stay alert, watch for yellow flags."                             | HIGH      |
-| 13  | Safety car deployed             | SCAR event received                               | "Safety car deployed. Bunch up, stay within ten car lengths. We'll talk strategy." | IMMEDIATE |
-| 14  | Safety car ending               | Safety car status changes from active to inactive | "Safety car coming in. Green flag next lap. Push now, push now."                   | IMMEDIATE |
-
-### Scenarios for future implementation
-
-These are real F1 communication scenarios not yet wired to telemetry triggers:
-
-| Scenario                | Trigger (when available)                     | Suggested message                                 | Priority |
-| ----------------------- | -------------------------------------------- | ------------------------------------------------- | -------- |
-| Pit window confirmation | Simulation result indicates optimal stop lap | "Box window opens in {n} laps. Mediums ready."    | NORMAL   |
-| DRS enabled             | DRS status flag changes                      | "DRS enabled."                                    | NORMAL   |
-| DRS range (car ahead)   | Gap to car ahead < 1.0s                      | "You have DRS. Attack."                           | NORMAL   |
-| Weather incoming        | Weather data predicts rain                   | "Rain expected in {n} minutes. Stay out for now." | NORMAL   |
-| Fuel management         | Fuel level below threshold                   | "Lift and coast into turn {n}."                   | NORMAL   |
-| ERS mode change         | Strategy-driven ERS instruction              | "Go to strat {n}."                                | NORMAL   |
-| Position gained         | Player position improves                     | "Good move. P{n}. Keep it clean."                 | NORMAL   |
-| Pit stop completed      | Pit event with time                          | "Good stop. {time} seconds. Push now."            | NORMAL   |
-| Session start           | Session begins                               | "Radio check. All systems nominal."               | NORMAL   |
-| Final result            | Chequered flag                               | "That's P{n}. Good job today."                    | NORMAL   |
+| #   | Scenario                        | Trigger Condition                                                                  | Message Pattern                                                                    | Priority  |
+| --- | ------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | --------- |
+| 1   | Session start                   | `sessionStarted` event received                                                    | "Radio check. All systems nominal."                                                | NORMAL    |
+| 2   | Gap update (car behind closing) | Gap to car behind < 2.0s (first crossing)                                          | "{name} closing from behind. {gap}s back. Defend your position."                   | NORMAL    |
+| 3   | DRS range (car ahead)           | Gap to car ahead < 1.0s (first crossing)                                           | "You have DRS. Attack."                                                            | NORMAL    |
+| 4   | DRS enabled                     | `drsAllowed` flag transitions from 0 to non-zero                                   | "DRS enabled."                                                                     | NORMAL    |
+| 5   | Tyre age warning                | Tyre age crosses 20-lap threshold                                                  | "{compound} tyres are {age} laps old. Consider a pit stop."                        | NORMAL    |
+| 6   | Tyre age critical               | Tyre age crosses 30-lap threshold                                                  | "Tyres are {age} laps old and degrading. Box soon."                                | HIGH      |
+| 7   | New tyres fitted                | Tyre age drops (pit stop detected)                                                 | "Copy, new {compound} tyres on. Take it easy for the out lap."                     | NORMAL    |
+| 8   | Pit stop completed              | `pitStatus` returns to 0 and pit count increased; duration measured from pit entry | "Good stop. {time} seconds. Push now."                                             | NORMAL    |
+| 9   | Position gained                 | Player position improves (lower number than previous)                              | "Good move. P{n}. Keep it clean."                                                  | NORMAL    |
+| 10  | Lap countdown (10 to go)        | Laps remaining == 10                                                               | "10 laps remaining. Keep it clean, manage your tyres."                             | NORMAL    |
+| 11  | Lap countdown (5 to go)         | Laps remaining == 5                                                                | "5 laps to go. Bring it home."                                                     | NORMAL    |
+| 12  | Lap countdown (last lap)        | Laps remaining == 1                                                                | "Last lap. Give it everything you've got."                                         | HIGH      |
+| 13  | Track limits warning            | Warning count increases                                                            | "Track limits warning. That's warning number {n}. Be careful."                     | NORMAL    |
+| 14  | Time penalty received           | Penalty seconds increase                                                           | "Penalty received. {n} seconds added. We'll talk strategy."                        | HIGH      |
+| 15  | Unserved pit penalty            | Unserved drive-through or stop-go increases                                        | "You have an unserved {type} penalty. Box this lap."                               | HIGH      |
+| 16  | Fuel management                 | Estimated fuel remaining < fuel needed to finish (burn rate computed from lap 2+)  | "Fuel is critical. Lift and coast through the slow corners."                       | NORMAL    |
+| 17  | ERS mode change                 | `ersMode` value changes                                                            | "ERS mode {n}. Go to strat {n}."                                                   | NORMAL    |
+| 18  | Weather incoming                | Forecast sample shows rain probability > 30% with offset > 0 (while currently dry) | "Rain expected in {n} minutes. Stay out for now."                                  | NORMAL    |
+| 19  | Pit window confirmation         | `onStrategyEvaluation()` callback — best strategy's next pit stop is in the future | "Box window opens in {n} laps. {compound} ready."                                  | NORMAL    |
+| 20  | Car retirement                  | RTMT event received                                                                | "{name} has retired. Watch for debris on track."                                   | NORMAL    |
+| 21  | Collision ahead                 | COLL event received                                                                | "Collision ahead. Stay alert, watch for yellow flags."                             | HIGH      |
+| 22  | Safety car deployed             | SCAR event received                                                                | "Safety car deployed. Bunch up, stay within ten car lengths. We'll talk strategy." | IMMEDIATE |
+| 23  | Safety car ending               | Safety car status changes from active to inactive                                  | "Safety car coming in. Green flag next lap. Push now, push now."                   | IMMEDIATE |
+| 24  | Final result                    | `resultStatus` == 3 (finished) or chequered flag event received                    | "That's P{n}. Good job today."                                                     | NORMAL    |
 
 ---
 
