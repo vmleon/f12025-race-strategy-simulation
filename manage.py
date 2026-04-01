@@ -28,6 +28,45 @@ GRANT_SCRIPT = os.path.join(
 )
 BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database", "backups")
 
+_CONFIG_TEMPLATES = [
+    (
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "telemetry", "src", "main", "resources", "config.properties.template"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "telemetry", "src", "main", "resources", "config.properties"),
+    ),
+    (
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend", "src", "main", "resources", "application.properties.template"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend", "src", "main", "resources", "application.properties"),
+    ),
+    (
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "simulator", "config.properties.template"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "simulator", "config.properties"),
+    ),
+    (
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration", "config.properties.template"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration", "config.properties"),
+    ),
+]
+
+
+def _generate_configs(password):
+    """Generate service config files from templates."""
+    for template_path, output_path in _CONFIG_TEMPLATES:
+        with open(template_path) as f:
+            content = f.read()
+        content = content.replace("{{DB_PASSWORD}}", password)
+        with open(output_path, "w") as f:
+            f.write(content)
+        console.print(f"  [green]Generated[/green] {os.path.relpath(output_path)}")
+
+
+def _clean_configs():
+    """Delete generated config files."""
+    for _, output_path in _CONFIG_TEMPLATES:
+        if os.path.exists(output_path):
+            os.remove(output_path)
+            console.print(f"  [green]Removed[/green] {os.path.relpath(output_path)}")
+
+
 _EXPORT_TABLES = [
     ("sessions", ["session_uid"]),
     ("participants", ["session_uid", "car_index"]),
@@ -184,6 +223,10 @@ def setup():
         cwd=LIQUIBASE_DIR,
     )
 
+    # Generate service config files
+    console.print("[bold]Generating service config files...[/bold]")
+    _generate_configs(password)
+
     console.print(Panel(
         f"[green]Database setup complete![/green]\n\n"
         f"  Host:     localhost\n"
@@ -208,6 +251,10 @@ def clean():
     if os.path.exists(ENV_FILE):
         set_key(ENV_FILE, "F1STRATEGY_DB_PASSWORD", "")
         console.print("[green]Password cleared from .env[/green]")
+
+    # Remove generated config files
+    console.print("[bold]Cleaning generated config files...[/bold]")
+    _clean_configs()
 
 
 @local.command()
