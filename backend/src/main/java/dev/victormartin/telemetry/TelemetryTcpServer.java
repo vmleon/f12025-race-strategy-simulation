@@ -24,6 +24,7 @@ public class TelemetryTcpServer implements CommandLineRunner {
     private final RaceWebSocketHandler raceWebSocketHandler;
     private final SessionStateHolder sessionStateHolder;
     private final SimulationOrchestrator simulationOrchestrator;
+    private final StrategyOrchestrator strategyOrchestrator;
     private final RaceEngineerService raceEngineerService;
     private final QueueService queueService;
     private final JdbcTemplate jdbc;
@@ -35,12 +36,14 @@ public class TelemetryTcpServer implements CommandLineRunner {
     public TelemetryTcpServer(RaceWebSocketHandler raceWebSocketHandler,
                               SessionStateHolder sessionStateHolder,
                               SimulationOrchestrator simulationOrchestrator,
+                              StrategyOrchestrator strategyOrchestrator,
                               RaceEngineerService raceEngineerService,
                               QueueService queueService,
                               JdbcTemplate jdbc) {
         this.raceWebSocketHandler = raceWebSocketHandler;
         this.sessionStateHolder = sessionStateHolder;
         this.simulationOrchestrator = simulationOrchestrator;
+        this.strategyOrchestrator = strategyOrchestrator;
         this.raceEngineerService = raceEngineerService;
         this.queueService = queueService;
         this.jdbc = jdbc;
@@ -89,6 +92,7 @@ public class TelemetryTcpServer implements CommandLineRunner {
             switch (type) {
                 case "sessionStarted" -> {
                     simulationOrchestrator.reset();
+                    strategyOrchestrator.reset();
                     String sessionUid = node.get("sessionUid").asText();
                     int trackId = node.get("trackId").asInt();
                     sessionStateHolder.onSessionStarted(sessionUid, trackId);
@@ -116,11 +120,13 @@ public class TelemetryTcpServer implements CommandLineRunner {
                 case "state" -> {
                     raceWebSocketHandler.broadcast(line);
                     simulationOrchestrator.onStateUpdate(line);
+                    strategyOrchestrator.onStateUpdate(line);
                     raceEngineerService.onStateUpdate(line);
                 }
                 case "event" -> {
                     raceWebSocketHandler.broadcast(line);
                     simulationOrchestrator.onEvent(line);
+                    strategyOrchestrator.onEvent(line);
                     raceEngineerService.onEvent(line);
                 }
                 default -> raceWebSocketHandler.broadcast(line);
