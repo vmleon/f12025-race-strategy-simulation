@@ -32,3 +32,17 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+bootRun {
+	def envFile = file("${rootProject.projectDir}/../.env")
+	if (envFile.exists()) {
+		envFile.readLines().each { line ->
+			line = line.trim()
+			if (line && !line.startsWith('#') && line.contains('=')) {
+				def (key, value) = line.split('=', 2)
+				value = value.trim().replaceAll(/^(['"])(.*)\1$/, '$2')
+				environment key.trim(), value
+			}
+		}
+	}
+}
