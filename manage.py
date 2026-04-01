@@ -124,7 +124,7 @@ def setup():
     # Check podman machine on macOS
     if sys.platform == "darwin":
         result = subprocess.run(
-            ["podman", "machine", "info"], capture_output=True, text=True
+            ["podman", "info"], capture_output=True, text=True
         )
         if result.returncode != 0:
             console.print("[red]Error:[/red] podman machine is not running. Start it with: podman machine start")
