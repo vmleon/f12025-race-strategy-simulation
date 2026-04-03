@@ -413,8 +413,7 @@ def setup():
 
     console.print(f"[bold]Creating saved connection:[/bold] {conn_name}")
     with tempfile.NamedTemporaryFile(mode="w", suffix=".sql", delete=False) as f:
-        f.write(f"connmgr delete {conn_name}\n")
-        f.write(f"conn -save {conn_name} -savepwd {conn_str}\n")
+        f.write(f"conn -save {conn_name} -replace -savepwd {conn_str}\n")
         f.write("exit\n")
         temp_file = f.name
 

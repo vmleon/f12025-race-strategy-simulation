@@ -316,7 +316,7 @@ public class RaceEngineerService {
 
     private void detectLapCountdown(SessionEngineerState session, int currentLap, int totalLaps) {
         if (totalLaps <= 0) return;
-        int lapsRemaining = totalLaps - currentLap;
+        int lapsRemaining = totalLaps - currentLap + 1;
 
         if (currentLap > session.lastPlayerLap) {
             if (lapsRemaining == 10) {
@@ -422,7 +422,7 @@ public class RaceEngineerService {
         float fuel = playerCar.has("fuel") ? (float) playerCar.get("fuel").asDouble() : -1f;
         if (fuel < 0 || totalLaps <= 0) return;
 
-        int lapsRemaining = totalLaps - currentLap;
+        int lapsRemaining = totalLaps - currentLap + 1;
         if (lapsRemaining <= 0) return;
 
         // Track initial fuel to estimate burn rate

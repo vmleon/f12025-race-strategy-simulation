@@ -266,7 +266,7 @@ public class StrategyOrchestrator {
                 int tyreCompound = mapTyreCode(c.has("tyre") ? c.get("tyre").asText() : "M");
                 int tyreAge = c.has("tyreAge") ? c.get("tyreAge").asInt() : 0;
                 double fuel = c.has("fuel") ? c.get("fuel").asDouble() : 30.0;
-                int lapsRemaining = Math.max(totalLaps - currentLap, 1);
+                int lapsRemaining = Math.max(totalLaps - currentLap + 1, 1);
                 double fuelBurnPerSector = fuel / (lapsRemaining * 3.0);
                 int fwDmg = c.has("fwDmg") ? c.get("fwDmg").asInt() : 0;
                 int flDmg = c.has("flDmg") ? c.get("flDmg").asInt() : 0;
