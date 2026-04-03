@@ -9,7 +9,7 @@ import java.util.PriorityQueue;
  */
 public class RaceEngineerQueue {
 
-    private static final int NORMAL_BUDGET_PER_LAP = 4;
+    private static final int NORMAL_BUDGET_PER_ZONE = 2;
 
     private static final Comparator<EngineerMessage> MESSAGE_ORDER =
             Comparator.comparingInt((EngineerMessage m) -> m.priority().ordinal())
@@ -17,7 +17,7 @@ public class RaceEngineerQueue {
 
     private final PriorityQueue<EngineerMessage> queue = new PriorityQueue<>(MESSAGE_ORDER);
 
-    private int budgetLap = -1;
+    private int currentZone = -1;
     private int normalDelivered = 0;
 
     public synchronized void enqueue(EngineerMessage message) {
@@ -28,18 +28,18 @@ public class RaceEngineerQueue {
      * Returns the highest-priority pending message if delivery conditions are met:
      * - IMMEDIATE messages are returned regardless of track position or budget.
      * - HIGH messages are returned only in a safe zone (no budget limit).
-     * - NORMAL messages are returned only in a safe zone and within the per-lap budget.
+     * - NORMAL messages are returned only in a safe zone and within the per-zone budget.
      * Expired messages are discarded silently.
      * Returns null if nothing to deliver.
      */
     public synchronized EngineerMessage pollForDelivery(float lapDistance, int trackId,
                                                          int currentLap, int speedKmh,
                                                          CircuitSafeZoneService safeZoneService) {
-        boolean inSafeZone = safeZoneService.isSafeToDeliver(trackId, lapDistance, speedKmh);
+        int zoneIndex = safeZoneService.currentZoneIndex(trackId, lapDistance, speedKmh);
 
-        // Reset budget on new lap
-        if (currentLap != budgetLap) {
-            budgetLap = currentLap;
+        // Reset budget when entering a new zone
+        if (zoneIndex != currentZone) {
+            currentZone = zoneIndex;
             normalDelivered = 0;
         }
 
@@ -53,11 +53,11 @@ public class RaceEngineerQueue {
         if (top.priority() == EngineerMessage.Priority.IMMEDIATE) {
             return queue.poll();
         }
-        if (inSafeZone) {
+        if (zoneIndex >= 0) {
             if (top.priority() == EngineerMessage.Priority.HIGH) {
                 return queue.poll();
             }
-            if (normalDelivered < NORMAL_BUDGET_PER_LAP) {
+            if (normalDelivered < NORMAL_BUDGET_PER_ZONE) {
                 normalDelivered++;
                 return queue.poll();
             }

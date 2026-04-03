@@ -62,9 +62,12 @@ class RaceEngineerServiceAssistGuardTest {
     }
 
     private void drainAllMessages() {
-        // Send enough updates from safe zone to drain the queue (radio check + any generated messages)
-        for (int i = 0; i < 10; i++) {
-            service.onStateUpdate(stateJson(2, 200.0f, 0, 0, 1, 250.0f));
+        // Send updates from multiple safe zones to drain the queue fully.
+        // AI car placed far away (5000m) to avoid triggering DRS messages.
+        // Alternate between zone 0 (200m) and zone 1 (1200m) to reset per-zone budget.
+        for (int i = 0; i < 5; i++) {
+            service.onStateUpdate(stateJson(2, 200.0f, 0, 0, 1, 5000.0f));
+            service.onStateUpdate(stateJson(2, 1200.0f, 0, 0, 1, 5000.0f));
         }
     }
 
