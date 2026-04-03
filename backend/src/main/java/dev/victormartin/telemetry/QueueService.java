@@ -35,6 +35,7 @@ public class QueueService {
                 """;
         try (Connection conn = dataSource.getConnection();
              CallableStatement cs = conn.prepareCall(sql)) {
+            conn.setAutoCommit(false);
             cs.setString(1, jsonPayload);
             cs.setString(2, queueName);
             cs.execute();
@@ -73,6 +74,7 @@ public class QueueService {
                 """.formatted(subscriberClause);
         try (Connection conn = dataSource.getConnection();
              CallableStatement cs = conn.prepareCall(sql)) {
+            conn.setAutoCommit(false);
             cs.setInt(1, waitSeconds);
             cs.setString(2, queueName);
             cs.registerOutParameter(3, Types.VARCHAR);
