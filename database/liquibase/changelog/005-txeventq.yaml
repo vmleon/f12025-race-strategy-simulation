@@ -9,7 +9,8 @@ databaseChangeLog:
               BEGIN
                 BEGIN
                   DBMS_AQADM.CREATE_SHARDED_QUEUE(
-                    queue_name     => 'PDBADMIN.SESSION_LIFECYCLE',
+                    queue_name         => 'PDBADMIN.SESSION_LIFECYCLE',
+                    queue_payload_type => 'JSON',
                     multiple_consumers => TRUE
                   );
                 EXCEPTION
@@ -46,7 +47,8 @@ databaseChangeLog:
               BEGIN
                 BEGIN
                   DBMS_AQADM.CREATE_SHARDED_QUEUE(
-                    queue_name     => 'PDBADMIN.CALIBRATION_REQUEST',
+                    queue_name         => 'PDBADMIN.CALIBRATION_REQUEST',
+                    queue_payload_type => 'JSON',
                     multiple_consumers => FALSE
                   );
                 EXCEPTION
@@ -74,7 +76,8 @@ databaseChangeLog:
               BEGIN
                 BEGIN
                   DBMS_AQADM.CREATE_SHARDED_QUEUE(
-                    queue_name     => 'PDBADMIN.SIMULATION_REQUEST',
+                    queue_name         => 'PDBADMIN.SIMULATION_REQUEST',
+                    queue_payload_type => 'JSON',
                     multiple_consumers => FALSE
                   );
                 EXCEPTION
@@ -102,7 +105,8 @@ databaseChangeLog:
               BEGIN
                 BEGIN
                   DBMS_AQADM.CREATE_SHARDED_QUEUE(
-                    queue_name     => 'PDBADMIN.SIMULATION_RESULT',
+                    queue_name         => 'PDBADMIN.SIMULATION_RESULT',
+                    queue_payload_type => 'JSON',
                     multiple_consumers => FALSE
                   );
                 EXCEPTION
@@ -130,7 +134,8 @@ databaseChangeLog:
               BEGIN
                 BEGIN
                   DBMS_AQADM.CREATE_SHARDED_QUEUE(
-                    queue_name     => 'PDBADMIN.STRATEGY_REQUEST',
+                    queue_name         => 'PDBADMIN.STRATEGY_REQUEST',
+                    queue_payload_type => 'JSON',
                     multiple_consumers => FALSE
                   );
                 EXCEPTION
@@ -158,7 +163,8 @@ databaseChangeLog:
               BEGIN
                 BEGIN
                   DBMS_AQADM.CREATE_SHARDED_QUEUE(
-                    queue_name     => 'PDBADMIN.STRATEGY_RESULT',
+                    queue_name         => 'PDBADMIN.STRATEGY_RESULT',
+                    queue_payload_type => 'JSON',
                     multiple_consumers => FALSE
                   );
                 EXCEPTION

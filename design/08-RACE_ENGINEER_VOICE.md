@@ -131,14 +131,15 @@ sequenceDiagram
 
     Note over Eng: Session start
     Telemetry->>Backend: TCP {"type":"sessionStarted"}
-    Backend->>Eng: onSessionStarted(sessionUid, trackId)
+    Backend->>Eng: onSessionStarted(sessionUid, trackId, ersAssist, drsAssist)
+    Eng->>Eng: Store session config<br/>(suppress detectors for active assists)
     Eng->>Eng: Enqueue "Radio check.<br/>All systems nominal." (NORMAL)
 
     Note over Eng: Continuous race monitoring
     loop ~1Hz state updates
         Telemetry->>Backend: TCP state update
         Backend->>Eng: onStateUpdate(state)
-        Note over Eng: Check 12+ conditions:<br/>• Gap to car behind < 2.0s<br/>• Tyre age > 20/30 laps<br/>• Penalty received<br/>• Lap countdown (10/5/1)<br/>• Safety car in/out<br/>• Position gained<br/>• Pit stop completed<br/>• DRS enabled<br/>• Fuel critical<br/>• Weather change<br/>• ERS mode change
+        Note over Eng: Check conditions<br/>(skip assist-managed detectors):<br/>• Gap to car behind < 2.0s<br/>• Tyre age > 20/30 laps<br/>• Penalty received<br/>• Lap countdown (10/5/1)<br/>• Safety car in/out<br/>• Position gained<br/>• Pit stop completed<br/>• DRS enabled (if drsAssist=0)<br/>• Fuel critical<br/>• Weather change<br/>• ERS mode change (if ersAssist=0)
         alt Condition triggered
             Eng->>Eng: Enqueue message<br/>(IMMEDIATE / HIGH / NORMAL)
         end
@@ -152,6 +153,7 @@ sequenceDiagram
     Note over Eng: Message delivery
     Eng->>SafeZone: Is player in safe zone?
     SafeZone-->>Eng: Yes (straight / low-demand section)
+    Note over Eng: Check per-lap budget:<br/>IMMEDIATE/HIGH bypass budget,<br/>NORMAL capped at 4/lap
     Eng->>iOS: WebSocket: raceEngineer<br/>{priority, text, timestamp}
     Note over iOS: AVSpeechSynthesizer<br/>English (GB), rate 0.48<br/>IMMEDIATE interrupts current speech<br/>HIGH/NORMAL queued
 
@@ -170,8 +172,8 @@ Scenarios ordered by frequency (routine first, rare last). Priority levels map t
 | --- | ------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | --------- |
 | 1   | Session start                   | `sessionStarted` event received                                                    | "Radio check. All systems nominal."                                                | NORMAL    |
 | 2   | Gap update (car behind closing) | Gap to car behind < 2.0s (first crossing)                                          | "{name} closing from behind. {gap}s back. Defend your position."                   | NORMAL    |
-| 3   | DRS range (car ahead)           | Gap to car ahead < 1.0s (first crossing)                                           | "You have DRS. Attack."                                                            | NORMAL    |
-| 4   | DRS enabled                     | `drsAllowed` flag transitions from 0 to non-zero                                   | "DRS enabled."                                                                     | NORMAL    |
+| 3   | DRS range (car ahead)           | Gap to car ahead < 1.0s (first crossing). Skipped when `drsAssist > 0`             | "You have DRS. Attack."                                                            | NORMAL    |
+| 4   | DRS enabled                     | `drsAllowed` flag transitions from 0 to non-zero. Skipped when `drsAssist > 0`     | "DRS enabled."                                                                     | NORMAL    |
 | 5   | Tyre age warning                | Tyre age crosses 20-lap threshold                                                  | "{compound} tyres are {age} laps old. Consider a pit stop."                        | NORMAL    |
 | 6   | Tyre age critical               | Tyre age crosses 30-lap threshold                                                  | "Tyres are {age} laps old and degrading. Box soon."                                | HIGH      |
 | 7   | New tyres fitted                | Tyre age drops (pit stop detected)                                                 | "Copy, new {compound} tyres on. Take it easy for the out lap."                     | NORMAL    |
@@ -184,7 +186,7 @@ Scenarios ordered by frequency (routine first, rare last). Priority levels map t
 | 14  | Time penalty received           | Penalty seconds increase                                                           | "Penalty received. {n} seconds added. We'll talk strategy."                        | HIGH      |
 | 15  | Unserved pit penalty            | Unserved drive-through or stop-go increases                                        | "You have an unserved {type} penalty. Box this lap."                               | HIGH      |
 | 16  | Fuel management                 | Estimated fuel remaining < fuel needed to finish (burn rate computed from lap 2+)  | "Fuel is critical. Lift and coast through the slow corners."                       | NORMAL    |
-| 17  | ERS mode change                 | `ersMode` value changes                                                            | "ERS mode {n}. Go to strat {n}."                                                   | NORMAL    |
+| 17  | ERS mode change                 | `ersMode` value changes. Skipped when `ersAssist > 0`                              | "ERS mode {n}. Go to strat {n}."                                                   | NORMAL    |
 | 18  | Weather incoming                | Forecast sample shows rain probability > 30% with offset > 0 (while currently dry) | "Rain expected in {n} minutes. Stay out for now."                                  | NORMAL    |
 | 19  | Pit window confirmation         | `onStrategyEvaluation()` callback — best strategy's next pit stop is in the future | "Box window opens in {n} laps. {compound} ready."                                  | NORMAL    |
 | 20  | Car retirement                  | RTMT event received                                                                | "{name} has retired. Watch for debris on track."                                   | NORMAL    |
@@ -192,6 +194,14 @@ Scenarios ordered by frequency (routine first, rare last). Priority levels map t
 | 22  | Safety car deployed             | SCAR event received                                                                | "Safety car deployed. Bunch up, stay within ten car lengths. We'll talk strategy." | IMMEDIATE |
 | 23  | Safety car ending               | Safety car status changes from active to inactive                                  | "Safety car coming in. Green flag next lap. Push now, push now."                   | IMMEDIATE |
 | 24  | Final result                    | `resultStatus` == 3 (finished) or chequered flag event received                    | "That's P{n}. Good job today."                                                     | NORMAL    |
+
+### Message Delivery Budget
+
+To prevent radio flooding, NORMAL messages are capped at **4 per lap**. The budget resets on each new lap. IMMEDIATE and HIGH messages are exempt — safety-critical and time-sensitive information always gets through. Undelivered NORMAL messages remain queued and are either delivered on the next lap or expire via their TTL. This mirrors real F1 radio discipline where engineers self-limit routine communication to preserve the driver's cognitive bandwidth.
+
+### Assist-Aware Filtering
+
+The `sessionStarted` TCP message carries `ersAssist` and `drsAssist` flags from the game's session settings. When an assist is active (value > 0), the corresponding detector is skipped entirely — the game manages ERS deployment and DRS activation automatically, so reporting every mode change would produce noise rather than actionable information.
 
 ---
 

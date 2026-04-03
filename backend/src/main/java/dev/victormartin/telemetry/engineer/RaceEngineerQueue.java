@@ -9,11 +9,16 @@ import java.util.PriorityQueue;
  */
 public class RaceEngineerQueue {
 
+    private static final int NORMAL_BUDGET_PER_LAP = 4;
+
     private static final Comparator<EngineerMessage> MESSAGE_ORDER =
             Comparator.comparingInt((EngineerMessage m) -> m.priority().ordinal())
                     .thenComparingLong(EngineerMessage::createdAt);
 
     private final PriorityQueue<EngineerMessage> queue = new PriorityQueue<>(MESSAGE_ORDER);
+
+    private int budgetLap = -1;
+    private int normalDelivered = 0;
 
     public synchronized void enqueue(EngineerMessage message) {
         queue.add(message);
@@ -21,8 +26,9 @@ public class RaceEngineerQueue {
 
     /**
      * Returns the highest-priority pending message if delivery conditions are met:
-     * - IMMEDIATE messages are returned regardless of track position.
-     * - HIGH/NORMAL messages are returned only if the player is in a safe zone.
+     * - IMMEDIATE messages are returned regardless of track position or budget.
+     * - HIGH messages are returned only in a safe zone (no budget limit).
+     * - NORMAL messages are returned only in a safe zone and within the per-lap budget.
      * Expired messages are discarded silently.
      * Returns null if nothing to deliver.
      */
@@ -30,6 +36,12 @@ public class RaceEngineerQueue {
                                                          int currentLap,
                                                          CircuitSafeZoneService safeZoneService) {
         boolean inSafeZone = safeZoneService.isSafeToDeliver(trackId, lapDistance);
+
+        // Reset budget on new lap
+        if (currentLap != budgetLap) {
+            budgetLap = currentLap;
+            normalDelivered = 0;
+        }
 
         // Drain expired messages
         queue.removeIf(m -> m.isExpired(currentLap));
@@ -42,7 +54,13 @@ public class RaceEngineerQueue {
             return queue.poll();
         }
         if (inSafeZone) {
-            return queue.poll();
+            if (top.priority() == EngineerMessage.Priority.HIGH) {
+                return queue.poll();
+            }
+            if (normalDelivered < NORMAL_BUDGET_PER_LAP) {
+                normalDelivered++;
+                return queue.poll();
+            }
         }
         return null;
     }

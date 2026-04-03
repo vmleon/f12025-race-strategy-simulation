@@ -123,6 +123,7 @@ graph TD
 - Python 3.12+
 - Node 22+
 - Podman (for Oracle database container)
+- SQLcl 24.3+ (for Oracle MCP server — optional)
 - Xcode (for iOS client)
 
 ### 1. Database
@@ -154,6 +155,16 @@ Cleanup:
 ```bash
 python manage.py local clean      # stop & remove Oracle container
 ```
+
+### Oracle MCP Server (optional)
+
+Enables Claude Code to query the database directly via SQLcl's MCP server.
+
+```bash
+python manage.py mcp setup       # create SQLcl saved connection (f1strategy_local)
+```
+
+The project includes a `.mcp.json` that configures the SQLcl MCP server. After running the setup, restart Claude Code to pick up the connection.
 
 ### 2. Telemetry Server
 

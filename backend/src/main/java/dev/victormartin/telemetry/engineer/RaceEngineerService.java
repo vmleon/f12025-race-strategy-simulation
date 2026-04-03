@@ -35,8 +35,8 @@ public class RaceEngineerService {
 
     // -- session lifecycle -----------------------------------------------------
 
-    public void onSessionStarted(String sessionUid, int trackId) {
-        SessionEngineerState session = new SessionEngineerState(sessionUid, trackId);
+    public void onSessionStarted(String sessionUid, int trackId, int ersAssist, int drsAssist) {
+        SessionEngineerState session = new SessionEngineerState(sessionUid, trackId, ersAssist, drsAssist);
         sessions.put(sessionUid, session);
         session.queue.enqueue(new EngineerMessage(
                 Priority.NORMAL,
@@ -89,9 +89,13 @@ public class RaceEngineerService {
             detectTyreCondition(session, playerCar, currentLap);
             detectPositionChange(session, playerCar, currentLap);
             detectPitStopCompleted(session, playerCar, currentLap);
-            detectDrs(session, playerCar, currentLap);
+            if (session.drsAssist == 0) {
+                detectDrs(session, playerCar, currentLap);
+            }
             detectFuelLevel(session, playerCar, currentLap, totalLaps);
-            detectErsMode(session, playerCar, currentLap);
+            if (session.ersAssist == 0) {
+                detectErsMode(session, playerCar, currentLap);
+            }
             detectWeatherChange(session, state, currentLap);
             detectRaceFinish(session, playerCar, currentLap);
 
@@ -546,6 +550,8 @@ public class RaceEngineerService {
     static class SessionEngineerState {
         final String sessionUid;
         final int trackId;
+        final int ersAssist;
+        final int drsAssist;
         final RaceEngineerQueue queue = new RaceEngineerQueue();
 
         int lastPlayerLap = 0;
@@ -589,9 +595,11 @@ public class RaceEngineerService {
         boolean chequeredFlag = false;
         boolean raceFinished = false;
 
-        SessionEngineerState(String sessionUid, int trackId) {
+        SessionEngineerState(String sessionUid, int trackId, int ersAssist, int drsAssist) {
             this.sessionUid = sessionUid;
             this.trackId = trackId;
+            this.ersAssist = ersAssist;
+            this.drsAssist = drsAssist;
         }
     }
 }

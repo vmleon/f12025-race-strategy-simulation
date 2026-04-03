@@ -66,7 +66,7 @@ public class LifecycleDispatcher {
      * Write participants on first Participants packet per sessionUid.
      */
     public void onParticipants(long sessionUid, ParticipantData[] participants) {
-        if (!seenParticipants.add(sessionUid)) {
+        if (!seenSessions.contains(sessionUid) || !seenParticipants.add(sessionUid)) {
             return;
         }
         List<DbWriter.Participant> records = new ArrayList<>(participants.length);
@@ -89,6 +89,9 @@ public class LifecycleDispatcher {
      * Write event to session_events. No deduplication — events are one-off.
      */
     public void onEvent(long sessionUid, long frameIdentifier, EventData event) {
+        if (!seenSessions.contains(sessionUid)) {
+            return;
+        }
         Integer carIndex = event.vehicleIdx >= 0 ? event.vehicleIdx : null;
         Integer penaltySeconds = null;
         Integer otherCarIndex = null;
@@ -121,6 +124,9 @@ public class LifecycleDispatcher {
      * after the flashback frame, then persist the FLBK event itself.
      */
     public void onFlashback(long sessionUid, long frameIdentifier, EventData event) {
+        if (!seenSessions.contains(sessionUid)) {
+            return;
+        }
         long fbFrame = Integer.toUnsignedLong(event.flashbackFrameIdentifier);
         double fbTime = event.flashbackSessionTime;
 
@@ -143,8 +149,8 @@ public class LifecycleDispatcher {
     /**
      * Write sector snapshots captured by the SectorTransitionDetector.
      */
-    public void onSectorSnapshots(List<DbWriter.SectorSnapshot> snapshots) {
-        if (snapshots.isEmpty()) {
+    public void onSectorSnapshots(long sessionUid, List<DbWriter.SectorSnapshot> snapshots) {
+        if (snapshots.isEmpty() || !seenSessions.contains(sessionUid)) {
             return;
         }
         try (Connection conn = connectionFactory.getConnection()) {
@@ -160,6 +166,9 @@ public class LifecycleDispatcher {
      * Write tyre sets on first TyreSets packet per session, or when a pit stop is detected.
      */
     public void onTyreSets(long sessionUid, TyreSetData.TyreSetPacket packet) {
+        if (!seenSessions.contains(sessionUid)) {
+            return;
+        }
         List<DbWriter.TyreSet> records = new ArrayList<>(packet.sets().length);
         for (int i = 0; i < packet.sets().length; i++) {
             TyreSetData ts = packet.sets()[i];
@@ -184,7 +193,7 @@ public class LifecycleDispatcher {
      * Write final classifications on FinalClassification packet (once per session).
      */
     public void onFinalClassification(long sessionUid, FinalClassificationData[] cars) {
-        if (!seenFinalClassifications.add(sessionUid)) {
+        if (!seenSessions.contains(sessionUid) || !seenFinalClassifications.add(sessionUid)) {
             return;
         }
         List<DbWriter.FinalClassification> records = new ArrayList<>(cars.length);

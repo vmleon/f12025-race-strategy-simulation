@@ -25,6 +25,8 @@ public class SessionData {
     public final int formula;              // uint8
     public final int safetyCarStatus;      // uint8
     public final int aiDifficulty;         // uint8
+    public final int ersAssist;            // uint8
+    public final int drsAssist;            // uint8
     public final int lowFuelMode;          // uint8
     public final int carDamage;            // uint8
     public final int carDamageRate;        // uint8
@@ -98,8 +100,8 @@ public class SessionData {
         buf.get(); // gearboxAssist
         buf.get(); // pitAssist
         buf.get(); // pitReleaseAssist
-        buf.get(); // ERSAssist
-        buf.get(); // DRSAssist
+        this.ersAssist = Byte.toUnsignedInt(buf.get());
+        this.drsAssist = Byte.toUnsignedInt(buf.get());
         buf.get(); // dynamicRacingLine
         buf.get(); // dynamicRacingLineType
         buf.get(); // gameMode

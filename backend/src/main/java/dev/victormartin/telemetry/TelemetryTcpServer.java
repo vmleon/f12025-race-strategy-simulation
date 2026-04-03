@@ -95,8 +95,10 @@ public class TelemetryTcpServer implements CommandLineRunner {
                     strategyOrchestrator.reset();
                     String sessionUid = node.get("sessionUid").asText();
                     int trackId = node.get("trackId").asInt();
+                    int ersAssist = node.has("ersAssist") ? node.get("ersAssist").asInt() : 0;
+                    int drsAssist = node.has("drsAssist") ? node.get("drsAssist").asInt() : 0;
                     sessionStateHolder.onSessionStarted(sessionUid, trackId);
-                    raceEngineerService.onSessionStarted(sessionUid, trackId);
+                    raceEngineerService.onSessionStarted(sessionUid, trackId, ersAssist, drsAssist);
                     queueService.enqueue("PDBADMIN.SESSION_LIFECYCLE", line);
                     try {
                         var drivers = jdbc.query(

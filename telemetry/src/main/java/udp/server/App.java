@@ -96,7 +96,7 @@ public class App {
                                                 tierLabel, t.carIndex(), t.completedSector(), t.lapNumber(),
                                                 snapshot.sectorTimeMs());
                                     }
-                                    lifecycle.onSectorSnapshots(snapshots);
+                                    lifecycle.onSectorSnapshots(header.sessionUID, snapshots);
                                 }
                             }
                             case 3 -> { // Event

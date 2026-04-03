@@ -68,7 +68,7 @@ sequenceDiagram
     end
 
     alt Session lifecycle
-        Telemetry->>Backend: TCP {"type":"sessionStarted", sessionUid, trackId}
+        Telemetry->>Backend: TCP {"type":"sessionStarted", sessionUid, trackId, ersAssist, drsAssist}
         Backend->>Portal: WebSocket (type: "sessionStarted")
         Note over Backend: Auto-assign driver<br/>if only one exists in DB
     else Disruptive event
@@ -96,7 +96,7 @@ Live race state and session lifecycle events flow from telemetry to backend over
 - **Direction:** Telemetry → Backend (telemetry connects to backend's TCP server port)
 - **Data carried:**
   - **Race state** (~1Hz): current lap, positions, gaps, tyre compound/age, fuel, pit status, damage levels, weather, `lastLapTimeMs` (last lap time per car, used by the portal for gap calculations) — enough for the portal to render a live dashboard without querying the DB
-  - **Session lifecycle events:** `sessionStarted`, `sessionEnded`, `safetyCarDeployed`, `retiredCar`, etc. — backend uses these to update its in-memory session state and notify the portal via WebSocket. On `sessionStarted`, the backend auto-assigns the session to a driver if only one driver exists in the `drivers` table (idempotent via duplicate key check)
+  - **Session lifecycle events:** `sessionStarted`, `sessionEnded`, `safetyCarDeployed`, `retiredCar`, etc. — backend uses these to update its in-memory session state and notify the portal via WebSocket. `sessionStarted` includes session assist settings (`ersAssist`, `drsAssist`) parsed from the UDP session packet, used by the race engineer to suppress messages for game-managed assists. On `sessionStarted`, the backend auto-assigns the session to a driver if only one driver exists in the `drivers` table (idempotent via duplicate key check)
 - **Format:** Each message is a single JSON object on one line. A `type` field discriminates message kinds (e.g. `{"type":"raceState","data":{...}}`)
 - **Reconnection:** Exponential backoff 3s → 6s → 12s → 24s → cap 30s, resets on success
 - **Backend recovery on restart:** Queries DB for active session state (catch-up), then resumes from TCP stream
