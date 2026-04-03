@@ -65,6 +65,7 @@ public class RaceState {
         int diffuserDamage;
         int drsAllowed;
         int ersDeployMode;
+        int speed; // km/h from CarTelemetryData
         float[] tyresWear = new float[4];
         int[] brakesTemperature = new int[4];
         int[] tyresSurfaceTemperature = new int[4];
@@ -147,6 +148,7 @@ public class RaceState {
             System.arraycopy(telemetry[i].brakesTemperature, 0, cars[i].brakesTemperature, 0, 4);
             System.arraycopy(telemetry[i].tyresSurfaceTemperature, 0, cars[i].tyresSurfaceTemperature, 0, 4);
             System.arraycopy(telemetry[i].tyresInnerTemperature, 0, cars[i].tyresInnerTemperature, 0, 4);
+            cars[i].speed = telemetry[i].speed;
         }
     }
 
@@ -258,6 +260,7 @@ public class RaceState {
               .append("\",\"ai\":").append(c.aiControlled)
               .append(",\"drsAllowed\":").append(c.drsAllowed)
               .append(",\"ersMode\":").append(c.ersDeployMode)
+              .append(",\"speed\":").append(c.speed)
               .append(",\"resultStatus\":").append(c.resultStatus)
               .append(",\"lapDist\":").append(String.format("%.1f", c.lapDistance))
               .append(",\"teamId\":").append(c.teamId)
