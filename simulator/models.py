@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 # ── Input: Race Snapshot ─────────────────────────────────────────────────────
@@ -99,6 +99,11 @@ class CarResult(BaseModel):
     top3_probability: float = Field(alias="top3Probability")
     points_finish_probability: float = Field(alias="pointsFinishProbability")
     position_distribution: dict[int, float] = Field(alias="positionDistribution")
+
+    @field_serializer("position_distribution")
+    @classmethod
+    def _serialize_position_distribution(cls, v: dict[int, float]) -> dict[str, float]:
+        return {str(k): v2 for k, v2 in v.items()}
 
     model_config = {"populate_by_name": True}
 
