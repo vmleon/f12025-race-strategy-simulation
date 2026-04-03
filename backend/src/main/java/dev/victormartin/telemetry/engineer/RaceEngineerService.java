@@ -79,6 +79,7 @@ public class RaceEngineerService {
             float lapDistance = playerCar.has("lapDist") ? (float) playerCar.get("lapDist").asDouble() : 0f;
             int totalLaps = state.has("totalLaps") ? state.get("totalLaps").asInt() : 0;
             int trackLength = state.has("trackLength") ? state.get("trackLength").asInt() : 5000;
+            int speedKmh = playerCar.has("speed") ? playerCar.get("speed").asInt() : 0;
 
             // Detect changes and generate messages
             detectFlagChanges(session, state, currentLap);
@@ -101,7 +102,7 @@ public class RaceEngineerService {
 
             // Try to deliver a message
             EngineerMessage message = session.queue.pollForDelivery(
-                    lapDistance, session.trackId, currentLap, safeZoneService);
+                    lapDistance, session.trackId, currentLap, speedKmh, safeZoneService);
             if (message != null) {
                 deliverMessage(session.sessionUid, message);
             }

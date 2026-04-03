@@ -33,9 +33,9 @@ public class RaceEngineerQueue {
      * Returns null if nothing to deliver.
      */
     public synchronized EngineerMessage pollForDelivery(float lapDistance, int trackId,
-                                                         int currentLap,
+                                                         int currentLap, int speedKmh,
                                                          CircuitSafeZoneService safeZoneService) {
-        boolean inSafeZone = safeZoneService.isSafeToDeliver(trackId, lapDistance);
+        boolean inSafeZone = safeZoneService.isSafeToDeliver(trackId, lapDistance, speedKmh);
 
         // Reset budget on new lap
         if (currentLap != budgetLap) {

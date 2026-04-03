@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class CircuitSafeZoneService {
 
+    private static final float LAG_SECONDS = 1.5f;
     private final Map<Integer, List<SafeZone>> circuits = new HashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -62,6 +63,22 @@ public class CircuitSafeZoneService {
         if (zones == null) return true;
         for (SafeZone zone : zones) {
             if (zone.contains(lapDistance)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Returns true if the given lap distance is within a safe delivery zone,
+     * accounting for a speed-based lag offset that shifts zone starts earlier.
+     * @param speedKmh current car speed in km/h (0 = no offset)
+     */
+    public boolean isSafeToDeliver(int trackId, float lapDistance, int speedKmh) {
+        List<SafeZone> zones = circuits.get(trackId);
+        if (zones == null) return true;
+        float offsetMetres = (speedKmh / 3.6f) * LAG_SECONDS;
+        for (SafeZone zone : zones) {
+            float effectiveFrom = zone.fromMetres() - offsetMetres;
+            if (lapDistance >= effectiveFrom && lapDistance <= zone.toMetres()) return true;
         }
         return false;
     }
