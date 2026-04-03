@@ -84,12 +84,12 @@ public class RaceEngineerService {
             detectFlagChanges(session, state, currentLap);
             detectPenalties(session, playerCar, currentLap);
             detectCarBehind(session, carsNode, playerCar, currentLap, trackLength);
-            detectCarAhead(session, carsNode, playerCar, currentLap, trackLength);
             detectLapCountdown(session, currentLap, totalLaps);
             detectTyreCondition(session, playerCar, currentLap);
             detectPositionChange(session, playerCar, currentLap);
             detectPitStopCompleted(session, playerCar, currentLap);
             if (session.drsAssist == 0) {
+                detectCarAhead(session, carsNode, playerCar, currentLap, trackLength);
                 detectDrs(session, playerCar, currentLap);
             }
             detectFuelLevel(session, playerCar, currentLap, totalLaps);
