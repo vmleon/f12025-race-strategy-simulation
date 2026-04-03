@@ -1,0 +1,12 @@
+{
+  "trackId": 20,
+  "name": "Baku",
+  "totalLapDistanceMetres": 6003.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 400, "label": "Start/finish straight" },
+    { "fromMetres": 1800, "toMetres": 2200, "label": "Main straight along seafront" },
+    { "fromMetres": 3200, "toMetres": 3500, "label": "Straight after old town" },
+    { "fromMetres": 4400, "toMetres": 4700, "label": "Straight before turn 15" },
+    { "fromMetres": 5400, "toMetres": 5700, "label": "Approach to final corner" }
+  ]
+}

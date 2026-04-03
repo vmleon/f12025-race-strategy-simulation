@@ -1,0 +1,11 @@
+{
+  "trackId": 19,
+  "name": "Mexico City",
+  "totalLapDistanceMetres": 4304.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 350, "label": "Start/finish straight" },
+    { "fromMetres": 1000, "toMetres": 1350, "label": "Back straight" },
+    { "fromMetres": 2400, "toMetres": 2700, "label": "Straight through stadium section" },
+    { "fromMetres": 3600, "toMetres": 3900, "label": "Peraltada approach" }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "trackId": 29,
+  "name": "Jeddah",
+  "totalLapDistanceMetres": 6174.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 400, "label": "Start/finish straight" },
+    { "fromMetres": 1700, "toMetres": 2050, "label": "Straight after turn 4" },
+    { "fromMetres": 3200, "toMetres": 3550, "label": "Straight along the coast" },
+    { "fromMetres": 4500, "toMetres": 4800, "label": "Straight before turn 22" },
+    { "fromMetres": 5600, "toMetres": 5900, "label": "Approach to final corner" }
+  ]
+}

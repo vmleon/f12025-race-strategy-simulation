@@ -1,0 +1,10 @@
+{
+  "trackId": 5,
+  "name": "Monaco",
+  "totalLapDistanceMetres": 3337.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 250, "label": "Start/finish straight" },
+    { "fromMetres": 1100, "toMetres": 1400, "label": "Tunnel straight" },
+    { "fromMetres": 2500, "toMetres": 2750, "label": "Straight before Rascasse" }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "trackId": 2,
+  "name": "Shanghai",
+  "totalLapDistanceMetres": 5451.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 350, "label": "Start/finish straight" },
+    { "fromMetres": 1700, "toMetres": 2050, "label": "Back straight" },
+    { "fromMetres": 3400, "toMetres": 3700, "label": "Straight before hairpin" },
+    { "fromMetres": 4700, "toMetres": 5000, "label": "Approach to final corner" }
+  ]
+}

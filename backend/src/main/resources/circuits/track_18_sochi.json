@@ -1,0 +1,12 @@
+{
+  "trackId": 18,
+  "name": "Sochi",
+  "totalLapDistanceMetres": 5848.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 350, "label": "Start/finish straight" },
+    { "fromMetres": 1500, "toMetres": 1850, "label": "Straight after turn 4" },
+    { "fromMetres": 2900, "toMetres": 3250, "label": "Back straight" },
+    { "fromMetres": 4400, "toMetres": 4700, "label": "Straight after turn 13" },
+    { "fromMetres": 5300, "toMetres": 5600, "label": "Approach to final turn" }
+  ]
+}

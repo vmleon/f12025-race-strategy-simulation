@@ -1,0 +1,11 @@
+{
+  "trackId": 9,
+  "name": "Hungaroring",
+  "totalLapDistanceMetres": 4381.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
+    { "fromMetres": 1300, "toMetres": 1600, "label": "Straight after turn 4" },
+    { "fromMetres": 2700, "toMetres": 2950, "label": "Back straight" },
+    { "fromMetres": 3800, "toMetres": 4050, "label": "Approach to final chicane" }
+  ]
+}

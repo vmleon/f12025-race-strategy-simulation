@@ -1,0 +1,12 @@
+{
+  "trackId": 13,
+  "name": "Suzuka",
+  "totalLapDistanceMetres": 5807.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 350, "label": "Start/finish straight" },
+    { "fromMetres": 1600, "toMetres": 1950, "label": "Straight after Dunlop curve" },
+    { "fromMetres": 3200, "toMetres": 3550, "label": "Back straight" },
+    { "fromMetres": 4500, "toMetres": 4800, "label": "Straight before Spoon" },
+    { "fromMetres": 5200, "toMetres": 5500, "label": "Approach to final chicane" }
+  ]
+}

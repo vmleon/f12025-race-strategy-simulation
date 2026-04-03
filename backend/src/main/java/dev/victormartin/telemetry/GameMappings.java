@@ -60,6 +60,10 @@ public final class GameMappings {
 
     private GameMappings() {}
 
+    public static java.util.Set<Integer> trackIds() {
+        return TRACKS.keySet();
+    }
+
     public static String trackName(int id) {
         return TRACKS.getOrDefault(id, "Track " + id);
     }

@@ -1,0 +1,11 @@
+{
+  "trackId": 14,
+  "name": "Abu Dhabi",
+  "totalLapDistanceMetres": 5281.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 350, "label": "Start/finish straight" },
+    { "fromMetres": 1400, "toMetres": 1750, "label": "Straight under hotel" },
+    { "fromMetres": 2800, "toMetres": 3150, "label": "Back straight" },
+    { "fromMetres": 4200, "toMetres": 4500, "label": "Straight before final sector" }
+  ]
+}

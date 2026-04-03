@@ -1,0 +1,11 @@
+{
+  "trackId": 16,
+  "name": "Interlagos",
+  "totalLapDistanceMetres": 4309.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
+    { "fromMetres": 900, "toMetres": 1200, "label": "Reta Oposta back straight" },
+    { "fromMetres": 2400, "toMetres": 2700, "label": "Straight after Mergulho" },
+    { "fromMetres": 3600, "toMetres": 3900, "label": "Approach to Juncao" }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "trackId": 17,
+  "name": "Red Bull Ring",
+  "totalLapDistanceMetres": 4318.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
+    { "fromMetres": 1100, "toMetres": 1400, "label": "Straight to turn 3" },
+    { "fromMetres": 2200, "toMetres": 2500, "label": "Straight to turn 4" },
+    { "fromMetres": 3500, "toMetres": 3800, "label": "Approach to final corner" }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "trackId": 27,
+  "name": "Imola",
+  "totalLapDistanceMetres": 4909.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
+    { "fromMetres": 1300, "toMetres": 1600, "label": "Straight to Villeneuve chicane" },
+    { "fromMetres": 2600, "toMetres": 2900, "label": "Rivazza straight" },
+    { "fromMetres": 4200, "toMetres": 4500, "label": "Approach to final chicane" }
+  ]
+}

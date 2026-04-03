@@ -1,0 +1,10 @@
+{
+  "trackId": 23,
+  "name": "Austin Short",
+  "totalLapDistanceMetres": 3400.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
+    { "fromMetres": 1200, "toMetres": 1450, "label": "Back straight" },
+    { "fromMetres": 2600, "toMetres": 2850, "label": "Approach to final corner" }
+  ]
+}

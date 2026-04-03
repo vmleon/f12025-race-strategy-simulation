@@ -1,0 +1,12 @@
+{
+  "trackId": 1,
+  "name": "Paul Ricard",
+  "totalLapDistanceMetres": 5842.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 350, "label": "Start/finish straight" },
+    { "fromMetres": 1500, "toMetres": 1850, "label": "Mistral straight north section" },
+    { "fromMetres": 2400, "toMetres": 2750, "label": "Mistral straight south section" },
+    { "fromMetres": 3800, "toMetres": 4100, "label": "Signes straight" },
+    { "fromMetres": 5100, "toMetres": 5400, "label": "Approach to last chicane" }
+  ]
+}

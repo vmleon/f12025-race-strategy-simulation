@@ -1,0 +1,10 @@
+{
+  "trackId": 21,
+  "name": "Sakhir Short",
+  "totalLapDistanceMetres": 3543.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
+    { "fromMetres": 1200, "toMetres": 1500, "label": "Back straight" },
+    { "fromMetres": 2700, "toMetres": 2950, "label": "Approach to final corner" }
+  ]
+}

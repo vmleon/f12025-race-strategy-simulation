@@ -1,0 +1,11 @@
+{
+  "trackId": 12,
+  "name": "Singapore",
+  "totalLapDistanceMetres": 4940.0,
+  "safeZones": [
+    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
+    { "fromMetres": 1400, "toMetres": 1700, "label": "Raffles Boulevard straight" },
+    { "fromMetres": 2800, "toMetres": 3100, "label": "Republic Boulevard straight" },
+    { "fromMetres": 4200, "toMetres": 4500, "label": "Approach to final turns" }
+  ]
+}
