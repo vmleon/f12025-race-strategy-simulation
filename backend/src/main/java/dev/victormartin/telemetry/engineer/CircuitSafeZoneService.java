@@ -83,6 +83,22 @@ public class CircuitSafeZoneService {
         return false;
     }
 
+    /**
+     * Returns the 0-based index of the safe zone the car is in, or -1 if not in any zone.
+     * Applies the same speed-based lag offset as isSafeToDeliver.
+     */
+    public int currentZoneIndex(int trackId, float lapDistance, int speedKmh) {
+        List<SafeZone> zones = circuits.get(trackId);
+        if (zones == null) return -1;
+        float offsetMetres = (speedKmh / 3.6f) * LAG_SECONDS;
+        for (int i = 0; i < zones.size(); i++) {
+            SafeZone zone = zones.get(i);
+            float effectiveFrom = zone.fromMetres() - offsetMetres;
+            if (lapDistance >= effectiveFrom && lapDistance <= zone.toMetres()) return i;
+        }
+        return -1;
+    }
+
     public boolean hasCircuit(int trackId) {
         return circuits.containsKey(trackId);
     }

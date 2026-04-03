@@ -53,6 +53,38 @@ class CircuitSafeZoneServiceTest {
     }
 
     @Test
+    void currentZoneIndexReturnsCorrectZone() {
+        // Melbourne: 200m is in zone 0 (0-300m)
+        assertEquals(0, service.currentZoneIndex(0, 200f, 0));
+        // Melbourne: 1200m is in zone 1 (1100-1450m)
+        assertEquals(1, service.currentZoneIndex(0, 1200f, 0));
+        // Melbourne: 2800m is in zone 2 (2700-3050m)
+        assertEquals(2, service.currentZoneIndex(0, 2800f, 0));
+        // Melbourne: 4500m is in zone 3 (4400-4700m)
+        assertEquals(3, service.currentZoneIndex(0, 4500f, 0));
+    }
+
+    @Test
+    void currentZoneIndexReturnsMinusOneOutsideZones() {
+        // Melbourne: 500m is between zone 0 and 1
+        assertEquals(-1, service.currentZoneIndex(0, 500f, 0));
+    }
+
+    @Test
+    void currentZoneIndexAppliesLagOffset() {
+        // Melbourne zone 1 starts at 1100m.
+        // At 250 km/h, offset = 104.2m, effective from = 995.8m
+        // 1000m should be in zone 1 with speed, but -1 without
+        assertEquals(1, service.currentZoneIndex(0, 1000f, 250));
+        assertEquals(-1, service.currentZoneIndex(0, 1000f, 0));
+    }
+
+    @Test
+    void currentZoneIndexReturnsMinusOneForUnknownTrack() {
+        assertEquals(-1, service.currentZoneIndex(999, 100f, 0));
+    }
+
+    @Test
     void lagOffsetScalesWithSpeed() {
         // Melbourne Lakeside Drive starts at 1100m.
         // At 50 km/h = 13.9 m/s, offset = 20.8m → effective from = 1079.2m
