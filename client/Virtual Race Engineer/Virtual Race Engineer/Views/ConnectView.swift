@@ -175,6 +175,7 @@ struct ConnectView: View {
         let first = await fetchSessionsAsync()
 
         try? await Task.sleep(for: .seconds(2.5))
+        guard !Task.isCancelled else { await MainActor.run { autoConnecting = false }; return }
 
         let second = await fetchSessionsAsync()
 
