@@ -179,10 +179,10 @@ sequenceDiagram
 
 ## 5. Calibration Trigger (via TxEventQ)
 
-Calibration is a batch process that refits model coefficients from accumulated historical data. It runs in the backend process, triggered via TxEventQ ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-txeventq)).
+Calibration is a batch process that refits model coefficients from accumulated historical data. It runs as a standalone long-running Python service that consumes requests from TxEventQ ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-txeventq)), mirroring the simulator's architecture.
 
 - **Trigger:** Automatic, fired when a session ends. `SessionStateHolder` enqueues to `CALIBRATION_REQUEST` via `QueueService`
-- **Flow:** `sessionEnded` → `CALIBRATION_REQUEST` enqueued → `CalibrationQueueConsumer` dequeues → `CalibrationService.triggerCalibration()` → subprocess runs calibration pipeline → reads `sector_snapshots` from Oracle → fits coefficients → writes to `calibration_coefficients` table → WebSocket broadcast
+- **Flow:** `sessionEnded` → `CALIBRATION_REQUEST` enqueued → standalone Calibration Service (`python -m calibration service`) dequeues → runs calibration pipeline in-process → reads `sector_snapshots` from Oracle → fits coefficients → writes to `calibration_coefficients` table → WebSocket broadcast
 - **Manual fallback:** `POST /api/calibration/run?trackId={id}` → enqueues to `CALIBRATION_REQUEST` → returns `202 Accepted`
 - **Session lifecycle:** `TelemetryTcpServer` also enqueues session start/end events to `SESSION_LIFECYCLE` (multi-consumer queue) for future consumers
 - **Scope:** Recalibrates all knobs for the track of the just-completed session, both PLAYER and AI regimes

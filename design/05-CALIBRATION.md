@@ -21,8 +21,7 @@ sequenceDiagram
     participant Telemetry as Telemetry (TCP)
     participant Backend as Backend (Spring Boot)
     participant Q as CALIBRATION_REQUEST queue
-    participant Consumer as CalibrationQueueConsumer
-    participant Subprocess as python -m calibration
+    participant Service as Calibration Service<br/>(python -m calibration service)
     participant DB as Oracle DB
     participant Portal as Portal / iOS
 
@@ -35,33 +34,27 @@ sequenceDiagram
         Backend-->>Portal: 202 Accepted
     end
 
-    Q->>Consumer: Dequeue calibration request
-    Consumer->>Subprocess: spawn subprocess<br/>python -m calibration run <trackId>
-    activate Subprocess
+    Service->>Q: Dequeue calibration request
+    activate Service
 
-    Subprocess->>DB: SELECT sector_snapshots<br/>+ participants + driver_ratings<br/>WHERE track_id = ?
-    DB-->>Subprocess: Historical telemetry data
+    Service->>DB: SELECT sector_snapshots<br/>+ participants + driver_ratings<br/>WHERE track_id = ?
+    DB-->>Service: Historical telemetry data
 
-    Note over Subprocess: Step 1: Outlier detection<br/>(per-driver IQR analysis)
-    Subprocess->>DB: UPDATE sector_snapshots<br/>SET outlier = 1 WHERE ...
+    Note over Service: Step 1: Outlier detection<br/>(per-driver IQR analysis)
+    Service->>DB: UPDATE sector_snapshots<br/>SET outlier = 1 WHERE ...
 
-    Note over Subprocess: Step 2: Fit base pace<br/>(mean + variance per sector,<br/>PLAYER and AI regimes)
+    Note over Service: Step 2: Fit base pace<br/>(mean + variance per sector,<br/>PLAYER and AI regimes)
 
-    Note over Subprocess: Step 3: Fit tyre degradation<br/>(linear regression per compound:<br/>sector_time vs tyre_age)
+    Note over Service: Step 3: Fit tyre degradation<br/>(linear regression per compound:<br/>sector_time vs tyre_age)
 
-    Note over Subprocess: Step 4: Fit fuel effect<br/>(linear regression:<br/>sector_time vs fuel_in_tank_kg)
+    Note over Service: Step 4: Fit fuel effect<br/>(linear regression:<br/>sector_time vs fuel_in_tank_kg)
 
-    Note over Subprocess: Step 5: Fit pit stop duration<br/>(time loss vs baseline)
+    Note over Service: Step 5: Fit pit stop duration<br/>(time loss vs baseline)
 
-    Subprocess->>DB: INSERT calibration_coefficients<br/>(per knob × regime × sector)
-    deactivate Subprocess
+    Service->>DB: INSERT calibration_coefficients<br/>(per knob × regime × sector)
+    deactivate Service
 
-    Consumer->>Backend: Process exit code
-    alt Success (exit 0)
-        Backend->>Portal: WebSocket: calibrationComplete<br/>{elapsedMs}
-    else Failure (non-zero exit)
-        Backend->>Portal: WebSocket: calibrationFailed<br/>{exitCode}
-    end
+    Backend->>Portal: WebSocket: calibrationComplete<br/>{elapsedMs}
 ```
 
 Without calibration, the simulation would need hardcoded guesses (e.g. "front wing damage costs 0.5–3 seconds") with wide, uninformed distributions. With calibration, each effect is a fitted function derived from observed data, and the Monte Carlo sampling is limited to genuinely uncertain events (safety cars, overtake success, mechanical failures).
@@ -419,9 +412,9 @@ Drivers have fundamentally different pace. A 25.1s sector for a top AI car is no
 
 #### Grouping Key
 
-`(driver_name, track_id, sector_number, tyre_compound_actual)`
+`(driver_name, track_id, sector_number, tyre_compound_actual, weather_category)`
 
-Grouping by compound is essential — a sector on worn softs vs fresh hards would inflate the IQR and mask real outliers. Tyre age and fuel load are **not** part of the grouping key because they are continuous variables that would fragment the data into too-small groups. The calibration regression handles those factors separately.
+Grouping by compound is essential — a sector on worn softs vs fresh hards would inflate the IQR and mask real outliers. `weather_category` is `dry` or `wet`, derived from the F1 2025 weather codes (0–5) captured on each snapshot — wet and dry baselines differ by several seconds per sector, so mixing them would inflate the IQR fences and mask genuine outliers. Tyre age and fuel load are **not** part of the grouping key because they are continuous variables that would fragment the data into too-small groups. The calibration regression handles those factors separately.
 
 #### Algorithm
 
@@ -511,9 +504,9 @@ classDiagram
 
 This can be a table in Oracle alongside the telemetry data, or a separate configuration store — the simulation just needs to load the current coefficients for the relevant track and regime before running.
 
-## Implementation: Standalone Python CLI
+## Implementation: Standalone Python Service
 
-Calibration is implemented as a standalone Python component (`python -m calibration run <trackId>`), invoked as a subprocess by the Backend when a session ends (see `06-INTEGRATION.md` §5). The pipeline reads from and writes to the same Oracle schema used by telemetry and simulation.
+Calibration is implemented as a standalone Python service (`python -m calibration service`), a long-running worker that consumes `CALIBRATION_REQUEST` messages from Oracle TxEventQ — mirroring the simulator's architecture (see `06-INTEGRATION.md` §5). The backend only enqueues; the service dequeues and processes in-process. A one-off CLI mode (`python -m calibration run <trackId>`) is also available for manual runs. The pipeline reads from and writes to the same Oracle schema used by telemetry and simulation.
 
 ### Pipeline Architecture
 

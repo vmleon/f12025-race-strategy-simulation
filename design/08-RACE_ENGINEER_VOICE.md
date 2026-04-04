@@ -151,9 +151,10 @@ sequenceDiagram
     Eng->>Eng: Enqueue "Box window opens<br/>in N laps. [Compound] ready." (NORMAL)
 
     Note over Eng: Message delivery
-    Eng->>SafeZone: Is player in safe zone?
+    Eng->>Eng: Drop expired messages<br/>(lap TTL + 8s wall-clock staleness)
+    Eng->>SafeZone: Is player in safe zone?<br/>(boundaries shifted earlier by<br/>speed × 1.5s for reaction latency)
     SafeZone-->>Eng: Yes (straight / low-demand section)
-    Note over Eng: Check per-lap budget:<br/>IMMEDIATE/HIGH bypass budget,<br/>NORMAL capped at 4/lap
+    Note over Eng: Check per-zone budget:<br/>IMMEDIATE/HIGH bypass budget,<br/>NORMAL capped at 2/zone
     Eng->>iOS: WebSocket: raceEngineer<br/>{priority, text, timestamp}
     Note over iOS: AVSpeechSynthesizer<br/>English (GB), rate 0.48<br/>IMMEDIATE interrupts current speech<br/>HIGH/NORMAL queued
 
@@ -197,7 +198,19 @@ Scenarios ordered by frequency (routine first, rare last). Priority levels map t
 
 ### Message Delivery Budget
 
-To prevent radio flooding, NORMAL messages are capped at **4 per lap**. The budget resets on each new lap. IMMEDIATE and HIGH messages are exempt — safety-critical and time-sensitive information always gets through. Undelivered NORMAL messages remain queued and are either delivered on the next lap or expire via their TTL. This mirrors real F1 radio discipline where engineers self-limit routine communication to preserve the driver's cognitive bandwidth.
+To prevent radio flooding, NORMAL messages are capped at **2 per safe zone**. The budget resets each time the driver enters a new safe zone, spreading routine communication across the lap instead of front-loading it onto the first straight. IMMEDIATE and HIGH messages are exempt — safety-critical and time-sensitive information always gets through. Undelivered NORMAL messages remain queued and are either delivered in a later zone or expire via their TTL. This mirrors real F1 radio discipline where engineers self-limit routine communication to preserve the driver's cognitive bandwidth.
+
+### Message Expiration (Backend-Side)
+
+Stale messages are dropped by the backend before they ever reach iOS. Each message carries a lap-based TTL (`createdAtLap + ttlLaps`) and an 8-second wall-clock staleness bound — either one expiring causes the backend to drop the message from the queue. This keeps stale information (e.g. a "gap closing" warning from 10 seconds ago) off the radio, and means iOS receives only fresh messages; no client-side filtering is required.
+
+### Safe Zone Lag Offset
+
+Safe zone boundaries are shifted earlier by `(speedKmh / 3.6) × 1.5s` worth of distance, computed continuously from the car's current speed. This accounts for the combined latency of TCP push, WebSocket delivery, TTS synthesis, and driver reaction time — at 300 km/h the car covers ~125 m in 1.5 s, so a boundary defined at the start of a straight is evaluated against the driver's projected position 1.5 s ahead rather than their current position. Without this offset, fast-section messages would arrive mid-corner.
+
+### Circuit Coverage
+
+Safe-zone configurations are defined for **all 34 F1 circuits** under `backend/src/main/resources/circuits/`, keyed by track ID. Each config declares one or more zones as distance ranges along the lap, plus a `currentZoneIndex` tracking which zone the driver most recently entered.
 
 ### Assist-Aware Filtering
 
