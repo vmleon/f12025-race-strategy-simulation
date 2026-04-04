@@ -1,11 +1,12 @@
 from calibration.outlier_detector import (
     SectorEntry, SectorKey, DriverRating,
     detect_outliers, _index_ratings, _lookup_skill_rating, _percentile, _median,
+    weather_category,
 )
 
 
-def _entry(session_uid, car_index, lap, sector, time_ms, driver, track_id, compound, ai):
-    return SectorEntry(session_uid, car_index, lap, sector, time_ms, driver, track_id, compound, ai)
+def _entry(session_uid, car_index, lap, sector, time_ms, driver, track_id, compound, ai, weather=0):
+    return SectorEntry(session_uid, car_index, lap, sector, time_ms, driver, track_id, compound, ai, weather)
 
 
 class TestIqrDetection:
@@ -93,3 +94,43 @@ class TestPercentileMedian:
 
     def test_empty_input_returns_no_outliers(self):
         assert detect_outliers([], []) == []
+
+
+class TestWeatherCategory:
+
+    def test_dry_conditions(self):
+        assert weather_category(0) == "dry"   # clear
+        assert weather_category(1) == "dry"   # light cloud
+        assert weather_category(2) == "dry"   # overcast
+
+    def test_wet_conditions(self):
+        assert weather_category(3) == "wet"   # light rain
+        assert weather_category(4) == "wet"   # heavy rain
+        assert weather_category(5) == "wet"   # storm
+
+
+class TestWeatherGrouping:
+
+    def test_wet_sector_not_outlier_against_dry_baseline(self):
+        # 10 dry sectors ~30s
+        dry = [_entry(1, 0, i + 2, 1, 30000 + i * 50, "Hamilton", 1, 16, False, weather=0)
+               for i in range(10)]
+        # 1 wet sector at 35s — would be an outlier if grouped with dry
+        wet = [_entry(1, 0, 20, 1, 35000, "Hamilton", 1, 16, False, weather=4)]
+
+        outliers = detect_outliers(dry + wet, [])
+
+        # Wet sector should NOT be flagged — it's in its own group (too few samples → cold start)
+        wet_flagged = [o for o in outliers if o.lap_number == 20]
+        assert len(wet_flagged) == 0, "Wet sector should not be flagged as outlier against dry data"
+
+    def test_same_weather_groups_together(self):
+        # 10 dry entries with an obvious dry outlier
+        times = [29500, 29800, 30000, 30100, 30200, 30300, 30400, 30500, 30600, 45000]
+        entries = [_entry(1, 0, i + 2, 1, t, "Hamilton", 1, 16, False, weather=0)
+                   for i, t in enumerate(times)]
+
+        outliers = detect_outliers(entries, [])
+
+        assert len(outliers) == 1
+        assert outliers[0].lap_number == 11  # the 45000ms entry

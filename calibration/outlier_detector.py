@@ -29,6 +29,15 @@ class SectorEntry:
     track_id: int
     tyre_compound_actual: int
     ai_controlled: bool
+    weather: int = 0
+
+
+def weather_category(weather: int) -> str:
+    """Map F1 2025 weather code to dry/wet category.
+
+    0=clear, 1=light cloud, 2=overcast, 3=light rain, 4=heavy rain, 5=storm.
+    """
+    return "wet" if weather >= 3 else "dry"
 
 
 @dataclass(frozen=True)
@@ -46,7 +55,7 @@ def detect_outliers(entries: list[SectorEntry], driver_ratings: list[DriverRatin
 
     groups: dict[str, list[SectorEntry]] = defaultdict(list)
     for e in entries:
-        key = f"{e.driver_name}|{e.track_id}|{e.sector_number}|{e.tyre_compound_actual}"
+        key = f"{e.driver_name}|{e.track_id}|{e.sector_number}|{e.tyre_compound_actual}|{weather_category(e.weather)}"
         groups[key].append(e)
 
     cross_driver_medians = _compute_cross_driver_medians(entries)
@@ -91,7 +100,7 @@ def _detect_by_cold_start(
 ) -> list[SectorKey]:
     sample = group[0]
     skill_rating = _lookup_skill_rating(rating_index, sample.driver_name, sample.track_id)
-    median_key = f"{sample.track_id}|{sample.sector_number}|{sample.tyre_compound_actual}"
+    median_key = f"{sample.track_id}|{sample.sector_number}|{sample.tyre_compound_actual}|{weather_category(sample.weather)}"
     reference_median = cross_driver_medians.get(median_key)
 
     if reference_median is None:
@@ -127,7 +136,7 @@ def _index_ratings(ratings: list[DriverRating]) -> dict[str, dict[int, int]]:
 def _compute_cross_driver_medians(entries: list[SectorEntry]) -> dict[str, int]:
     grouped: dict[str, list[int]] = defaultdict(list)
     for e in entries:
-        key = f"{e.track_id}|{e.sector_number}|{e.tyre_compound_actual}"
+        key = f"{e.track_id}|{e.sector_number}|{e.tyre_compound_actual}|{weather_category(e.weather)}"
         grouped[key].append(e.sector_time_ms)
     return {key: _median(times) for key, times in grouped.items()}
 
