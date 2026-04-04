@@ -1,6 +1,6 @@
 import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CarSnapshot } from '../../race.service';
-import { teamColour } from '../../team-colours';
+import { teamColour, teamColourSecondary } from '../../team-colours';
 import DEFAULT_CIRCUIT from '../../../assets/circuits/default.json';
 
 interface CircuitConfig {
@@ -253,6 +253,16 @@ export class CircuitMapComponent implements OnChanges {
       return;
     }
 
+    // Determine which cars are the "second" driver on their team (higher idx)
+    const teamFirstIdx = new Map<number, number>();
+    for (const car of this.cars) {
+      if (car.teamId == null) continue;
+      const existing = teamFirstIdx.get(car.teamId);
+      if (existing === undefined || car.idx < existing) {
+        teamFirstIdx.set(car.teamId, car.idx);
+      }
+    }
+
     this.carDots = this.cars
       .filter((car) => car.lapDist != null && car.resultStatus !== 0)
       .map((car) => {
@@ -262,11 +272,15 @@ export class CircuitMapComponent implements OnChanges {
         const angle = pctToAngle(pct);
         const pos = polarToXY(CX, CY, radius, angle);
         const abbr = car.name ? car.name.substring(0, 3).toUpperCase() : `C${car.idx}`;
+        const isSecondary = car.teamId != null && teamFirstIdx.get(car.teamId) !== car.idx;
+        const colour = isSecondary
+          ? teamColourSecondary(car.teamId ?? 0)
+          : teamColour(car.teamId ?? 0);
 
         return {
           x: pos.x,
           y: pos.y,
-          colour: teamColour(car.teamId ?? 0),
+          colour,
           label: abbr,
           isPlayer: !car.ai,
           inPit,
