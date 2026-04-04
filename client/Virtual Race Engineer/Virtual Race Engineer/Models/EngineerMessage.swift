@@ -13,9 +13,13 @@ struct EngineerMessage: Codable, Identifiable {
     let text: String
     let timestamp: Int64
 
-    var id: Int64 { timestamp }
+    let id = UUID()
 
     var date: Date {
         Date(timeIntervalSince1970: Double(timestamp) / 1000.0)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, sessionUid, priority, text, timestamp
     }
 }
