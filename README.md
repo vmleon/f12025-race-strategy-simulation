@@ -129,7 +129,9 @@ graph TD
 ### 1. Database
 
 ```bash
-pip install -r requirements.txt   # one-time: install oracledb driver
+python -m venv venv               # one-time: create virtualenv at project root
+source venv/bin/activate          # activate (Windows: venv\Scripts\activate)
+pip install -r requirements.txt   # install manage.py CLI deps
 ```
 
 ```bash
@@ -188,9 +190,27 @@ cd backend && ./gradlew bootRun
 
 Runs on http://localhost:8080. Connects to telemetry via TCP on port 9090.
 
-### 4. Simulator
+### 4. Calibration
 
 ```bash
+cd calibration
+python -m venv venv               # one-time: create virtualenv
+source venv/bin/activate          # activate (Windows: venv\Scripts\activate)
+pip install -r requirements.txt   # install calibration deps
+cd ..
+python -m calibration service
+```
+
+Runs as a long-lived worker that consumes `CALIBRATION_REQUEST` messages from TxEventQ. One-off runs for a single track are also available via `python -m calibration run <trackId>`.
+
+### 5. Simulator
+
+```bash
+cd simulator
+python -m venv venv               # one-time: create virtualenv
+source venv/bin/activate          # activate (Windows: venv\Scripts\activate)
+pip install -r requirements.txt   # install simulator deps
+cd ..
 python -m simulator
 ```
 
@@ -200,7 +220,7 @@ Runs on http://localhost:8081. Consumes simulation requests from TxEventQ. Can r
 SIMULATOR_USE_DB=false python -m simulator
 ```
 
-### 5. Portal
+### 6. Portal
 
 ```bash
 cd portal && npm start
@@ -208,7 +228,7 @@ cd portal && npm start
 
 Runs on http://localhost:4200, proxies `/api` and `/ws` calls to the backend.
 
-### 6. iOS Client
+### 7. iOS Client
 
 Xcode project in `client/Virtual Race Engineer/`. Open in Xcode and run on a device or simulator.
 
