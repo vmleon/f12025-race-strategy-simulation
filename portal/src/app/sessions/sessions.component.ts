@@ -232,6 +232,18 @@ import { formatTime } from '../format-time';
       margin-bottom: 1rem;
       font-size: 0.9rem;
     }
+
+    @media (max-width: 1200px) {
+      .session-table, .part-table, .sector-table { display: block; overflow-x: auto; }
+    }
+    @media (max-width: 768px) {
+      .session-table, .part-table, .sector-table { font-size: 0.8rem; }
+      .session-table th, .session-table td,
+      .part-table th, .part-table td,
+      .sector-table th, .sector-table td { padding: 0.25rem 0.35rem; }
+      .header { flex-wrap: wrap; }
+      .driver-assign { flex-wrap: wrap; }
+    }
   `,
 })
 export class SessionsComponent implements OnInit {

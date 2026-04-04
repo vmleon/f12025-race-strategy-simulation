@@ -141,6 +141,15 @@ const COMPOUND_CLASSES: Record<number, string> = {
     .tyre[data-compound='wet'] { background: #1565c0; color: #fff; }
 
     .empty { color: #888; }
+
+    @media (max-width: 1200px) {
+      .results-table { display: block; overflow-x: auto; }
+    }
+    @media (max-width: 768px) {
+      .results-table { font-size: 0.8rem; }
+      .results-table th, .results-table td { padding: 0.25rem 0.35rem; }
+      .header { flex-wrap: wrap; }
+    }
   `,
 })
 export class StrategyComponent implements OnInit, OnDestroy {

@@ -195,6 +195,18 @@ import { trackName } from '../track-names';
 
     .error { color: #f66; font-size: 0.85rem; }
     .empty { color: #888; }
+
+    @media (max-width: 1200px) {
+      .driver-table, .session-table { display: block; overflow-x: auto; }
+    }
+    @media (max-width: 768px) {
+      .driver-table, .session-table { font-size: 0.8rem; }
+      .driver-table th, .driver-table td,
+      .session-table th, .session-table td { padding: 0.25rem 0.35rem; }
+      .header { flex-wrap: wrap; }
+      .form { flex-direction: column; align-items: stretch; }
+      .assoc-form { flex-direction: column; align-items: stretch; }
+    }
   `,
 })
 export class DriversComponent implements OnInit {

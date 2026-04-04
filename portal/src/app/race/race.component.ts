@@ -326,6 +326,25 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
         min-width: 250px;
       }
     }
+    @media (max-width: 768px) {
+      .race-content {
+        flex-direction: column;
+      }
+      .circuit-column {
+        width: 100%;
+        align-items: center;
+      }
+      .race-table {
+        font-size: 0.8rem;
+      }
+      .race-table th,
+      .race-table td {
+        padding: 0.25rem 0.35rem;
+      }
+      .race-header {
+        flex-wrap: wrap;
+      }
+    }
   `,
 })
 export class RaceComponent implements OnInit, OnDestroy {

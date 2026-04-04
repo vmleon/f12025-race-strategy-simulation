@@ -140,6 +140,15 @@ import { RaceService, RaceMessage } from '../race.service';
     tr.red { border-left: 3px solid #f44336; }
 
     .empty { color: #888; }
+
+    @media (max-width: 1200px) {
+      .cal-table { display: block; overflow-x: auto; }
+    }
+    @media (max-width: 768px) {
+      .cal-table { font-size: 0.8rem; }
+      .cal-table th, .cal-table td { padding: 0.25rem 0.35rem; }
+      .actions { flex-wrap: wrap; }
+    }
   `,
 })
 export class CalibrationComponent implements OnInit, OnDestroy {

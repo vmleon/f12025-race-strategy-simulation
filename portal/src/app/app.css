@@ -55,3 +55,19 @@ nav a.active {
 main {
   padding: 1.5rem;
 }
+
+@media (max-width: 768px) {
+  header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+  }
+  nav {
+    order: 3;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  main {
+    padding: 1rem;
+  }
+}
