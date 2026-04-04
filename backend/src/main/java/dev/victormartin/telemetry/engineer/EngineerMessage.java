@@ -7,6 +7,9 @@ public record EngineerMessage(
         int createdAtLap,
         int ttlLaps
 ) {
+    /** Wall-clock TTL: discard messages older than this before delivery. */
+    static final long TTL_MILLIS = 8_000;
+
     public enum Priority {
         IMMEDIATE,
         HIGH,
@@ -15,5 +18,9 @@ public record EngineerMessage(
 
     public boolean isExpired(int currentLap) {
         return currentLap > createdAtLap + ttlLaps;
+    }
+
+    public boolean isStale() {
+        return System.currentTimeMillis() - createdAt > TTL_MILLIS;
     }
 }

@@ -81,6 +81,10 @@ public class RaceEngineerService {
             int trackLength = state.has("trackLength") ? state.get("trackLength").asInt() : 5000;
             int speedKmh = playerCar.has("speed") ? playerCar.get("speed").asInt() : 0;
 
+            // Keep assist flags in sync with telemetry (session packet may update them)
+            if (state.has("ersAssist")) session.ersAssist = state.get("ersAssist").asInt();
+            if (state.has("drsAssist")) session.drsAssist = state.get("drsAssist").asInt();
+
             // Detect changes and generate messages
             detectFlagChanges(session, state, currentLap);
             detectPenalties(session, playerCar, currentLap);
@@ -139,10 +143,6 @@ public class RaceEngineerService {
                             name + " has retired. Watch for debris on track.",
                             System.currentTimeMillis(), session.lastPlayerLap, 2));
                 }
-                case "COLL" -> session.queue.enqueue(new EngineerMessage(
-                        Priority.HIGH,
-                        "Collision ahead. Stay alert, watch for yellow flags.",
-                        System.currentTimeMillis(), session.lastPlayerLap, 1));
                 case "CHQF" -> session.chequeredFlag = true;
             }
         } catch (Exception e) {
@@ -551,8 +551,8 @@ public class RaceEngineerService {
     static class SessionEngineerState {
         final String sessionUid;
         final int trackId;
-        final int ersAssist;
-        final int drsAssist;
+        int ersAssist;
+        int drsAssist;
         final RaceEngineerQueue queue = new RaceEngineerQueue();
 
         int lastPlayerLap = 0;

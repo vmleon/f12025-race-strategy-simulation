@@ -43,8 +43,8 @@ public class RaceEngineerQueue {
             normalDelivered = 0;
         }
 
-        // Drain expired messages
-        queue.removeIf(m -> m.isExpired(currentLap));
+        // Drain expired messages (lap-based TTL and wall-clock TTL)
+        queue.removeIf(m -> m.isExpired(currentLap) || m.isStale());
 
         // Try to find a deliverable message
         if (queue.isEmpty()) return null;

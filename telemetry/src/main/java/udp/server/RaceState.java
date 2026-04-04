@@ -216,6 +216,8 @@ public class RaceState {
           .append(",\"airTemp\":").append(airTemp)
           .append(",\"safetyCarStatus\":").append(safetyCarStatus)
           .append(",\"trackLength\":").append(trackLength)
+          .append(",\"ersAssist\":").append(ersAssist)
+          .append(",\"drsAssist\":").append(drsAssist)
           .append(",\"cars\":[");
 
         for (int i = 0; i < NUM_CARS; i++) {

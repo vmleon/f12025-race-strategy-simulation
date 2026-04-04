@@ -16,8 +16,6 @@ struct LiveView: View {
         }
         .onAppear {
             webSocket.onMessage = { message in
-                let ageSeconds = Date().timeIntervalSince1970 - Double(message.timestamp) / 1000.0
-                guard ageSeconds < 8.0 else { return }
                 speech.speak(message.text, priority: message.priority)
             }
         }
