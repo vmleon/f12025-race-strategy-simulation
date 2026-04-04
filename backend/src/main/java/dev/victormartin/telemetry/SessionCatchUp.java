@@ -5,15 +5,20 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import dev.victormartin.telemetry.engineer.RaceEngineerService;
+
 @Component
 public class SessionCatchUp implements ApplicationRunner {
 
     private final JdbcTemplate jdbc;
     private final SessionStateHolder sessionStateHolder;
+    private final RaceEngineerService raceEngineerService;
 
-    public SessionCatchUp(JdbcTemplate jdbc, SessionStateHolder sessionStateHolder) {
+    public SessionCatchUp(JdbcTemplate jdbc, SessionStateHolder sessionStateHolder,
+                          RaceEngineerService raceEngineerService) {
         this.jdbc = jdbc;
         this.sessionStateHolder = sessionStateHolder;
+        this.raceEngineerService = raceEngineerService;
     }
 
     @Override
@@ -34,6 +39,7 @@ public class SessionCatchUp implements ApplicationRunner {
                 String uid = String.valueOf(row.get("SESSION_UID"));
                 int trackId = ((Number) row.get("TRACK_ID")).intValue();
                 sessionStateHolder.onSessionStarted(uid, trackId);
+                raceEngineerService.onSessionStarted(uid, trackId, 0, 0);
                 System.out.println("Session catch-up: restored active session uid=" + uid);
             } else {
                 System.out.println("Session catch-up: no active session found");

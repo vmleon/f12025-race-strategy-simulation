@@ -35,6 +35,17 @@ public class RaceState {
     // Event queue for forwarding to backend
     private final Queue<String> eventQueue = new ArrayDeque<>();
 
+    /**
+     * Reset the sessionStartSent flag so the next pollSessionStarted() call
+     * re-sends the sessionStarted message. Call this when the TCP connection
+     * is re-established so the backend learns about the active session.
+     */
+    public synchronized void resetSessionStartSent() {
+        if (sessionActive) {
+            sessionStartSent = false;
+        }
+    }
+
     public RaceState() {
         for (int i = 0; i < NUM_CARS; i++) {
             cars[i] = new CarState();

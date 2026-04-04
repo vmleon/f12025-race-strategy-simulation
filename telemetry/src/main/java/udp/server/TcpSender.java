@@ -36,6 +36,7 @@ public class TcpSender implements Runnable {
 
                 System.out.println("Connected to backend TCP at " + host + ":" + port);
                 backoff = INITIAL_BACKOFF_MS; // reset on successful connect
+                raceState.resetSessionStartSent(); // re-send sessionStarted to new backend
 
                 while (!Thread.currentThread().isInterrupted()) {
                     // Send lifecycle events first
