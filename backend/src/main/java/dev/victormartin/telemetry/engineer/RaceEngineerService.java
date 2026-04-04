@@ -102,7 +102,7 @@ public class RaceEngineerService {
                 detectErsMode(session, playerCar, currentLap);
             }
             detectWeatherChange(session, state, currentLap);
-            detectRaceFinish(session, playerCar, currentLap);
+            detectRaceFinish(session, carsNode, playerCar, currentLap);
 
             // Try to deliver a message
             EngineerMessage message = session.queue.pollForDelivery(
@@ -490,19 +490,55 @@ public class RaceEngineerService {
         session.previousWeather = weather;
     }
 
-    private void detectRaceFinish(SessionEngineerState session, JsonNode playerCar, int currentLap) {
+    private void detectRaceFinish(SessionEngineerState session, JsonNode carsNode, JsonNode playerCar, int currentLap) {
         if (session.raceFinished) return;
 
         int resultStatus = playerCar.has("resultStatus") ? playerCar.get("resultStatus").asInt() : 2;
-        // resultStatus 3 = finished
+
+        // resultStatus: 2=active, 3=finished, 4=DNF, 5=DSQ, 6=not classified, 7=retired
+        String dnfMessage = switch (resultStatus) {
+            case 4, 7 -> "That's our day done. Engine off, come back to the pits.";
+            case 5 -> "Disqualified. We'll review and figure out what happened.";
+            case 6 -> "Didn't make the classified distance. Tough one.";
+            default -> null;
+        };
+        if (dnfMessage != null) {
+            session.raceFinished = true;
+            session.queue.enqueue(new EngineerMessage(
+                    Priority.IMMEDIATE, dnfMessage,
+                    System.currentTimeMillis(), currentLap, 5));
+            return;
+        }
+
         if (resultStatus == 3 || session.chequeredFlag) {
             session.raceFinished = true;
             int pos = playerCar.has("pos") ? playerCar.get("pos").asInt() : 0;
+            int gridSize = carsNode.size();
             session.queue.enqueue(new EngineerMessage(
                     Priority.IMMEDIATE,
-                    "That's P" + pos + ". Good job today.",
+                    buildFinishMessage(pos, gridSize),
                     System.currentTimeMillis(), currentLap, 5));
         }
+    }
+
+    static String buildFinishMessage(int pos, int gridSize) {
+        if (pos <= 0) {
+            return "Chequered flag. Box this lap.";
+        }
+        if (pos <= 3) {
+            return "P" + pos + "! Brilliant drive. Cooldown lap, bring it home.";
+        }
+        if (pos <= 10) {
+            return "P" + pos + ". Solid points today. Good job.";
+        }
+        int midfieldEnd = Math.max(10, gridSize * 3 / 4);
+        if (pos <= midfieldEnd) {
+            return "P" + pos + ". We'll take it. Plenty to review.";
+        }
+        if (pos < gridSize) {
+            return "P" + pos + ". Tough one. We'll debrief and come back stronger.";
+        }
+        return "P" + pos + ". Rough day at the office. Box this lap and we regroup.";
     }
 
     // -- delivery --------------------------------------------------------------
