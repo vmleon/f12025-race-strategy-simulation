@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, Input, OnChanges, OnInit, SimpleChanges } from '@angular/core';
 import { CarSnapshot } from '../../race.service';
 import { teamColour, teamColourSecondary } from '../../team-colours';
 import DEFAULT_CIRCUIT from '../../../assets/circuits/default.json';
@@ -21,7 +21,6 @@ interface CarDot {
   inPit: boolean;
 }
 
-// SVG layout constants
 const CX = 200;
 const CY = 200;
 const R = 160;
@@ -177,7 +176,7 @@ const PLAYER_DOT_R = 8;
     }
   `,
 })
-export class CircuitMapComponent implements OnChanges {
+export class CircuitMapComponent implements OnInit, OnChanges {
   @Input() cars: CarSnapshot[] = [];
   @Input() trackLength = 0;
   @Input() safetyCarStatus: number | null = null;
@@ -201,10 +200,15 @@ export class CircuitMapComponent implements OnChanges {
   pitLanePath = '';
   carDots: CarDot[] = [];
 
+  ngOnInit() {
+    this.buildStaticElements();
+  }
+
   ngOnChanges(changes: SimpleChanges) {
-    if (changes['cars'] || changes['trackLength'] || changes['safetyCarStatus'] || changes['yellowSector']) {
-      this.buildStaticElements();
+    if (changes['cars'] || changes['trackLength']) {
       this.buildCarDots();
+    }
+    if (changes['safetyCarStatus'] || changes['yellowSector']) {
       this.buildFlags();
     }
   }
@@ -292,8 +296,6 @@ export class CircuitMapComponent implements OnChanges {
     this.flagArcs = [];
     this.redFlag = false;
 
-    // Red flag = safetyCarStatus not directly, but we can show red overlay for dramatic effect
-    // Yellow flag on a specific sector
     if (this.yellowSector != null) {
       const c = this.circuit;
       const bounds = [0, ...c.sectors, 1];

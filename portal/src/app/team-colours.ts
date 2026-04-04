@@ -13,17 +13,17 @@ const TEAM_COLOURS: Record<number, string> = {
 
 const DEFAULT_COLOUR = '#888888';
 
+// Precomputed lighter variants for the second driver on each team
+const TEAM_COLOURS_SECONDARY: Record<number, string> = Object.fromEntries(
+  Object.entries(TEAM_COLOURS).map(([k, v]) => [Number(k), lightenHex(v, 0.15)])
+);
+
 export function teamColour(teamId: number): string {
   return TEAM_COLOURS[teamId] ?? DEFAULT_COLOUR;
 }
 
-/**
- * Returns a lighter variant of the team colour for the second driver.
- * Adds ~15% lightness in HSL space.
- */
 export function teamColourSecondary(teamId: number): string {
-  const hex = TEAM_COLOURS[teamId] ?? DEFAULT_COLOUR;
-  return lightenHex(hex, 0.15);
+  return TEAM_COLOURS_SECONDARY[teamId] ?? lightenHex(DEFAULT_COLOUR, 0.15);
 }
 
 function lightenHex(hex: string, amount: number): string {
