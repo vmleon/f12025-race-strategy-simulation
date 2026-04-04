@@ -211,7 +211,7 @@ public class RaceEngineerService {
         if (totalUnserved > session.previousUnservedPenalties) {
             String type = unservedDT > session.previousUnservedDT ? "drive-through" : "stop-go";
             session.queue.enqueue(new EngineerMessage(
-                    Priority.HIGH,
+                    Priority.IMMEDIATE,
                     "You have an unserved " + type + " penalty. Box this lap.",
                     System.currentTimeMillis(), currentLap, 2));
         }
@@ -221,7 +221,7 @@ public class RaceEngineerService {
 
         if (warnings > session.previousWarnings) {
             session.queue.enqueue(new EngineerMessage(
-                    Priority.NORMAL,
+                    Priority.IMMEDIATE,
                     "Track limits warning. That's warning number " + warnings + ". Be careful.",
                     System.currentTimeMillis(), currentLap, 2));
         }
@@ -260,7 +260,7 @@ public class RaceEngineerService {
 
                 if (isClose && !wasClose) {
                     session.queue.enqueue(new EngineerMessage(
-                            Priority.NORMAL,
+                            Priority.HIGH,
                             behindName + " closing from behind. " + String.format("%.1f", gapSeconds) + " seconds back. Defend your position.",
                             System.currentTimeMillis(), currentLap, 1));
                 }
@@ -304,7 +304,7 @@ public class RaceEngineerService {
 
                 if (isInDrsRange && !wasInDrsRange) {
                     session.queue.enqueue(new EngineerMessage(
-                            Priority.NORMAL,
+                            Priority.HIGH,
                             "You have DRS. Attack.",
                             System.currentTimeMillis(), currentLap, 1));
                 }
@@ -322,17 +322,17 @@ public class RaceEngineerService {
         if (currentLap > session.lastPlayerLap) {
             if (lapsRemaining == 10) {
                 session.queue.enqueue(new EngineerMessage(
-                        Priority.NORMAL,
+                        Priority.IMMEDIATE,
                         "10 laps remaining. Keep it clean, manage your tyres.",
                         System.currentTimeMillis(), currentLap, 1));
             } else if (lapsRemaining == 5) {
                 session.queue.enqueue(new EngineerMessage(
-                        Priority.NORMAL,
+                        Priority.IMMEDIATE,
                         "5 laps to go. Bring it home.",
                         System.currentTimeMillis(), currentLap, 1));
             } else if (lapsRemaining == 1) {
                 session.queue.enqueue(new EngineerMessage(
-                        Priority.HIGH,
+                        Priority.IMMEDIATE,
                         "Last lap. Give it everything you've got.",
                         System.currentTimeMillis(), currentLap, 1));
             }
@@ -375,7 +375,7 @@ public class RaceEngineerService {
 
         if (session.previousPlayerPosition > 0 && currentPos < session.previousPlayerPosition) {
             session.queue.enqueue(new EngineerMessage(
-                    Priority.NORMAL,
+                    Priority.IMMEDIATE,
                     "Good move. P" + currentPos + ". Keep it clean.",
                     System.currentTimeMillis(), currentLap, 1));
         }
@@ -396,7 +396,7 @@ public class RaceEngineerService {
             if (session.pitEnteredAt > 0) {
                 float durationSeconds = (System.currentTimeMillis() - session.pitEnteredAt) / 1000f;
                 session.queue.enqueue(new EngineerMessage(
-                        Priority.NORMAL,
+                        Priority.HIGH,
                         "Good stop. " + String.format("%.1f", durationSeconds) + " seconds. Push now.",
                         System.currentTimeMillis(), currentLap, 1));
                 session.pitEnteredAt = 0;
@@ -439,7 +439,7 @@ public class RaceEngineerService {
                 float fuelNeeded = fuelPerLap * lapsRemaining;
                 if (fuel < fuelNeeded) {
                     session.queue.enqueue(new EngineerMessage(
-                            Priority.NORMAL,
+                            Priority.HIGH,
                             "Fuel is critical. Lift and coast through the slow corners.",
                             System.currentTimeMillis(), currentLap, 3));
                     session.fuelAlertSent = true;
@@ -499,7 +499,7 @@ public class RaceEngineerService {
             session.raceFinished = true;
             int pos = playerCar.has("pos") ? playerCar.get("pos").asInt() : 0;
             session.queue.enqueue(new EngineerMessage(
-                    Priority.NORMAL,
+                    Priority.IMMEDIATE,
                     "That's P" + pos + ". Good job today.",
                     System.currentTimeMillis(), currentLap, 5));
         }
