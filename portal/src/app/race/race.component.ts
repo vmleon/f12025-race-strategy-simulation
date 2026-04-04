@@ -88,7 +88,6 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
                   <th>Pits</th>
                   <th>Pit</th>
                   <th>Fuel</th>
-                  <th>Dmg</th>
                 </tr>
               </thead>
               <tbody>
@@ -107,7 +106,6 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
                     <td>{{ car.pits ?? 0 }}</td>
                     <td class="pit-status">{{ pitLabel(car.pitStatus) }}</td>
                     <td>{{ car.fuel != null ? (car.fuel | number: '1.1-1') + ' kg' : '-' }}</td>
-                    <td>{{ damageLabel(car) }}</td>
                   </tr>
                 }
               </tbody>
@@ -422,14 +420,6 @@ export class RaceComponent implements OnInit, OnDestroy {
     if (status === 1) return 'PIT LANE';
     if (status === 2) return 'PITTING';
     return '-';
-  }
-
-  damageLabel(car: CarSnapshot): string {
-    const parts: string[] = [];
-    if (car.fwDmg && car.fwDmg > 0) parts.push(`FW:${car.fwDmg}`);
-    if (car.flDmg && car.flDmg > 0) parts.push(`FL:${car.flDmg}`);
-    if (car.engDmg && car.engDmg > 0) parts.push(`E:${car.engDmg}`);
-    return parts.length > 0 ? parts.join(' ') : '-';
   }
 
   private fetchActiveSessions() {
