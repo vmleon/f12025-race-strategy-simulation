@@ -92,7 +92,7 @@ public class RaceEngineerService {
             detectLapCountdown(session, currentLap, totalLaps);
             detectTyreCondition(session, playerCar, currentLap);
             detectPositionChange(session, carsNode, playerCar, currentLap, trackLength);
-            detectPitStopCompleted(session, playerCar, currentLap);
+            detectPitStopCompleted(session, carsNode, playerCar, currentLap, trackLength);
             if (session.drsAssist == 0) {
                 detectCarAhead(session, carsNode, playerCar, currentLap, trackLength);
                 detectDrs(session, playerCar, currentLap);
@@ -375,6 +375,15 @@ public class RaceEngineerService {
 
     private void detectPositionChange(SessionEngineerState session, JsonNode carsNode,
                                        JsonNode playerCar, int currentLap, int trackLength) {
+        int pitStatus = playerCar.has("pitStatus") ? playerCar.get("pitStatus").asInt() : 0;
+        // Suppress gain/loss messages while in the pit cycle. We also skip the exit
+        // frame (pitStatus==0 but previousPitStatus>0) so the reshuffled grid doesn't
+        // trigger a spurious message; the pit-exit recap in detectPitStopCompleted
+        // covers that transition and resets previousPlayerPosition.
+        if (pitStatus > 0 || session.previousPitStatus > 0) {
+            return;
+        }
+
         int currentPos = playerCar.has("pos") ? playerCar.get("pos").asInt() : 0;
 
         if (session.previousPlayerPosition > 0 && currentPos < session.previousPlayerPosition) {
@@ -427,7 +436,8 @@ public class RaceEngineerService {
         return gap / 55f;
     }
 
-    private void detectPitStopCompleted(SessionEngineerState session, JsonNode playerCar, int currentLap) {
+    private void detectPitStopCompleted(SessionEngineerState session, JsonNode carsNode,
+                                         JsonNode playerCar, int currentLap, int trackLength) {
         int pitStatus = playerCar.has("pitStatus") ? playerCar.get("pitStatus").asInt() : 0;
         int pitCount = playerCar.has("pits") ? playerCar.get("pits").asInt() : 0;
 
@@ -446,9 +456,42 @@ public class RaceEngineerService {
                         System.currentTimeMillis(), currentLap, 1));
                 session.pitEnteredAt = 0;
             }
+
+            // Pit-exit recap: announce re-entry position with ahead/behind gaps.
+            int exitPos = playerCar.has("pos") ? playerCar.get("pos").asInt() : 0;
+            session.queue.enqueue(new EngineerMessage(
+                    Priority.HIGH,
+                    buildPitExitRecap(carsNode, playerCar, exitPos, trackLength),
+                    System.currentTimeMillis(), currentLap, 2));
+
+            // Reset position baseline so the next on-track change fires from the exit position.
+            session.previousPlayerPosition = exitPos;
         }
         session.previousPitStatus = pitStatus;
         session.previousPitCount = pitCount;
+    }
+
+    private static String buildPitExitRecap(JsonNode carsNode, JsonNode playerCar,
+                                             int exitPos, int trackLength) {
+        StringBuilder sb = new StringBuilder("Out of the pits in P").append(exitPos).append(".");
+        JsonNode carAhead = exitPos > 1 ? findCarAtPosition(carsNode, exitPos - 1) : null;
+        JsonNode carBehind = findCarAtPosition(carsNode, exitPos + 1);
+
+        if (carAhead != null) {
+            float gap = gapToCarSeconds(playerCar, carAhead, trackLength);
+            String name = carAhead.has("name") ? carAhead.get("name").asText() : "car ahead";
+            if (gap >= 0) {
+                sb.append(" ").append(String.format("%.1f", gap)).append("s to ").append(name).append(".");
+            }
+        }
+        if (carBehind != null) {
+            float gap = gapToCarSeconds(carBehind, playerCar, trackLength);
+            String name = carBehind.has("name") ? carBehind.get("name").asText() : "car behind";
+            if (gap >= 0) {
+                sb.append(" ").append(String.format("%.1f", gap)).append("s to ").append(name).append(".");
+            }
+        }
+        return sb.toString();
     }
 
     private void detectDrs(SessionEngineerState session, JsonNode playerCar, int currentLap) {
