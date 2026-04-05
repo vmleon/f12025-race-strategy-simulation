@@ -279,6 +279,31 @@ def status():
         console.print(f"[yellow]Container '{CONTAINER_NAME}' exists but is not running.[/yellow]")
 
 
+@local.command()
+def unlock():
+    """Unlock the pdbadmin account after ORA-28000 (too many failed logins)."""
+    password = _get_password()
+    if not password:
+        console.print("[red]Error:[/red] No password in .env. Is the database set up?")
+        sys.exit(1)
+    if not _container_running():
+        console.print("[red]Error:[/red] Database container is not running.")
+        sys.exit(1)
+
+    console.print("[bold]Unlocking pdbadmin account...[/bold]")
+    sql = (
+        'ALTER USER pdbadmin ACCOUNT UNLOCK;\n'
+        f'ALTER USER pdbadmin IDENTIFIED BY "{password}";\n'
+        'EXIT;\n'
+    )
+    _run(
+        ["podman", "exec", "-i", CONTAINER_NAME,
+         "sqlplus", "-s", f"sys/{password}@FREEPDB1 as sysdba"],
+        input=sql,
+    )
+    console.print("[green]pdbadmin unlocked and failed-login counter reset.[/green]")
+
+
 @local.command(name="export")
 def export_cmd():
     """Export all session and calibration data to a SQL backup file."""

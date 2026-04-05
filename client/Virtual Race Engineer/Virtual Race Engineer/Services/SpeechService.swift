@@ -2,7 +2,8 @@ import AVFoundation
 import Observation
 
 @Observable
-final class SpeechService: NSObject, @unchecked Sendable, AVSpeechSynthesizerDelegate {
+@MainActor
+final class SpeechService: NSObject, AVSpeechSynthesizerDelegate {
     var rate: Float = 0.48
     var volume: Float = 1.0
 
@@ -17,7 +18,10 @@ final class SpeechService: NSObject, @unchecked Sendable, AVSpeechSynthesizerDel
     }
 
     func speak(_ text: String, priority: MessagePriority) {
-        let utterance = AVSpeechUtterance(string: text)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let utterance = AVSpeechUtterance(string: trimmed)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-GB")
         utterance.rate = rate
         utterance.volume = volume

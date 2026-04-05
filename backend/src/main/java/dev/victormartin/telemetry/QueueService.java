@@ -3,6 +3,8 @@ package dev.victormartin.telemetry;
 import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.Types;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.sql.DataSource;
 
@@ -11,7 +13,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class QueueService {
 
+    private static final long BACKOFF_INITIAL_MS = 2_000;
+    private static final long BACKOFF_MAX_MS = 60_000;
+
     private final DataSource dataSource;
+    private final Map<String, Long> backoffMs = new ConcurrentHashMap<>();
 
     public QueueService(DataSource dataSource) {
         this.dataSource = dataSource;
@@ -80,13 +86,23 @@ public class QueueService {
             cs.registerOutParameter(3, Types.VARCHAR);
             cs.execute();
             conn.commit();
+            backoffMs.remove(queueName);
             return cs.getString(3);
         } catch (Exception e) {
             // ORA-25228: timeout — no message available
             if (e.getMessage() != null && e.getMessage().contains("25228")) {
+                backoffMs.remove(queueName);
                 return null;
             }
-            System.err.println("QueueService: dequeue from " + queueName + " failed: " + e.getMessage());
+            long wait = backoffMs.merge(queueName, BACKOFF_INITIAL_MS,
+                    (prev, init) -> Math.min(prev * 2, BACKOFF_MAX_MS));
+            System.err.println("QueueService: dequeue from " + queueName + " failed: " + e.getMessage()
+                    + " (backing off " + wait + "ms)");
+            try {
+                Thread.sleep(wait);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
             return null;
         }
     }

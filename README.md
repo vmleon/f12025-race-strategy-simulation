@@ -158,6 +158,12 @@ Cleanup:
 python manage.py local clean      # stop & remove Oracle container
 ```
 
+Recover from `ORA-28000: the account is locked` (too many failed logins):
+
+```bash
+python manage.py local unlock     # unlock pdbadmin & reset failed-login counter
+```
+
 ### Oracle MCP Server (optional)
 
 Enables Claude Code to query the database directly via SQLcl's MCP server.
