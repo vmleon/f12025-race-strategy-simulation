@@ -1,6 +1,7 @@
 package dev.victormartin.telemetry.engineer;
 
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.PriorityQueue;
 
 /**
@@ -43,8 +44,26 @@ public class RaceEngineerQueue {
             normalDelivered = 0;
         }
 
-        // Drain expired messages (lap-based TTL and wall-clock TTL)
-        queue.removeIf(m -> m.isExpired(currentLap) || m.isStale());
+        // Drain expired messages (lap-based TTL and wall-clock TTL), logging each drop
+        long now = System.currentTimeMillis();
+        Iterator<EngineerMessage> it = queue.iterator();
+        while (it.hasNext()) {
+            EngineerMessage m = it.next();
+            boolean ttlLapsExpired = m.isExpired(currentLap);
+            boolean wallClockStale = m.isStale();
+            if (ttlLapsExpired || wallClockStale) {
+                String reason = ttlLapsExpired ? "expired_ttl_laps" : "expired_wall_clock";
+                System.out.println("MESSAGE_DROP reason=" + reason
+                        + " priority=" + m.priority()
+                        + " ageMs=" + (now - m.createdAt())
+                        + " zoneIndex=" + zoneIndex
+                        + " createdAtLap=" + m.createdAtLap()
+                        + " currentLap=" + currentLap
+                        + " ttlLaps=" + m.ttlLaps()
+                        + " normalDeliveredThisZone=" + normalDelivered);
+                it.remove();
+            }
+        }
 
         // Try to find a deliverable message
         if (queue.isEmpty()) return null;
