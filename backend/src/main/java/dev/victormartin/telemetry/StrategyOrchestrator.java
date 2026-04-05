@@ -190,13 +190,24 @@ public class StrategyOrchestrator {
                 }
             }
 
+            int playerTyreSets = 0;
+            for (var car : snapshot.cars()) {
+                if (car.carIndex() == playerCarIndex) {
+                    playerTyreSets = car.tyreSets().size();
+                    break;
+                }
+            }
+
             String jobId = UUID.randomUUID().toString().substring(0, 8);
             String payload = objectMapper.writeValueAsString(Map.of(
                     "jobId", jobId,
                     "playerCarIndex", playerCarIndex,
                     "raceSnapshot", snapshot));
             queueService.enqueue("PDBADMIN.STRATEGY_REQUEST", payload);
-            System.out.println("StrategyOrchestrator: enqueued strategy request " + jobId);
+            System.out.println("StrategyOrchestrator: enqueued strategy request " + jobId
+                    + " (lap=" + snapshot.currentLap() + "/" + snapshot.totalLaps()
+                    + ", playerCarIndex=" + playerCarIndex
+                    + ", playerTyreSets=" + playerTyreSets + ")");
         } catch (Exception e) {
             System.err.println("StrategyOrchestrator: failed to enqueue: " + e.getMessage());
         }

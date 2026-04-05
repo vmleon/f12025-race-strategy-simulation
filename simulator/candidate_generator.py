@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from simulator.models import (
     CarSnapshot,
     PitStop,
@@ -7,6 +9,8 @@ from simulator.models import (
     StrategyCandidate,
     TyreSetInfo,
 )
+
+logger = logging.getLogger("simulator")
 
 # Visual compound codes
 SOFT = 16
@@ -28,10 +32,15 @@ def generate_candidates(
     """Generate plausible pit strategy candidates based on race state and tyre availability."""
     player = _find_player(snapshot.cars, player_car_index)
     if player is None:
+        logger.info("candidate_generator: player car %d not found in snapshot", player_car_index)
         return []
 
     remaining_laps = snapshot.total_laps - snapshot.current_lap
     if remaining_laps <= 1:
+        logger.info(
+            "candidate_generator: remaining_laps=%d (current=%d, total=%d) too few, returning empty",
+            remaining_laps, snapshot.current_lap, snapshot.total_laps,
+        )
         return []
 
     current_compound = player.tyre_compound
@@ -41,6 +50,13 @@ def generate_candidates(
     fitted_sets = [ts for ts in player.tyre_sets if ts.fitted]
     fitted_usable_life = fitted_sets[0].usable_life if fitted_sets else 0
 
+    logger.info(
+        "candidate_generator: player=%d remaining_laps=%d current_compound=%d pit_stops=%d "
+        "tyre_sets=%d fitted_usable_life=%d",
+        player_car_index, remaining_laps, current_compound, player.num_pit_stops,
+        len(player.tyre_sets), fitted_usable_life,
+    )
+
     candidates: list[StrategyCandidate] = []
 
     # 0-stop: only if two-compound rule is already met and tyres can last
@@ -48,7 +64,20 @@ def generate_candidates(
         candidates.append(StrategyCandidate(label="No stop", stops=[]))
 
     available_compounds = _get_available_compounds(player.tyre_sets)
+    logger.info(
+        "candidate_generator: available_compounds=%s (from %d tyre_sets)",
+        available_compounds, len(player.tyre_sets),
+    )
     if not available_compounds:
+        if player.tyre_sets:
+            # Dump per-set details so we can see why all were filtered out
+            for i, ts in enumerate(player.tyre_sets):
+                logger.info(
+                    "  tyre_set[%d] visual=%d available=%s fitted=%s lap_delta=%d usable_life=%d",
+                    i, ts.visual_tyre_compound, ts.available, ts.fitted,
+                    ts.lap_delta_time, ts.usable_life,
+                )
+        logger.info("candidate_generator: returning %d candidates (no available compounds)", len(candidates))
         return candidates
 
     # 1-stop strategies
@@ -105,6 +134,8 @@ def generate_candidates(
                             )
                         )
 
+    pre_truncate = len(candidates)
+
     # Truncate to max candidates, preferring 1-stop over 2-stop
     if len(candidates) > MAX_CANDIDATES:
         zero_one = [c for c in candidates if len(c.stops) <= 1]
@@ -112,7 +143,12 @@ def generate_candidates(
         remaining_slots = MAX_CANDIDATES - len(zero_one)
         candidates = zero_one + two[:remaining_slots]
 
-    return candidates[:MAX_CANDIDATES]
+    final = candidates[:MAX_CANDIDATES]
+    logger.info(
+        "candidate_generator: generated %d candidates (pre-truncate=%d, after cap=%d)",
+        len(final), pre_truncate, len(final),
+    )
+    return final
 
 
 def _find_player(cars: list[CarSnapshot], index: int) -> CarSnapshot | None:
