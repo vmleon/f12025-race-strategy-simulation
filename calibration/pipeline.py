@@ -189,16 +189,16 @@ def _fit_pit_stop_duration(
 
     arr = np.array(time_losses, dtype=float)
     m = mean(arr)
-    v = variance(arr)
+    sd = sqrt(variance(arr))
 
     db.insert_calibration_coefficient(
         conn, track_id, "pit_stop_time_loss", regime, None, "mean",
         m, None, None, 0, session_count, len(time_losses), settings_hash, now)
     db.insert_calibration_coefficient(
-        conn, track_id, "pit_stop_time_loss_variance", regime, None, "variance",
-        v, None, None, 0, session_count, len(time_losses), settings_hash, now)
+        conn, track_id, "pit_stop_time_loss_stddev", regime, None, "stddev",
+        sd, None, None, 0, session_count, len(time_losses), settings_hash, now)
 
-    print(f"  pit_stop_time_loss: mean={m:.0f}ms, var={v:.0f}, n={len(time_losses)}")
+    print(f"  pit_stop_time_loss: mean={m:.0f}ms, sd={sd:.0f}ms, n={len(time_losses)}")
 
 
 def _group_pit_stops(pit_sectors: list[tuple]) -> list[list[tuple]]:

@@ -266,9 +266,9 @@ class MonteCarloEngine:
         pit_mean = self.coefficients.get("pit_stop_time_loss", car.regime)
         if pit_mean <= 0:
             pit_mean = PIT_STOP_TIME_MS
-        pit_var = self.coefficients.get("pit_stop_time_loss_variance", car.regime)
-        if pit_var > 0:
-            pit_time = self.rng.gauss(pit_mean, math.sqrt(pit_var))
+        pit_sd = self.coefficients.get("pit_stop_time_loss_stddev", car.regime)
+        if pit_sd > 0:
+            pit_time = self.rng.gauss(pit_mean, pit_sd)
             pit_time = max(pit_time, pit_mean * 0.5)
         else:
             pit_time = pit_mean
