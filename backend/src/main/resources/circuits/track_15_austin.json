@@ -3,10 +3,10 @@
   "name": "Austin",
   "totalLapDistanceMetres": 5513.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
-    { "fromMetres": 1500, "toMetres": 1850, "label": "Back straight" },
-    { "fromMetres": 3000, "toMetres": 3350, "label": "Straight after turn 11" },
-    { "fromMetres": 4300, "toMetres": 4600, "label": "Straight before turn 16" },
-    { "fromMetres": 5000, "toMetres": 5300, "label": "Approach to final corner" }
+    { "fromMetres": 0, "toMetres": 330, "label": "Start/finish straight" },
+    { "fromMetres": 1465, "toMetres": 1885, "label": "Back straight" },
+    { "fromMetres": 2965, "toMetres": 3385, "label": "Straight after turn 11" },
+    { "fromMetres": 4270, "toMetres": 4630, "label": "Straight before turn 16" },
+    { "fromMetres": 4970, "toMetres": 5330, "label": "Approach to final corner" }
   ]
 }

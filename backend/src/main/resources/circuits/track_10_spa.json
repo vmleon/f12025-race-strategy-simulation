@@ -3,9 +3,9 @@
   "name": "Spa-Francorchamps",
   "totalLapDistanceMetres": 7004.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 350, "label": "Start/finish straight" },
-    { "fromMetres": 1900, "toMetres": 2300, "label": "Kemmel straight" },
-    { "fromMetres": 4100, "toMetres": 4500, "label": "Blanchimont approach" },
-    { "fromMetres": 5800, "toMetres": 6200, "label": "Straight before Bus Stop" }
+    { "fromMetres": 0, "toMetres": 385, "label": "Start/finish straight" },
+    { "fromMetres": 1860, "toMetres": 2340, "label": "Kemmel straight" },
+    { "fromMetres": 4060, "toMetres": 4540, "label": "Blanchimont approach" },
+    { "fromMetres": 5760, "toMetres": 6240, "label": "Straight before Bus Stop" }
   ]
 }

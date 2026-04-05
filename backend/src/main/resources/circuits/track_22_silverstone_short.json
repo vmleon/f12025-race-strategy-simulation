@@ -3,8 +3,8 @@
   "name": "Silverstone Short",
   "totalLapDistanceMetres": 3660.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
-    { "fromMetres": 1300, "toMetres": 1600, "label": "Wellington straight" },
-    { "fromMetres": 2800, "toMetres": 3100, "label": "Approach to final corner" }
+    { "fromMetres": 0, "toMetres": 330, "label": "Start/finish straight" },
+    { "fromMetres": 1270, "toMetres": 1630, "label": "Wellington straight" },
+    { "fromMetres": 2770, "toMetres": 3130, "label": "Approach to final corner" }
   ]
 }

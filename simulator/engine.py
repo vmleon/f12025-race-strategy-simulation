@@ -495,6 +495,7 @@ class MonteCarloEngine:
 # ── helpers ──────────────────────────────────────────────────────────────
 
 def _sigmoid(x: float) -> float:
+    x = max(-50.0, min(50.0, x))
     return 1.0 / (1.0 + math.exp(-x))
 
 

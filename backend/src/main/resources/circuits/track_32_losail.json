@@ -3,9 +3,9 @@
   "name": "Losail",
   "totalLapDistanceMetres": 5380.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 350, "label": "Start/finish straight" },
-    { "fromMetres": 1500, "toMetres": 1800, "label": "Back straight" },
-    { "fromMetres": 2900, "toMetres": 3200, "label": "Straight after turn 10" },
-    { "fromMetres": 4400, "toMetres": 4700, "label": "Approach to final turn" }
+    { "fromMetres": 0, "toMetres": 385, "label": "Start/finish straight" },
+    { "fromMetres": 1470, "toMetres": 1830, "label": "Back straight" },
+    { "fromMetres": 2870, "toMetres": 3230, "label": "Straight after turn 10" },
+    { "fromMetres": 4370, "toMetres": 4730, "label": "Approach to final turn" }
   ]
 }

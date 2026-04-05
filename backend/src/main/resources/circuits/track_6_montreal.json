@@ -3,9 +3,9 @@
   "name": "Montreal",
   "totalLapDistanceMetres": 4361.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
-    { "fromMetres": 1400, "toMetres": 1700, "label": "Droit du Casino straight" },
-    { "fromMetres": 2600, "toMetres": 2950, "label": "Back straight" },
-    { "fromMetres": 3700, "toMetres": 4000, "label": "Approach to Wall of Champions" }
+    { "fromMetres": 0, "toMetres": 330, "label": "Start/finish straight" },
+    { "fromMetres": 1370, "toMetres": 1730, "label": "Droit du Casino straight" },
+    { "fromMetres": 2565, "toMetres": 2985, "label": "Back straight" },
+    { "fromMetres": 3670, "toMetres": 4030, "label": "Approach to Wall of Champions" }
   ]
 }

@@ -3,9 +3,9 @@
   "name": "Zandvoort",
   "totalLapDistanceMetres": 4259.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
-    { "fromMetres": 1400, "toMetres": 1700, "label": "Straight after Scheivlak" },
-    { "fromMetres": 2600, "toMetres": 2900, "label": "Back straight" },
-    { "fromMetres": 3700, "toMetres": 3950, "label": "Approach to final banked turn" }
+    { "fromMetres": 0, "toMetres": 330, "label": "Start/finish straight" },
+    { "fromMetres": 1370, "toMetres": 1730, "label": "Straight after Scheivlak" },
+    { "fromMetres": 2570, "toMetres": 2930, "label": "Back straight" },
+    { "fromMetres": 3675, "toMetres": 3975, "label": "Approach to final banked turn" }
   ]
 }

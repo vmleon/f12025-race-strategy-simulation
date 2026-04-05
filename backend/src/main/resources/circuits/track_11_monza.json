@@ -3,10 +3,10 @@
   "name": "Monza",
   "totalLapDistanceMetres": 5793.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 400, "label": "Start/finish straight" },
-    { "fromMetres": 700, "toMetres": 1100, "label": "Curva Grande straight" },
-    { "fromMetres": 1800, "toMetres": 2200, "label": "Straight to Lesmo" },
-    { "fromMetres": 3200, "toMetres": 3800, "label": "Back straight" },
-    { "fromMetres": 4700, "toMetres": 5200, "label": "Main straight approach" }
+    { "fromMetres": 0, "toMetres": 440, "label": "Start/finish straight" },
+    { "fromMetres": 660, "toMetres": 1140, "label": "Curva Grande straight" },
+    { "fromMetres": 1760, "toMetres": 2240, "label": "Straight to Lesmo" },
+    { "fromMetres": 3140, "toMetres": 3860, "label": "Back straight" },
+    { "fromMetres": 4650, "toMetres": 5250, "label": "Main straight approach" }
   ]
 }

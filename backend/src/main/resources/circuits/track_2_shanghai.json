@@ -3,9 +3,9 @@
   "name": "Shanghai",
   "totalLapDistanceMetres": 5451.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 350, "label": "Start/finish straight" },
-    { "fromMetres": 1700, "toMetres": 2050, "label": "Back straight" },
-    { "fromMetres": 3400, "toMetres": 3700, "label": "Straight before hairpin" },
-    { "fromMetres": 4700, "toMetres": 5000, "label": "Approach to final corner" }
+    { "fromMetres": 0, "toMetres": 385, "label": "Start/finish straight" },
+    { "fromMetres": 1665, "toMetres": 2085, "label": "Back straight" },
+    { "fromMetres": 3370, "toMetres": 3730, "label": "Straight before hairpin" },
+    { "fromMetres": 4670, "toMetres": 5030, "label": "Approach to final corner" }
   ]
 }

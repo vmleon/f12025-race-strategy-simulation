@@ -3,9 +3,9 @@
   "name": "Bahrain",
   "totalLapDistanceMetres": 5412.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 350, "label": "Start/finish straight" },
-    { "fromMetres": 1050, "toMetres": 1400, "label": "Straight after Turn 4" },
-    { "fromMetres": 2900, "toMetres": 3250, "label": "Back straight" },
-    { "fromMetres": 4600, "toMetres": 4900, "label": "Straight before Turn 13" }
+    { "fromMetres": 0, "toMetres": 385, "label": "Start/finish straight" },
+    { "fromMetres": 1015, "toMetres": 1435, "label": "Straight after Turn 4" },
+    { "fromMetres": 2865, "toMetres": 3285, "label": "Back straight" },
+    { "fromMetres": 4570, "toMetres": 4930, "label": "Straight before Turn 13" }
   ]
 }

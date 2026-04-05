@@ -3,10 +3,10 @@
   "name": "Jeddah",
   "totalLapDistanceMetres": 6174.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 400, "label": "Start/finish straight" },
-    { "fromMetres": 1700, "toMetres": 2050, "label": "Straight after turn 4" },
-    { "fromMetres": 3200, "toMetres": 3550, "label": "Straight along the coast" },
-    { "fromMetres": 4500, "toMetres": 4800, "label": "Straight before turn 22" },
-    { "fromMetres": 5600, "toMetres": 5900, "label": "Approach to final corner" }
+    { "fromMetres": 0, "toMetres": 440, "label": "Start/finish straight" },
+    { "fromMetres": 1665, "toMetres": 2085, "label": "Straight after turn 4" },
+    { "fromMetres": 3165, "toMetres": 3585, "label": "Straight along the coast" },
+    { "fromMetres": 4470, "toMetres": 4830, "label": "Straight before turn 22" },
+    { "fromMetres": 5570, "toMetres": 5930, "label": "Approach to final corner" }
   ]
 }

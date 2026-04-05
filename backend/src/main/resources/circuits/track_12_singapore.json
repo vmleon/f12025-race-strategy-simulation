@@ -3,9 +3,9 @@
   "name": "Singapore",
   "totalLapDistanceMetres": 4940.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
-    { "fromMetres": 1400, "toMetres": 1700, "label": "Raffles Boulevard straight" },
-    { "fromMetres": 2800, "toMetres": 3100, "label": "Republic Boulevard straight" },
-    { "fromMetres": 4200, "toMetres": 4500, "label": "Approach to final turns" }
+    { "fromMetres": 0, "toMetres": 330, "label": "Start/finish straight" },
+    { "fromMetres": 1370, "toMetres": 1730, "label": "Raffles Boulevard straight" },
+    { "fromMetres": 2770, "toMetres": 3130, "label": "Republic Boulevard straight" },
+    { "fromMetres": 4170, "toMetres": 4530, "label": "Approach to final turns" }
   ]
 }

@@ -3,10 +3,10 @@
   "name": "Las Vegas",
   "totalLapDistanceMetres": 6201.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 400, "label": "Start/finish straight" },
-    { "fromMetres": 1600, "toMetres": 1950, "label": "Las Vegas Boulevard straight" },
-    { "fromMetres": 3000, "toMetres": 3400, "label": "Koval straight" },
-    { "fromMetres": 4500, "toMetres": 4800, "label": "Straight before turn 12" },
-    { "fromMetres": 5600, "toMetres": 5900, "label": "Approach to final corner" }
+    { "fromMetres": 0, "toMetres": 440, "label": "Start/finish straight" },
+    { "fromMetres": 1565, "toMetres": 1985, "label": "Las Vegas Boulevard straight" },
+    { "fromMetres": 2960, "toMetres": 3440, "label": "Koval straight" },
+    { "fromMetres": 4470, "toMetres": 4830, "label": "Straight before turn 12" },
+    { "fromMetres": 5570, "toMetres": 5930, "label": "Approach to final corner" }
   ]
 }

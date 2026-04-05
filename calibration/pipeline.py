@@ -82,16 +82,17 @@ def _fit_base_pace(
         times = np.array([r[db._COL_SECTOR_TIME_MS] for r in source], dtype=float)
         m = mean(times)
         v = variance(times)
-        std_error = sqrt(v / len(times))
+        sd = sqrt(v)
+        std_error = sd / sqrt(len(times))
 
         db.insert_calibration_coefficient(
             conn, track_id, "base_pace_mean", regime, sector, "mean",
             m, std_error, None, 0, session_count, len(times), settings_hash, now)
         db.insert_calibration_coefficient(
-            conn, track_id, "base_pace_variance", regime, sector, "variance",
-            v, None, None, 0, session_count, len(times), settings_hash, now)
+            conn, track_id, "base_pace_std_dev", regime, sector, "std_dev",
+            sd, None, None, 0, session_count, len(times), settings_hash, now)
 
-        print(f"  base_pace sector {sector}: mean={m:.1f}ms, var={v:.1f}, n={len(times)} (clean={len(clean)})")
+        print(f"  base_pace sector {sector}: mean={m:.1f}ms, sd={sd:.1f}ms, n={len(times)} (clean={len(clean)})")
 
 
 # ── tyre degradation ─────────────────────────────────────────────────

@@ -3,9 +3,9 @@
   "name": "Melbourne",
   "totalLapDistanceMetres": 5303.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
-    { "fromMetres": 1100, "toMetres": 1450, "label": "Lakeside Drive straight" },
-    { "fromMetres": 2700, "toMetres": 3050, "label": "Back straight" },
-    { "fromMetres": 4400, "toMetres": 4700, "label": "Approach to final complex" }
+    { "fromMetres": 0, "toMetres": 330, "label": "Start/finish straight" },
+    { "fromMetres": 1065, "toMetres": 1485, "label": "Lakeside Drive straight" },
+    { "fromMetres": 2665, "toMetres": 3085, "label": "Back straight" },
+    { "fromMetres": 4370, "toMetres": 4730, "label": "Approach to final complex" }
   ]
 }

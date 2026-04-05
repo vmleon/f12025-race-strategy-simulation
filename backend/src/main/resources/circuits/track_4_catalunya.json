@@ -3,9 +3,9 @@
   "name": "Catalunya",
   "totalLapDistanceMetres": 4675.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
-    { "fromMetres": 1000, "toMetres": 1300, "label": "Straight after turn 5" },
-    { "fromMetres": 2600, "toMetres": 2900, "label": "Back straight" },
-    { "fromMetres": 3900, "toMetres": 4200, "label": "Straight before final chicane" }
+    { "fromMetres": 0, "toMetres": 330, "label": "Start/finish straight" },
+    { "fromMetres": 970, "toMetres": 1330, "label": "Straight after turn 5" },
+    { "fromMetres": 2570, "toMetres": 2930, "label": "Back straight" },
+    { "fromMetres": 3870, "toMetres": 4230, "label": "Straight before final chicane" }
   ]
 }

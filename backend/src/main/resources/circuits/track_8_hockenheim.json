@@ -3,9 +3,9 @@
   "name": "Hockenheim",
   "totalLapDistanceMetres": 4574.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
-    { "fromMetres": 1200, "toMetres": 1500, "label": "Straight after turn 2" },
-    { "fromMetres": 2500, "toMetres": 2800, "label": "Parabolika straight" },
-    { "fromMetres": 3800, "toMetres": 4100, "label": "Approach to Sachs Kurve" }
+    { "fromMetres": 0, "toMetres": 330, "label": "Start/finish straight" },
+    { "fromMetres": 1170, "toMetres": 1530, "label": "Straight after turn 2" },
+    { "fromMetres": 2470, "toMetres": 2830, "label": "Parabolika straight" },
+    { "fromMetres": 3770, "toMetres": 4130, "label": "Approach to Sachs Kurve" }
   ]
 }

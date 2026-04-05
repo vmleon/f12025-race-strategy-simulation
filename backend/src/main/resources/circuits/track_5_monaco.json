@@ -3,8 +3,8 @@
   "name": "Monaco",
   "totalLapDistanceMetres": 3337.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 250, "label": "Start/finish straight" },
-    { "fromMetres": 1100, "toMetres": 1400, "label": "Tunnel straight" },
-    { "fromMetres": 2500, "toMetres": 2750, "label": "Straight before Rascasse" }
+    { "fromMetres": 0, "toMetres": 275, "label": "Start/finish straight" },
+    { "fromMetres": 1070, "toMetres": 1430, "label": "Tunnel straight" },
+    { "fromMetres": 2475, "toMetres": 2775, "label": "Straight before Rascasse" }
   ]
 }

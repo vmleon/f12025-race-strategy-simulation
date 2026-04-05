@@ -3,9 +3,9 @@
   "name": "Interlagos",
   "totalLapDistanceMetres": 4309.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
-    { "fromMetres": 900, "toMetres": 1200, "label": "Reta Oposta back straight" },
-    { "fromMetres": 2400, "toMetres": 2700, "label": "Straight after Mergulho" },
-    { "fromMetres": 3600, "toMetres": 3900, "label": "Approach to Juncao" }
+    { "fromMetres": 0, "toMetres": 330, "label": "Start/finish straight" },
+    { "fromMetres": 870, "toMetres": 1230, "label": "Reta Oposta back straight" },
+    { "fromMetres": 2370, "toMetres": 2730, "label": "Straight after Mergulho" },
+    { "fromMetres": 3570, "toMetres": 3930, "label": "Approach to Juncao" }
   ]
 }

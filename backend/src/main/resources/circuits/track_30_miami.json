@@ -3,10 +3,10 @@
   "name": "Miami",
   "totalLapDistanceMetres": 5412.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 350, "label": "Start/finish straight" },
-    { "fromMetres": 1500, "toMetres": 1800, "label": "Straight after turn 4" },
-    { "fromMetres": 2800, "toMetres": 3150, "label": "Back straight" },
-    { "fromMetres": 4200, "toMetres": 4500, "label": "Straight through marina section" },
-    { "fromMetres": 5000, "toMetres": 5250, "label": "Approach to final corner" }
+    { "fromMetres": 0, "toMetres": 385, "label": "Start/finish straight" },
+    { "fromMetres": 1470, "toMetres": 1830, "label": "Straight after turn 4" },
+    { "fromMetres": 2765, "toMetres": 3185, "label": "Back straight" },
+    { "fromMetres": 4170, "toMetres": 4530, "label": "Straight through marina section" },
+    { "fromMetres": 4975, "toMetres": 5275, "label": "Approach to final corner" }
   ]
 }

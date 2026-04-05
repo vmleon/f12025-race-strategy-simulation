@@ -86,11 +86,11 @@ class CircuitSafeZoneServiceTest {
 
     @Test
     void lagOffsetScalesWithSpeed() {
-        // Melbourne Lakeside Drive starts at 1100m.
-        // At 50 km/h = 13.9 m/s, offset = 20.8m → effective from = 1079.2m
-        // 1085m is in the offset zone
-        assertTrue(service.isSafeToDeliver(0, 1085f, 50));
-        // At 0 km/h: no offset → 1085m is outside zone (starts at 1100m)
-        assertFalse(service.isSafeToDeliver(0, 1085f, 0));
+        // Melbourne Lakeside Drive starts at 1065m.
+        // At 50 km/h = 13.9 m/s, offset = 20.8m → effective from = 1044.2m
+        // 1050m is in the offset zone
+        assertTrue(service.isSafeToDeliver(0, 1050f, 50));
+        // At 0 km/h: no offset → 1050m is outside zone (starts at 1065m)
+        assertFalse(service.isSafeToDeliver(0, 1050f, 0));
     }
 }

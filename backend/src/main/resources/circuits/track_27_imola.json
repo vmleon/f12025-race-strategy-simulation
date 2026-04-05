@@ -3,9 +3,9 @@
   "name": "Imola",
   "totalLapDistanceMetres": 4909.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 300, "label": "Start/finish straight" },
-    { "fromMetres": 1300, "toMetres": 1600, "label": "Straight to Villeneuve chicane" },
-    { "fromMetres": 2600, "toMetres": 2900, "label": "Rivazza straight" },
-    { "fromMetres": 4200, "toMetres": 4500, "label": "Approach to final chicane" }
+    { "fromMetres": 0, "toMetres": 330, "label": "Start/finish straight" },
+    { "fromMetres": 1270, "toMetres": 1630, "label": "Straight to Villeneuve chicane" },
+    { "fromMetres": 2570, "toMetres": 2930, "label": "Rivazza straight" },
+    { "fromMetres": 4170, "toMetres": 4530, "label": "Approach to final chicane" }
   ]
 }

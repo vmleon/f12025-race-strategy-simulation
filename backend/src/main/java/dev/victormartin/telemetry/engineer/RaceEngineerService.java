@@ -91,7 +91,7 @@ public class RaceEngineerService {
             detectCarBehind(session, carsNode, playerCar, currentLap, trackLength);
             detectLapCountdown(session, currentLap, totalLaps);
             detectTyreCondition(session, playerCar, currentLap);
-            detectPositionChange(session, playerCar, currentLap);
+            detectPositionChange(session, carsNode, playerCar, currentLap, trackLength);
             detectPitStopCompleted(session, playerCar, currentLap);
             if (session.drsAssist == 0) {
                 detectCarAhead(session, carsNode, playerCar, currentLap, trackLength);
@@ -102,6 +102,7 @@ public class RaceEngineerService {
                 detectErsMode(session, playerCar, currentLap);
             }
             detectWeatherChange(session, state, currentLap);
+            detectPeriodicSituationalAwareness(session, carsNode, playerCar, currentLap, totalLaps, trackLength);
             detectRaceFinish(session, carsNode, playerCar, currentLap);
 
             // Try to deliver a message
@@ -263,6 +264,7 @@ public class RaceEngineerService {
                             Priority.HIGH,
                             behindName + " closing from behind. " + String.format("%.1f", gapSeconds) + " seconds back. Defend your position.",
                             System.currentTimeMillis(), currentLap, 1));
+                    session.lastReactiveAwarenessLap = currentLap;
                 }
                 session.previousGapBehindSeconds = gapSeconds;
             }
@@ -307,6 +309,7 @@ public class RaceEngineerService {
                             Priority.HIGH,
                             "You have DRS. Attack.",
                             System.currentTimeMillis(), currentLap, 1));
+                    session.lastReactiveAwarenessLap = currentLap;
                 }
                 session.previousGapAheadSeconds = gapSeconds;
             }
@@ -370,16 +373,58 @@ public class RaceEngineerService {
         session.previousTyreAge = tyreAge;
     }
 
-    private void detectPositionChange(SessionEngineerState session, JsonNode playerCar, int currentLap) {
+    private void detectPositionChange(SessionEngineerState session, JsonNode carsNode,
+                                       JsonNode playerCar, int currentLap, int trackLength) {
         int currentPos = playerCar.has("pos") ? playerCar.get("pos").asInt() : 0;
 
         if (session.previousPlayerPosition > 0 && currentPos < session.previousPlayerPosition) {
+            String text;
+            if (currentPos <= 1) {
+                text = "P1. Leading now.";
+            } else {
+                JsonNode carAhead = findCarAtPosition(carsNode, currentPos - 1);
+                String name = carAhead != null && carAhead.has("name")
+                        ? carAhead.get("name").asText() : "Car ahead";
+                float gapSeconds = gapToCarSeconds(playerCar, carAhead, trackLength);
+                text = gapSeconds >= 0
+                        ? "P" + currentPos + ". " + name + " is next, "
+                                + String.format("%.1f", gapSeconds) + "s up the road."
+                        : "P" + currentPos + ". " + name + " is next.";
+            }
             session.queue.enqueue(new EngineerMessage(
-                    Priority.IMMEDIATE,
-                    "Good move. P" + currentPos + ". Keep it clean.",
+                    Priority.IMMEDIATE, text,
+                    System.currentTimeMillis(), currentLap, 1));
+        } else if (session.previousPlayerPosition > 0 && currentPos > session.previousPlayerPosition) {
+            JsonNode carAhead = findCarAtPosition(carsNode, currentPos - 1);
+            String name = carAhead != null && carAhead.has("name")
+                    ? carAhead.get("name").asText() : "Car ahead";
+            session.queue.enqueue(new EngineerMessage(
+                    Priority.HIGH,
+                    "Lost a place. P" + currentPos + ". " + name + " is now ahead.",
                     System.currentTimeMillis(), currentLap, 1));
         }
         session.previousPlayerPosition = currentPos;
+    }
+
+    private static JsonNode findCarAtPosition(JsonNode carsNode, int position) {
+        for (JsonNode car : carsNode) {
+            int pos = car.has("pos") ? car.get("pos").asInt() : 0;
+            if (pos == position) return car;
+        }
+        return null;
+    }
+
+    /** Returns gap in seconds between player and the given car (car ahead on track), or -1 if not computable. */
+    private static float gapToCarSeconds(JsonNode playerCar, JsonNode otherCar, int trackLength) {
+        if (otherCar == null) return -1f;
+        int playerLap = playerCar.has("lap") ? playerCar.get("lap").asInt() : 0;
+        int otherLap = otherCar.has("lap") ? otherCar.get("lap").asInt() : 0;
+        if (playerLap != otherLap) return -1f;
+        float playerDist = playerCar.has("lapDist") ? (float) playerCar.get("lapDist").asDouble() : 0f;
+        float otherDist = otherCar.has("lapDist") ? (float) otherCar.get("lapDist").asDouble() : 0f;
+        float gap = otherDist - playerDist;
+        if (gap < 0) gap += trackLength;
+        return gap / 55f;
     }
 
     private void detectPitStopCompleted(SessionEngineerState session, JsonNode playerCar, int currentLap) {
@@ -488,6 +533,45 @@ public class RaceEngineerService {
             session.weatherAlertSent = false;
         }
         session.previousWeather = weather;
+    }
+
+    private static final int PERIODIC_AWARENESS_EVERY_N_LAPS = 3;
+
+    private void detectPeriodicSituationalAwareness(SessionEngineerState session, JsonNode carsNode,
+                                                     JsonNode playerCar, int currentLap, int totalLaps,
+                                                     int trackLength) {
+        if (currentLap <= 1) return;
+        if (totalLaps > 0 && currentLap >= totalLaps) return;
+        if (currentLap % PERIODIC_AWARENESS_EVERY_N_LAPS != 0) return;
+        if (session.lastPeriodicAwarenessLap == currentLap) return;
+        if (session.lastReactiveAwarenessLap == currentLap) return;
+
+        int playerPos = playerCar.has("pos") ? playerCar.get("pos").asInt() : 0;
+        JsonNode carAhead = playerPos > 1 ? findCarAtPosition(carsNode, playerPos - 1) : null;
+        JsonNode carBehind = findCarAtPosition(carsNode, playerPos + 1);
+        if (carAhead == null && carBehind == null) return;
+
+        StringBuilder sb = new StringBuilder("P").append(playerPos).append(".");
+        if (carAhead != null) {
+            float gapAhead = gapToCarSeconds(playerCar, carAhead, trackLength);
+            String nameAhead = carAhead.has("name") ? carAhead.get("name").asText() : "car ahead";
+            if (gapAhead >= 0) {
+                sb.append(" ").append(String.format("%.1f", gapAhead)).append("s to ").append(nameAhead).append(".");
+            }
+        }
+        if (carBehind != null) {
+            // Swap args so gap is carBehind-to-player (positive).
+            float gapBehind = gapToCarSeconds(carBehind, playerCar, trackLength);
+            String nameBehind = carBehind.has("name") ? carBehind.get("name").asText() : "car behind";
+            if (gapBehind >= 0) {
+                sb.append(" ").append(String.format("%.1f", gapBehind)).append("s to ").append(nameBehind).append(".");
+            }
+        }
+
+        session.queue.enqueue(new EngineerMessage(
+                Priority.NORMAL, sb.toString(),
+                System.currentTimeMillis(), currentLap, 2));
+        session.lastPeriodicAwarenessLap = currentLap;
     }
 
     private void detectRaceFinish(SessionEngineerState session, JsonNode carsNode, JsonNode playerCar, int currentLap) {
@@ -631,6 +715,10 @@ public class RaceEngineerService {
         // Race finish
         boolean chequeredFlag = false;
         boolean raceFinished = false;
+
+        // Periodic situational awareness dedup
+        int lastReactiveAwarenessLap = 0;
+        int lastPeriodicAwarenessLap = 0;
 
         SessionEngineerState(String sessionUid, int trackId, int ersAssist, int drsAssist) {
             this.sessionUid = sessionUid;

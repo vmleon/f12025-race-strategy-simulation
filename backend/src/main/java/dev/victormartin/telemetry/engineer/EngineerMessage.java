@@ -7,8 +7,10 @@ public record EngineerMessage(
         int createdAtLap,
         int ttlLaps
 ) {
-    /** Wall-clock TTL: discard messages older than this before delivery. */
-    static final long TTL_MILLIS = 8_000;
+    /** Wall-clock TTL per priority: discard messages older than this before delivery. */
+    static final long TTL_MILLIS_IMMEDIATE = 8_000;
+    static final long TTL_MILLIS_HIGH = 30_000;
+    static final long TTL_MILLIS_NORMAL = 60_000;
 
     public enum Priority {
         IMMEDIATE,
@@ -21,6 +23,11 @@ public record EngineerMessage(
     }
 
     public boolean isStale() {
-        return System.currentTimeMillis() - createdAt > TTL_MILLIS;
+        long ttl = switch (priority) {
+            case IMMEDIATE -> TTL_MILLIS_IMMEDIATE;
+            case HIGH -> TTL_MILLIS_HIGH;
+            case NORMAL -> TTL_MILLIS_NORMAL;
+        };
+        return System.currentTimeMillis() - createdAt > ttl;
     }
 }

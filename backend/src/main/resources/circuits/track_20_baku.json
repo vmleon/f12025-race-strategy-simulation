@@ -3,10 +3,10 @@
   "name": "Baku",
   "totalLapDistanceMetres": 6003.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 400, "label": "Start/finish straight" },
-    { "fromMetres": 1800, "toMetres": 2200, "label": "Main straight along seafront" },
-    { "fromMetres": 3200, "toMetres": 3500, "label": "Straight after old town" },
-    { "fromMetres": 4400, "toMetres": 4700, "label": "Straight before turn 15" },
-    { "fromMetres": 5400, "toMetres": 5700, "label": "Approach to final corner" }
+    { "fromMetres": 0, "toMetres": 440, "label": "Start/finish straight" },
+    { "fromMetres": 1760, "toMetres": 2240, "label": "Main straight along seafront" },
+    { "fromMetres": 3170, "toMetres": 3530, "label": "Straight after old town" },
+    { "fromMetres": 4370, "toMetres": 4730, "label": "Straight before turn 15" },
+    { "fromMetres": 5370, "toMetres": 5730, "label": "Approach to final corner" }
   ]
 }

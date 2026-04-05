@@ -3,9 +3,9 @@
   "name": "Portimao",
   "totalLapDistanceMetres": 4653.0,
   "safeZones": [
-    { "fromMetres": 0, "toMetres": 350, "label": "Start/finish straight" },
-    { "fromMetres": 1300, "toMetres": 1600, "label": "Straight after turn 5" },
-    { "fromMetres": 2500, "toMetres": 2800, "label": "Back straight" },
-    { "fromMetres": 3800, "toMetres": 4100, "label": "Approach to final turns" }
+    { "fromMetres": 0, "toMetres": 385, "label": "Start/finish straight" },
+    { "fromMetres": 1270, "toMetres": 1630, "label": "Straight after turn 5" },
+    { "fromMetres": 2470, "toMetres": 2830, "label": "Back straight" },
+    { "fromMetres": 3770, "toMetres": 4130, "label": "Approach to final turns" }
   ]
 }
