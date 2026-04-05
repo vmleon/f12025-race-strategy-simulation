@@ -23,6 +23,7 @@ public class RaceState {
     private int trackLength;
     private int ersAssist;
     private int drsAssist;
+    private int sessionType;
 
     // Per-car state
     private final CarState[] cars = new CarState[NUM_CARS];
@@ -106,6 +107,7 @@ public class RaceState {
         this.numWeatherForecastSamples = session.numWeatherForecastSamples;
         this.ersAssist = session.ersAssist;
         this.drsAssist = session.drsAssist;
+        this.sessionType = session.sessionType;
         this.sessionActive = true;
     }
 
@@ -193,6 +195,7 @@ public class RaceState {
             sessionEndSent = false;
             return "{\"type\":\"sessionStarted\",\"sessionUid\":\"" + Long.toHexString(sessionUid)
                     + "\",\"trackId\":" + trackId
+                    + ",\"sessionType\":" + sessionType
                     + ",\"ersAssist\":" + ersAssist
                     + ",\"drsAssist\":" + drsAssist + "}";
         }

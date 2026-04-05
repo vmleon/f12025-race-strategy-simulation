@@ -25,7 +25,7 @@ class RaceEngineerServicePitSuppressionTest {
             }
         };
         service = new RaceEngineerService(safeZoneService, handler);
-        service.onSessionStarted("test-session", 0, 1, 1);
+        service.onSessionStarted("test-session", 0, 10, 1, 1);
     }
 
     /** State JSON with configurable player pit status and pit count. */

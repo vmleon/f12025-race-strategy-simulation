@@ -35,8 +35,8 @@ public class RaceEngineerService {
 
     // -- session lifecycle -----------------------------------------------------
 
-    public void onSessionStarted(String sessionUid, int trackId, int ersAssist, int drsAssist) {
-        SessionEngineerState session = new SessionEngineerState(sessionUid, trackId, ersAssist, drsAssist);
+    public void onSessionStarted(String sessionUid, int trackId, int sessionType, int ersAssist, int drsAssist) {
+        SessionEngineerState session = new SessionEngineerState(sessionUid, trackId, sessionType, ersAssist, drsAssist);
         sessions.put(sessionUid, session);
         session.queue.enqueue(new EngineerMessage(
                 Priority.NORMAL,
@@ -85,25 +85,41 @@ public class RaceEngineerService {
             if (state.has("ersAssist")) session.ersAssist = state.get("ersAssist").asInt();
             if (state.has("drsAssist")) session.drsAssist = state.get("drsAssist").asInt();
 
-            // Detect changes and generate messages
+            // Detect changes and generate messages.
+            // Always-on detectors (apply to practice/quali/race): flags, penalties, tyre condition,
+            // per-corner wear, DRS/ERS mode changes, weather.
             detectFlagChanges(session, state, currentLap);
             detectPenalties(session, playerCar, currentLap);
-            detectCarBehind(session, carsNode, playerCar, currentLap, trackLength);
-            detectLapCountdown(session, currentLap, totalLaps);
             detectTyreCondition(session, playerCar, currentLap);
-            detectPositionChange(session, carsNode, playerCar, currentLap, trackLength);
-            detectPitStopCompleted(session, carsNode, playerCar, currentLap, trackLength);
+            detectPerCornerTyreWear(session, playerCar, currentLap);
             if (session.drsAssist == 0) {
-                detectCarAhead(session, carsNode, playerCar, currentLap, trackLength);
                 detectDrs(session, playerCar, currentLap);
             }
-            detectFuelLevel(session, playerCar, currentLap, totalLaps);
             if (session.ersAssist == 0) {
                 detectErsMode(session, playerCar, currentLap);
             }
             detectWeatherChange(session, state, currentLap);
-            detectPeriodicSituationalAwareness(session, carsNode, playerCar, currentLap, totalLaps, trackLength);
-            detectRaceFinish(session, carsNode, playerCar, currentLap);
+
+            // Race-only detectors.
+            if (session.isRace()) {
+                detectCarBehind(session, carsNode, playerCar, currentLap, trackLength);
+                detectLapCountdown(session, currentLap, totalLaps);
+                detectPositionChange(session, carsNode, playerCar, currentLap, trackLength);
+                detectPitStopCompleted(session, carsNode, playerCar, currentLap, trackLength);
+                detectPitWindowMessages(session, playerCar, currentLap, trackLength);
+                if (session.drsAssist == 0) {
+                    detectCarAhead(session, carsNode, playerCar, currentLap, trackLength);
+                }
+                detectFuelLevel(session, playerCar, currentLap, totalLaps);
+                detectPeriodicSituationalAwareness(session, carsNode, playerCar, currentLap, totalLaps, trackLength);
+                detectRaceFinish(session, carsNode, playerCar, currentLap);
+            }
+
+            // Qualifying-only detectors.
+            if (session.isQualifying()) {
+                detectQualifyingSectorDelta(session, playerCar, currentLap);
+                detectQualifyingLapComplete(session, carsNode, playerCar, currentLap);
+            }
 
             // Try to deliver a message
             EngineerMessage message = session.queue.pollForDelivery(
@@ -160,16 +176,14 @@ public class RaceEngineerService {
         List<RaceSnapshot.PitStrategy.PitStop> stops = best.candidate().stops();
         if (stops == null || stops.isEmpty()) return;
 
+        // Stash the next recommended pit on every session. The throttled T-5/T-1/box
+        // messages are emitted from detectPitWindowMessages during state updates.
         for (SessionEngineerState session : sessions.values()) {
             int currentLap = session.lastPlayerLap;
             for (RaceSnapshot.PitStrategy.PitStop stop : stops) {
                 if (stop.onLap() > currentLap) {
-                    int lapsUntil = stop.onLap() - currentLap;
-                    String compound = mapCompoundName(stop.newCompound());
-                    session.queue.enqueue(new EngineerMessage(
-                            Priority.NORMAL,
-                            "Box window opens in " + lapsUntil + " laps. " + compound + " ready.",
-                            System.currentTimeMillis(), currentLap, 3));
+                    session.recommendedPitLap = stop.onLap();
+                    session.recommendedPitCompound = stop.newCompound();
                     break;
                 }
             }
@@ -364,6 +378,7 @@ public class RaceEngineerService {
         // Reset alert tracking on tyre change (age dropped)
         if (tyreAge < session.previousTyreAge) {
             session.lastTyreAgeAlert = 0;
+            for (int i = 0; i < session.lastWearAlertPct.length; i++) session.lastWearAlertPct[i] = 0;
             String newCompound = playerCar.has("tyre") ? playerCar.get("tyre").asText() : "new";
             session.queue.enqueue(new EngineerMessage(
                     Priority.NORMAL,
@@ -371,6 +386,107 @@ public class RaceEngineerService {
                     System.currentTimeMillis(), currentLap, 1));
         }
         session.previousTyreAge = tyreAge;
+    }
+
+    // -- qualifying detectors --------------------------------------------------
+
+    private void detectQualifyingSectorDelta(SessionEngineerState session, JsonNode playerCar, int currentLap) {
+        int sector = playerCar.has("sector") ? playerCar.get("sector").asInt() : 0;
+        if (sector == session.previousPlayerSector) return;
+
+        // Sector rolled forward; identify which one was just finished. Sector 3 finish
+        // shows up as 2→0 together with a lap change — lap-complete handler covers that.
+        int completedSector = -1;
+        if (sector == 1 && session.previousPlayerSector == 0) completedSector = 0;
+        else if (sector == 2 && session.previousPlayerSector == 1) completedSector = 1;
+        session.previousPlayerSector = sector;
+        if (completedSector < 0) return;
+
+        JsonNode sectorMs = playerCar.get("lastSectorMs");
+        if (sectorMs == null || !sectorMs.isArray() || sectorMs.size() <= completedSector) return;
+        long timeMs = sectorMs.get(completedSector).asLong();
+        if (timeMs <= 0) return;
+
+        long best = session.bestSectorMs[completedSector];
+        if (best <= 0 || timeMs < best) {
+            session.bestSectorMs[completedSector] = timeMs;
+            session.queue.enqueue(new EngineerMessage(
+                    Priority.NORMAL,
+                    "Purple sector " + (completedSector + 1) + ". " + formatLapTime(timeMs) + ".",
+                    System.currentTimeMillis(), currentLap, 2));
+        } else {
+            long delta = timeMs - best;
+            session.queue.enqueue(new EngineerMessage(
+                    Priority.NORMAL,
+                    "Sector " + (completedSector + 1) + " down "
+                            + String.format("%.3f", delta / 1000f) + "s.",
+                    System.currentTimeMillis(), currentLap, 2));
+        }
+    }
+
+    private void detectQualifyingLapComplete(SessionEngineerState session, JsonNode carsNode,
+                                              JsonNode playerCar, int currentLap) {
+        if (currentLap <= session.lastPlayerLap) return;
+
+        long playerLapMs = playerCar.has("lastLapTimeMs") ? playerCar.get("lastLapTimeMs").asLong() : 0;
+        if (playerLapMs <= 0) {
+            session.lastPlayerLap = currentLap;
+            return;
+        }
+
+        long bestLapMs = Long.MAX_VALUE;
+        for (JsonNode car : carsNode) {
+            long ms = car.has("lastLapTimeMs") ? car.get("lastLapTimeMs").asLong() : 0;
+            if (ms > 0 && ms < bestLapMs) bestLapMs = ms;
+        }
+
+        int pos = playerCar.has("pos") ? playerCar.get("pos").asInt() : 0;
+        String text;
+        if (bestLapMs == Long.MAX_VALUE || playerLapMs <= bestLapMs) {
+            text = "Provisional pole. " + formatLapTime(playerLapMs) + ".";
+        } else {
+            long delta = playerLapMs - bestLapMs;
+            text = "P" + pos + ", " + String.format("%.3f", delta / 1000f) + "s off pole. "
+                    + formatLapTime(playerLapMs) + ".";
+        }
+        session.queue.enqueue(new EngineerMessage(
+                Priority.NORMAL, text,
+                System.currentTimeMillis(), currentLap, 2));
+        session.lastPlayerLap = currentLap;
+    }
+
+    private static String formatLapTime(long ms) {
+        long minutes = ms / 60000;
+        long seconds = (ms % 60000) / 1000;
+        long millis = ms % 1000;
+        if (minutes > 0) return String.format("%d:%02d.%03d", minutes, seconds, millis);
+        return String.format("%d.%03d", seconds, millis);
+    }
+
+    private static final String[] CORNER_NAMES = {"Rear-left", "Rear-right", "Front-left", "Front-right"};
+
+    private void detectPerCornerTyreWear(SessionEngineerState session, JsonNode playerCar, int currentLap) {
+        JsonNode wearNode = playerCar.get("tyreWear");
+        if (wearNode == null || !wearNode.isArray() || wearNode.size() < 4) return;
+
+        for (int i = 0; i < 4; i++) {
+            int wear = (int) wearNode.get(i).asDouble();
+            int lastAlert = session.lastWearAlertPct[i];
+
+            if (wear >= 50 && lastAlert < 50) {
+                session.queue.enqueue(new EngineerMessage(
+                        Priority.HIGH,
+                        CORNER_NAMES[i] + " is finished, manage it.",
+                        System.currentTimeMillis(), currentLap, 2));
+                session.lastWearAlertPct[i] = 50;
+            } else if (wear >= 25 && lastAlert < 25) {
+                session.queue.enqueue(new EngineerMessage(
+                        Priority.NORMAL,
+                        CORNER_NAMES[i] + " starting to degrade.",
+                        System.currentTimeMillis(), currentLap, 3));
+                session.lastWearAlertPct[i] = 25;
+            }
+        }
     }
 
     private void detectPositionChange(SessionEngineerState session, JsonNode carsNode,
@@ -492,6 +608,46 @@ public class RaceEngineerService {
             }
         }
         return sb.toString();
+    }
+
+    private static final float BOX_BOX_LAP_FRACTION = 0.8f;
+
+    private void detectPitWindowMessages(SessionEngineerState session, JsonNode playerCar,
+                                          int currentLap, int trackLength) {
+        int target = session.recommendedPitLap;
+        if (target <= 0 || target < currentLap) return;
+
+        // Strategy picked a new target lap — reset the emission state for the new target.
+        if (target != session.lastAnnouncedPitTargetLap) {
+            session.lastAnnouncedPitTargetLap = target;
+            session.lastPitMessageKind = PitMsgKind.NONE;
+        }
+
+        int delta = target - currentLap;
+        String compound = mapCompoundName(session.recommendedPitCompound);
+
+        if (delta == 5 && session.lastPitMessageKind == PitMsgKind.NONE) {
+            session.queue.enqueue(new EngineerMessage(
+                    Priority.NORMAL,
+                    "Box window opens in 5 laps. " + compound + " ready.",
+                    System.currentTimeMillis(), currentLap, 2));
+            session.lastPitMessageKind = PitMsgKind.T_MINUS_5;
+        } else if (delta == 1 && session.lastPitMessageKind.ordinal() < PitMsgKind.T_MINUS_1.ordinal()) {
+            session.queue.enqueue(new EngineerMessage(
+                    Priority.HIGH,
+                    "Box next lap. " + compound + " ready.",
+                    System.currentTimeMillis(), currentLap, 1));
+            session.lastPitMessageKind = PitMsgKind.T_MINUS_1;
+        } else if (delta == 0 && session.lastPitMessageKind.ordinal() < PitMsgKind.BOX.ordinal()) {
+            float lapDistance = playerCar.has("lapDist") ? (float) playerCar.get("lapDist").asDouble() : 0f;
+            if (trackLength > 0 && lapDistance >= trackLength * BOX_BOX_LAP_FRACTION) {
+                session.queue.enqueue(new EngineerMessage(
+                        Priority.IMMEDIATE,
+                        "Box, box, box.",
+                        System.currentTimeMillis(), currentLap, 1));
+                session.lastPitMessageKind = PitMsgKind.BOX;
+            }
+        }
     }
 
     private void detectDrs(SessionEngineerState session, JsonNode playerCar, int currentLap) {
@@ -709,13 +865,19 @@ public class RaceEngineerService {
         };
     }
 
+    enum PitMsgKind { NONE, T_MINUS_5, T_MINUS_1, BOX }
+
     // -- per-session mutable state ---------------------------------------------
 
     static class SessionEngineerState {
         final String sessionUid;
         final int trackId;
+        final int sessionType; // 1-4 practice, 5-9 qualifying, 10-12 race, 13 time trial
         int ersAssist;
         int drsAssist;
+
+        boolean isRace() { return sessionType >= 10 && sessionType <= 12; }
+        boolean isQualifying() { return sessionType >= 5 && sessionType <= 9; }
         final RaceEngineerQueue queue = new RaceEngineerQueue();
 
         int lastPlayerLap = 0;
@@ -728,6 +890,9 @@ public class RaceEngineerService {
         float previousGapBehindSeconds = -1f;
         int previousTyreAge = 0;
         int lastTyreAgeAlert = 0;
+        // Per-corner wear: highest threshold already announced per corner (0/25/50).
+        // Index order matches telemetry wheel layout: 0=RL, 1=RR, 2=FL, 3=FR.
+        final int[] lastWearAlertPct = new int[4];
 
         // Position gained
         int previousPlayerPosition = 0;
@@ -763,9 +928,21 @@ public class RaceEngineerService {
         int lastReactiveAwarenessLap = 0;
         int lastPeriodicAwarenessLap = 0;
 
-        SessionEngineerState(String sessionUid, int trackId, int ersAssist, int drsAssist) {
+        // Pit window messaging (throttled T-5 / T-1 / box-box-box)
+        int recommendedPitLap = -1;
+        int recommendedPitCompound = 0;
+        int lastAnnouncedPitTargetLap = -1;
+        PitMsgKind lastPitMessageKind = PitMsgKind.NONE;
+
+        // Qualifying: player session-best sector times (ms) for sectors 1 and 2.
+        // Sector 3 not tracked separately — reported as part of lap-complete.
+        final long[] bestSectorMs = new long[3];
+        int previousPlayerSector = -1;
+
+        SessionEngineerState(String sessionUid, int trackId, int sessionType, int ersAssist, int drsAssist) {
             this.sessionUid = sessionUid;
             this.trackId = trackId;
+            this.sessionType = sessionType;
             this.ersAssist = ersAssist;
             this.drsAssist = drsAssist;
         }

@@ -29,7 +29,7 @@ class RaceEngineerServiceAssistGuardTest {
             }
         };
         service = new RaceEngineerService(safeZoneService, handler);
-        service.onSessionStarted("test-session", 0, ersAssist, drsAssist);
+        service.onSessionStarted("test-session", 0, 10, ersAssist, drsAssist);
     }
 
     /**

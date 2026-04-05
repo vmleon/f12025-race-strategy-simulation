@@ -26,7 +26,7 @@ public class SessionCatchUp implements ApplicationRunner {
         try {
             var rows = jdbc.queryForList(
                     """
-                    SELECT s.session_uid, s.track_id FROM sessions s
+                    SELECT s.session_uid, s.track_id, s.session_type FROM sessions s
                     WHERE s.created_at = (SELECT MAX(s2.created_at) FROM sessions s2)
                       AND NOT EXISTS (
                         SELECT 1 FROM session_events e
@@ -38,8 +38,9 @@ public class SessionCatchUp implements ApplicationRunner {
                 var row = rows.getFirst();
                 String uid = String.valueOf(row.get("SESSION_UID"));
                 int trackId = ((Number) row.get("TRACK_ID")).intValue();
+                int sessionType = ((Number) row.get("SESSION_TYPE")).intValue();
                 sessionStateHolder.onSessionStarted(uid, trackId);
-                raceEngineerService.onSessionStarted(uid, trackId, 0, 0);
+                raceEngineerService.onSessionStarted(uid, trackId, sessionType, 0, 0);
                 System.out.println("Session catch-up: restored active session uid=" + uid);
             } else {
                 System.out.println("Session catch-up: no active session found");

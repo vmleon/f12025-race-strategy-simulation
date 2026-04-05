@@ -26,7 +26,7 @@ class RaceEngineerServicePositionAwarenessTest {
             }
         };
         service = new RaceEngineerService(safeZoneService, handler);
-        service.onSessionStarted("test-session", 0, 1, 1); // assists on to silence DRS/ERS
+        service.onSessionStarted("test-session", 0, 10, 1, 1); // sessionType=10 (Race), assists on
     }
 
     /** Build a state tick with player + one other car. playerLapDist picks a safe zone on Melbourne (track 0). */
