@@ -62,7 +62,9 @@ struct LiveView: View {
                 }
                 .padding()
             }
+            .defaultScrollAnchor(.bottom)
             .onScrollGeometryChange(for: Bool.self) { geometry in
+                guard geometry.contentSize.height > 0 else { return true }
                 let distanceFromBottom = geometry.contentSize.height
                     - (geometry.contentOffset.y + geometry.containerSize.height)
                 return distanceFromBottom <= 16
