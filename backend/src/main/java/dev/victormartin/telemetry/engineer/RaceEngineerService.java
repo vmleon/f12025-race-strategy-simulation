@@ -42,6 +42,7 @@ public class RaceEngineerService {
                 Priority.NORMAL,
                 "Radio check. All systems nominal.",
                 System.currentTimeMillis(), 0, 5));
+        webSocketHandler.broadcast("{\"type\":\"sessionStarted\",\"sessionUid\":\"" + sessionUid + "\"}");
         System.out.println("RaceEngineerService: queue created for session " + sessionUid);
     }
 

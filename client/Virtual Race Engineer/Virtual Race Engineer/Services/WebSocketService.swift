@@ -83,7 +83,24 @@ final class WebSocketService: @unchecked Sendable {
         handleData(data)
     }
 
+    private struct SessionEvent: Decodable {
+        let type: String
+        let sessionUid: String
+    }
+
     private func handleData(_ data: Data) {
+        if let event = try? JSONDecoder().decode(SessionEvent.self, from: data),
+           event.type == "sessionStarted", event.sessionUid != sessionUid {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                MainActor.assumeIsolated {
+                    self.sessionUid = event.sessionUid
+                    self.messages = []
+                }
+            }
+            return
+        }
+
         guard let message = try? JSONDecoder().decode(EngineerMessage.self, from: data) else { return }
         guard message.sessionUid == sessionUid else { return }
 
