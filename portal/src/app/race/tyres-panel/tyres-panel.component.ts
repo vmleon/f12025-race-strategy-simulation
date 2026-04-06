@@ -10,6 +10,25 @@ const CORNERS = [
   { label: 'RR', idx: 1 },
 ];
 
+const WEAR_YELLOW = 25;
+const WEAR_RED = 50;
+
+const TYRE_COLD = 70;
+const TYRE_OPTIMAL_MIN = 80;
+const TYRE_OPTIMAL_MAX = 110;
+const TYRE_HOT = 120;
+
+const BRAKE_COLD = 100;
+const BRAKE_OPTIMAL_MIN = 200;
+const BRAKE_OPTIMAL_MAX = 800;
+const BRAKE_HOT = 1000;
+
+const DARK_BLUE = '#1565c0';
+const LIGHT_BLUE = '#42a5f5';
+const GREEN = '#4caf50';
+const YELLOW = '#ffc107';
+const RED = '#ef5350';
+
 @Component({
   selector: 'app-tyres-panel',
   template: `
@@ -123,20 +142,24 @@ export class TyresPanelComponent {
   readonly corners = CORNERS;
 
   wearColour(value: number): string {
-    if (value < 30) return '#4caf50';
-    if (value < 60) return '#ffc107';
-    return '#ef5350';
+    if (value < WEAR_YELLOW) return GREEN;
+    if (value < WEAR_RED) return YELLOW;
+    return RED;
+  }
+
+  bandColour(value: number, cold: number, optMin: number, optMax: number, hot: number): string {
+    if (value < cold) return DARK_BLUE;
+    if (value < optMin) return LIGHT_BLUE;
+    if (value <= optMax) return GREEN;
+    if (value <= hot) return YELLOW;
+    return RED;
   }
 
   tempColour(value: number): string {
-    if (value >= 80 && value <= 110) return '#4caf50';
-    if (value >= 70 && value <= 120) return '#ffc107';
-    return '#ef5350';
+    return this.bandColour(value, TYRE_COLD, TYRE_OPTIMAL_MIN, TYRE_OPTIMAL_MAX, TYRE_HOT);
   }
 
   brakeColour(value: number): string {
-    if (value >= 200 && value <= 800) return '#4caf50';
-    if (value >= 100 && value <= 1000) return '#ffc107';
-    return '#ef5350';
+    return this.bandColour(value, BRAKE_COLD, BRAKE_OPTIMAL_MIN, BRAKE_OPTIMAL_MAX, BRAKE_HOT);
   }
 }
