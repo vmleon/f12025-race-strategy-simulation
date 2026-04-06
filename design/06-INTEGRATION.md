@@ -372,19 +372,9 @@ graph TD
 
 ## Decision Rationale: TCP Push Architecture
 
-Five options were evaluated for the telemetry-to-backend data path. Plain TCP won.
+### Chosen: Plain TCP with newline-delimited JSON
 
-### Options Evaluated
-
-| Option            | Approach                                      | Why it lost                                                                                                                                                                                                               |
-| ----------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A. REST**       | HTTP POST from telemetry to backend endpoints | Adds HTTP client overhead per message. Request/response model is wrong for a persistent data stream. Telemetry must handle HTTP client concerns (timeouts, retries, connection pooling)                                   |
-| **B. WebSocket**  | Telemetry opens WS connection to backend      | HTTP upgrade handshake and frame masking are designed for browser security — unnecessary between two JVM processes. Requires a WebSocket client library in telemetry                                                      |
-| **C. gRPC**       | Protobuf streaming RPCs                       | Right tool for production microservices with multiple consumers and strict API contracts. For a single-instance PoC with one producer and one consumer, protobuf compilation and gRPC runtime are overhead without payoff |
-| **D. DB polling** | Backend polls Oracle for new rows             | Works but adds 1-2s latency. Extra read load on the database for data that's immediately available in memory                                                                                                              |
-| **E. Plain TCP**  | Persistent socket, newline-delimited JSON     | **Chosen** — see below                                                                                                                                                                                                    |
-
-### Why Plain TCP Won
+A persistent TCP socket carrying newline-delimited JSON (`\n`-separated) is the data path between telemetry and backend.
 
 - **Zero new dependencies.** `java.net.Socket` and `java.io.OutputStream` are in the JDK. The telemetry server stays zero-dependency
 - **Natural fit for a persistent data stream.** TCP provides reliable, ordered byte stream — no per-message connection overhead, no HTTP framing, no compilation step
@@ -392,17 +382,13 @@ Five options were evaluated for the telemetry-to-backend data path. Plain TCP wo
 - **One channel for everything.** Same TCP connection carries continuous race state and discrete lifecycle events. No protocol splitting
 - **Simple failure model.** Connection drops are detected immediately by both sides. Telemetry reconnects with exponential backoff. Backend accepts new connection and resumes
 
-### JSON-lines Protocol Choice
-
-Newline-delimited JSON over alternatives:
-
-- **Length-prefixed binary:** More efficient but harder to debug. `tail -f` on a TCP stream shows readable JSON; binary requires tooling
-- **Protobuf/MessagePack:** Better compression but adds serialization dependencies. At ~1KB per message at 1Hz, bandwidth is irrelevant
-- **Custom binary format:** Unnecessary — the parsing cost is on the UDP side, not the TCP side
-
-### Single Backend Instance Assumption
+Newline-delimited JSON was chosen over binary formats because at ~1KB per message at 1Hz bandwidth is irrelevant, and readable output (`tail -f`) is more valuable for debugging than the compression gains of length-prefixed binary, Protobuf, or MessagePack — all of which would add serialization dependencies.
 
 This architecture assumes a single backend instance. If multiple instances were needed, options would include a message broker (Redis Pub/Sub, Kafka), connecting to all instances, or a shared state store. None are needed for the PoC.
+
+### Alternatives considered
+
+**REST** (HTTP POST per message) imposes request/response overhead on a persistent data stream and forces the telemetry server to manage HTTP client concerns (timeouts, retries, connection pooling). **WebSocket** adds an HTTP upgrade handshake and frame masking designed for browser security — unnecessary between two JVM processes — and requires a WebSocket client library. **gRPC** with Protobuf streaming is the right tool for production microservices with multiple consumers and strict API contracts, but for a single-instance PoC with one producer and one consumer, the protobuf compilation step and gRPC runtime add overhead without payoff. **DB polling** (backend polls Oracle for new rows) works but introduces 1–2s latency and extra read load on the database for data that is already available in memory.
 
 ## Summary of Protocols
 

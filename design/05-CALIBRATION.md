@@ -155,10 +155,7 @@ Calibration assumes consistent game settings across all sessions used for fittin
 | Fuel Consumption     | Changes fuel burn rate                                |
 | Weather              | Dynamic vs fixed affects available data               |
 
-If settings vary between sessions, coefficients fitted from mixed data will be unreliable. Options:
-
-1. **Enforce consistent settings** across all calibration sessions (recommended for POC)
-2. **Condition coefficients on settings** — fit separate coefficients per difficulty level, etc. (multiplies data requirements)
+If settings vary between sessions, coefficients fitted from mixed data will be unreliable. For the POC, consistent settings are enforced across all calibration sessions. The alternative — conditioning coefficients on settings (fitting separate coefficients per difficulty level, damage mode, etc.) — would multiply data requirements beyond what a POC can accumulate.
 
 The `Session` packet includes `aiDifficulty`. Other settings may need to be recorded manually or extracted from the game's configuration.
 
@@ -191,13 +188,9 @@ Within a single stint, `fuelInTank` and `tyresAgeLaps` are almost perfectly line
 
 **Why this matters for strategy:** The simulation uses tyre degradation coefficients to evaluate pit stop timing ("pit now or push 5 more laps?"). If the tyre deg curve includes hidden fuel effects, the model thinks old tyres are slower than they actually are — because it attributes fuel-related slowness to tyre age — making strategy predictions unreliable.
 
-Approaches to decouple:
+**Chosen approach: fuel burn rate subtraction.** Measure the fuel consumption rate from `fuelInTank` deltas between consecutive laps. Since F1 25 appears to enforce a near-constant burn rate, subtract the estimated fuel effect analytically, then fit tyre degradation on the residual. A two-stage process: (1) measure burn rate, (2) compute expected fuel penalty per lap, (3) subtract from sector times, (4) fit tyre deg on the residual. This approach requires the least data and can be applied within individual stints.
 
-1. **Cross-stint comparison** — compare sector times at the same tyre age but different fuel loads (e.g., lap 5 of stint 1 vs lap 5 of stint 2, where stint 2 starts with less fuel). Requires enough sessions with varied pit strategies
-2. **Known fuel burn rate subtraction** — measure fuel consumption rate from `fuelInTank` deltas between consecutive laps. If near-constant (which F1 25 appears to enforce), subtract the estimated fuel effect analytically, then fit tyre deg on the residual. A two-stage approach: (1) measure burn rate, (2) compute expected fuel penalty per lap, (3) subtract from sector times, (4) fit tyre deg on residual
-3. **Pit stop resets** — a pit stop resets tyre age to 0 but fuel stays at the refueled level (no refueling in F1 25). Comparing pre/post pit sector times isolates tyre vs fuel
-
-**POC approach:** Start with approach #2 (fuel burn rate subtraction) because it requires the least data and can be applied within individual stints. Use approach #1 (cross-stint comparison) as validation once enough sessions accumulate
+Two alternatives were considered. **Cross-stint comparison** — comparing sector times at the same tyre age but different fuel loads across stints — isolates the variables cleanly but requires enough sessions with varied pit strategies to have comparable data points; it serves as a validation method once data accumulates. **Pit stop resets** — comparing pre/post pit sector times where tyre age resets to 0 but fuel stays constant (no refueling in F1 25) — also isolates the factors but depends on having enough pit stop events with similar conditions.
 
 ### 3. Fuel Effect (per track)
 
@@ -244,13 +237,9 @@ Time gained when DRS is active.
 
 ### Defending: Not Modeled Explicitly
 
-A car defending position uses more fuel, takes sub-optimal lines, and wears tyres more. This is partially captured implicitly through dirty air and gap data. Three options were considered:
+A car defending position uses more fuel, takes sub-optimal lines, and wears tyres more. This is partially captured implicitly through dirty air and gap data. For the POC, defending is skipped as an explicit variable — its effects are likely small compared to tyre degradation, fuel, and dirty air. The defending-induced slowness is absorbed into `residual_noise`, which Monte Carlo samples from — so it contributes to variance rather than being silently dropped. The gap-to-car-behind is derivable from the following car's `deltaToCarInFront` (a self-join on `sector_snapshots`), so no additional telemetry capture is needed if this is revisited.
 
-1. **Ignore defending explicitly** — treat dirty air and gap data as sufficient proxies. The leading car's extra tyre wear shows up as higher residuals but may be small enough to ignore
-2. **Model as a modifier** — add a "being followed closely" variable (gap to car behind) that increases predicted tyre wear. Tricky because defending and being slow look similar in the data
-3. **Skip for POC** — defending effects are likely small compared to tyre deg, fuel, and dirty air
-
-**Decision for POC:** Option 3. The gap-to-car-behind is derivable from the following car's `deltaToCarInFront` (a self-join on `sector_snapshots`), so no additional telemetry capture is needed if this is revisited. However, the core problem remains: defending and "being slow" are indistinguishable in sector time data without driver input signals (steering angles, racing line deviation) that are not captured. The defending-induced slowness is absorbed into `residual_noise`, which Monte Carlo samples from — so it contributes to variance rather than being silently dropped. Revisit if residual analysis after initial calibration shows systematic patterns (e.g., consistently large positive residuals) for cars with a close follower.
+The alternatives were to ignore defending explicitly and treat dirty air as a sufficient proxy — reasonable but the leading car's extra tyre wear shows up as unexplained residuals — or to model it as a modifier by adding a "being followed closely" variable, which is tricky because defending and "being slow" are indistinguishable in sector time data without driver input signals (steering angles, racing line deviation) that are not captured. Revisit if residual analysis after initial calibration shows systematic patterns (e.g., consistently large positive residuals) for cars with a close follower.
 
 ### 7. Weather and Temperature Effects
 
