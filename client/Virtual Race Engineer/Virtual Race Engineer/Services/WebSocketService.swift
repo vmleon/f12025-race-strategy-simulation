@@ -87,9 +87,12 @@ final class WebSocketService: @unchecked Sendable {
         guard let message = try? JSONDecoder().decode(EngineerMessage.self, from: data) else { return }
         guard message.sessionUid == sessionUid else { return }
 
-        Task { @MainActor in
-            self.messages.append(message)
-            self.onMessage?(message)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            MainActor.assumeIsolated {
+                self.messages.append(message)
+                self.onMessage?(message)
+            }
         }
     }
 

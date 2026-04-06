@@ -19,7 +19,8 @@ final class SpeechService: NSObject, AVSpeechSynthesizerDelegate {
 
     func speak(_ text: String, priority: MessagePriority) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty,
+              trimmed.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) }) else { return }
 
         let utterance = AVSpeechUtterance(string: trimmed)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-GB")
@@ -50,8 +51,11 @@ final class SpeechService: NSObject, AVSpeechSynthesizerDelegate {
     // MARK: - AVSpeechSynthesizerDelegate
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in
-            self.speakNext()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            MainActor.assumeIsolated {
+                self.speakNext()
+            }
         }
     }
 
