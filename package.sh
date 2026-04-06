@@ -38,7 +38,6 @@ zip -r "$ZIP_NAME" \
   telemetry/ \
   manage.py \
   requirements.txt \
-  .gitignore \
   README.md \
   LOCAL_SETUP.md \
   VERSION \
@@ -54,6 +53,8 @@ zip -r "$ZIP_NAME" \
   -x "**/*.class" \
   -x "**/venv/*" \
   -x "**/.venv/*" \
+  -x "**/.gitignore" \
+  -x "**/.gitattributes" \
   -x "**/.DS_Store" \
   -x "**/.env"
 
