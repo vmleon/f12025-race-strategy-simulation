@@ -44,6 +44,9 @@ venv/
 .superpowers/
 docs/superpowers/
 
+# Packaging
+tfg-victormartinalvarez-*.zip
+
 # Generated config (from templates via manage.py setup)
 telemetry/src/main/resources/config.properties
 backend/src/main/resources/application.properties
