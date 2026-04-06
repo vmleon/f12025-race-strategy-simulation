@@ -276,7 +276,7 @@ public class RaceEngineerService {
                 if (isClose && !wasClose) {
                     session.queue.enqueue(new EngineerMessage(
                             Priority.HIGH,
-                            behindName + " closing from behind. " + String.format("%.1f", gapSeconds) + " seconds back. Defend your position.",
+                            behindName + " closing from behind. " + formatTenths(gapSeconds) + " seconds back. Defend your position.",
                             System.currentTimeMillis(), currentLap, 1));
                     session.lastReactiveAwarenessLap = currentLap;
                 }
@@ -419,7 +419,7 @@ public class RaceEngineerService {
             session.queue.enqueue(new EngineerMessage(
                     Priority.NORMAL,
                     "Sector " + (completedSector + 1) + " down "
-                            + String.format("%.3f", delta / 1000f) + "s.",
+                            + formatTenths(delta / 1000.0) + " seconds.",
                     System.currentTimeMillis(), currentLap, 2));
         }
     }
@@ -446,7 +446,7 @@ public class RaceEngineerService {
             text = "Provisional pole. " + formatLapTime(playerLapMs) + ".";
         } else {
             long delta = playerLapMs - bestLapMs;
-            text = "P" + pos + ", " + String.format("%.3f", delta / 1000f) + "s off pole. "
+            text = "P" + pos + ", " + formatTenths(delta / 1000.0) + " seconds off pole. "
                     + formatLapTime(playerLapMs) + ".";
         }
         session.queue.enqueue(new EngineerMessage(
@@ -455,12 +455,20 @@ public class RaceEngineerService {
         session.lastPlayerLap = currentLap;
     }
 
+    private static String formatTenths(double value) {
+        double rounded = Math.round(value * 10) / 10.0;
+        if (rounded == Math.floor(rounded)) return String.format("%.0f", rounded);
+        return String.format("%.1f", rounded);
+    }
+
     private static String formatLapTime(long ms) {
         long minutes = ms / 60000;
-        long seconds = (ms % 60000) / 1000;
-        long millis = ms % 1000;
-        if (minutes > 0) return String.format("%d:%02d.%03d", minutes, seconds, millis);
-        return String.format("%d.%03d", seconds, millis);
+        double seconds = (ms % 60000) / 1000.0;
+        String secStr = formatTenths(seconds) + " seconds";
+        if (minutes > 0) {
+            return minutes + (minutes == 1 ? " minute " : " minutes ") + secStr;
+        }
+        return secStr;
     }
 
     private static final String[] CORNER_NAMES = {"Rear-left", "Rear-right", "Front-left", "Front-right"};
@@ -513,7 +521,7 @@ public class RaceEngineerService {
                 float gapSeconds = gapToCarSeconds(playerCar, carAhead, trackLength);
                 text = gapSeconds >= 0
                         ? "P" + currentPos + ". " + name + " is next, "
-                                + String.format("%.1f", gapSeconds) + "s up the road."
+                                + formatTenths(gapSeconds) + " seconds up the road."
                         : "P" + currentPos + ". " + name + " is next.";
             }
             session.queue.enqueue(new EngineerMessage(
@@ -568,7 +576,7 @@ public class RaceEngineerService {
                 float durationSeconds = (System.currentTimeMillis() - session.pitEnteredAt) / 1000f;
                 session.queue.enqueue(new EngineerMessage(
                         Priority.HIGH,
-                        "Good stop. " + String.format("%.1f", durationSeconds) + " seconds. Push now.",
+                        "Good stop. " + formatTenths(durationSeconds) + " seconds. Push now.",
                         System.currentTimeMillis(), currentLap, 1));
                 session.pitEnteredAt = 0;
             }
@@ -597,14 +605,14 @@ public class RaceEngineerService {
             float gap = gapToCarSeconds(playerCar, carAhead, trackLength);
             String name = carAhead.has("name") ? carAhead.get("name").asText() : "car ahead";
             if (gap >= 0) {
-                sb.append(" ").append(String.format("%.1f", gap)).append("s to ").append(name).append(".");
+                sb.append(" ").append(formatTenths(gap)).append(" seconds to ").append(name).append(".");
             }
         }
         if (carBehind != null) {
             float gap = gapToCarSeconds(carBehind, playerCar, trackLength);
             String name = carBehind.has("name") ? carBehind.get("name").asText() : "car behind";
             if (gap >= 0) {
-                sb.append(" ").append(String.format("%.1f", gap)).append("s to ").append(name).append(".");
+                sb.append(" ").append(formatTenths(gap)).append(" seconds to ").append(name).append(".");
             }
         }
         return sb.toString();
@@ -755,7 +763,7 @@ public class RaceEngineerService {
             float gapAhead = gapToCarSeconds(playerCar, carAhead, trackLength);
             String nameAhead = carAhead.has("name") ? carAhead.get("name").asText() : "car ahead";
             if (gapAhead >= 0) {
-                sb.append(" ").append(String.format("%.1f", gapAhead)).append("s to ").append(nameAhead).append(".");
+                sb.append(" ").append(formatTenths(gapAhead)).append(" seconds to ").append(nameAhead).append(".");
             }
         }
         if (carBehind != null) {
@@ -763,7 +771,7 @@ public class RaceEngineerService {
             float gapBehind = gapToCarSeconds(carBehind, playerCar, trackLength);
             String nameBehind = carBehind.has("name") ? carBehind.get("name").asText() : "car behind";
             if (gapBehind >= 0) {
-                sb.append(" ").append(String.format("%.1f", gapBehind)).append("s to ").append(nameBehind).append(".");
+                sb.append(" ").append(formatTenths(gapBehind)).append(" seconds to ").append(nameBehind).append(".");
             }
         }
 

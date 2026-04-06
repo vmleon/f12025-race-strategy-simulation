@@ -109,7 +109,7 @@ class RaceEngineerServiceQualifyingTest {
 
         List<String> msgs = broadcastsContaining("Purple sector 1");
         assertFalse(msgs.isEmpty(), "First sector 1 should be purple, got: " + broadcasts);
-        assertTrue(msgs.get(0).contains("25.000"), "Should report time 25.000: " + msgs.get(0));
+        assertTrue(msgs.get(0).contains("25 seconds"), "Should report time 25 seconds: " + msgs.get(0));
     }
 
     @Test
@@ -128,8 +128,8 @@ class RaceEngineerServiceQualifyingTest {
                 "No new purple, got: " + broadcasts);
         assertFalse(broadcastsContaining("Sector 1 down").isEmpty(),
                 "Should emit 'down' for slower sector, got: " + broadcasts);
-        assertTrue(broadcastsContaining("Sector 1 down").get(0).contains("0.500"),
-                "Delta should be 0.500: " + broadcasts);
+        assertTrue(broadcastsContaining("Sector 1 down").get(0).contains("0.5 seconds"),
+                "Delta should be 0.5 seconds: " + broadcasts);
     }
 
     // -- lap complete ----------------------------------------------------------
@@ -143,7 +143,7 @@ class RaceEngineerServiceQualifyingTest {
 
         List<String> msgs = broadcastsContaining("Provisional pole");
         assertFalse(msgs.isEmpty(), "Expected provisional pole, got: " + broadcasts);
-        assertTrue(msgs.get(0).contains("1:28.000"), "Should format as 1:28.000: " + msgs.get(0));
+        assertTrue(msgs.get(0).contains("1 minute 28 seconds"), "Should format as 1 minute 28 seconds: " + msgs.get(0));
     }
 
     @Test
@@ -157,6 +157,6 @@ class RaceEngineerServiceQualifyingTest {
         assertFalse(msgs.isEmpty(), "Expected gap-to-pole message, got: " + broadcasts);
         String msg = msgs.get(0);
         assertTrue(msg.contains("P5"), "Should mention P5: " + msg);
-        assertTrue(msg.contains("1.500"), "Gap should be 1.500: " + msg);
+        assertTrue(msg.contains("1.5 seconds"), "Gap should be 1.5 seconds: " + msg);
     }
 }
