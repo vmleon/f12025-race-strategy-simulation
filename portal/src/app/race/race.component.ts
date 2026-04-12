@@ -90,44 +90,46 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
                 </div>
               }
             </div>
-            <table class="race-table">
-              <thead>
-                <tr>
-                  <th>Pos</th>
-                  <th>Driver</th>
-                  <th>Lap</th>
-                  <th>S1</th>
-                  <th>S2</th>
-                  <th>S3</th>
-                  <th>Best</th>
-                  <th>Tyre</th>
-                  <th>Age</th>
-                  <th>Pits</th>
-                  <th>Pit</th>
-                  <th>Fuel</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (car of cars(); track car.idx) {
-                  <tr [class.in-pit]="car.pitStatus !== 0" [class.ai]="car.ai" [class.out]="(car.resultStatus ?? 2) >= 4">
-                    <td class="pos">{{ (car.resultStatus ?? 2) >= 4 ? 'OUT' : car.pos }}</td>
-                    <td class="driver">{{ car.name || 'Car ' + car.idx }}</td>
-                    <td>{{ car.lap }}</td>
-                    <td class="sector-time">{{ formatSector(car.lastSectorMs, 0) }}</td>
-                    <td class="sector-time">{{ formatSector(car.lastSectorMs, 1) }}</td>
-                    <td class="sector-time">{{ formatSector(car.lastSectorMs, 2) }}</td>
-                    <td class="sector-time">{{ bestLapForCar(car.idx) != null ? formatLapTime(bestLapForCar(car.idx)!) : '-' }}</td>
-                    <td>
-                      <span class="tyre" [attr.data-tyre]="car.tyre">{{ car.tyre }}</span>
-                    </td>
-                    <td>{{ car.tyreAge }}</td>
-                    <td>{{ car.pits ?? 0 }}</td>
-                    <td class="pit-status">{{ pitLabel(car.pitStatus) }}</td>
-                    <td>{{ car.fuel != null ? (car.fuel | number: '1.1-1') + ' kg' : '-' }}</td>
+            <div class="table-scroll">
+              <table class="race-table">
+                <thead>
+                  <tr>
+                    <th>Pos</th>
+                    <th>Driver</th>
+                    <th>Lap</th>
+                    <th>S1</th>
+                    <th>S2</th>
+                    <th>S3</th>
+                    <th>Best</th>
+                    <th>Tyre</th>
+                    <th>Age</th>
+                    <th>Pits</th>
+                    <th>Pit</th>
+                    <th>Fuel</th>
                   </tr>
-                }
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  @for (car of cars(); track car.idx) {
+                    <tr [class.in-pit]="car.pitStatus !== 0" [class.ai]="car.ai" [class.out]="(car.resultStatus ?? 2) >= 4">
+                      <td class="pos">{{ (car.resultStatus ?? 2) >= 4 ? 'OUT' : car.pos }}</td>
+                      <td class="driver">{{ car.name || 'Car ' + car.idx }}</td>
+                      <td>{{ car.lap }}</td>
+                      <td class="sector-time">{{ formatSector(car.lastSectorMs, 0) }}</td>
+                      <td class="sector-time">{{ formatSector(car.lastSectorMs, 1) }}</td>
+                      <td class="sector-time">{{ formatSector(car.lastSectorMs, 2) }}</td>
+                      <td class="sector-time">{{ bestLapForCar(car.idx) != null ? formatLapTime(bestLapForCar(car.idx)!) : '-' }}</td>
+                      <td>
+                        <span class="tyre" [attr.data-tyre]="car.tyre">{{ car.tyre }}</span>
+                      </td>
+                      <td>{{ car.tyreAge }}</td>
+                      <td>{{ car.pits ?? 0 }}</td>
+                      <td class="pit-status">{{ pitLabel(car.pitStatus) }}</td>
+                      <td>{{ car.fuel != null ? (car.fuel | number: '1.1-1') + ' kg' : '-' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
           </div>
 
           @if (events().length > 0) {
@@ -207,48 +209,66 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
 
     .race-layout {
       display: flex;
-      gap: 1.5rem;
+      gap: 1rem;
       align-items: flex-start;
+      height: calc(100vh - 5rem);
+      overflow: hidden;
     }
     .left-column {
       flex: 1;
       min-width: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      height: 100%;
     }
     .right-column {
-      width: 320px;
+      width: 300px;
       flex-shrink: 0;
       display: flex;
       flex-direction: column;
-      gap: 0.75rem;
+      gap: 0.5rem;
+      height: 100%;
+      overflow-y: auto;
     }
 
     .race-content {
       display: flex;
-      gap: 1.5rem;
+      gap: 1rem;
       align-items: flex-start;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .table-scroll {
+      flex: 1;
+      min-width: 0;
+      overflow-y: auto;
+      min-height: 0;
     }
     .circuit-column {
       flex-shrink: 0;
       display: flex;
       flex-direction: column;
+      gap: 0.5rem;
+      overflow-y: auto;
+      min-height: 0;
     }
     .race-table {
-      flex: 1;
-      min-width: 0;
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.9rem;
+      font-size: 0.8rem;
     }
     .race-table th {
       text-align: left;
-      padding: 0.4rem 0.6rem;
+      padding: 0.3rem 0.4rem;
       border-bottom: 2px solid #444;
       color: #999;
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       text-transform: uppercase;
     }
     .race-table td {
-      padding: 0.35rem 0.6rem;
+      padding: 0.2rem 0.4rem;
       border-bottom: 1px solid #2a2a2a;
     }
     .race-table tr.in-pit {
@@ -272,7 +292,7 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
     }
     .sector-time {
       font-family: monospace;
-      font-size: 0.85rem;
+      font-size: 0.8rem;
     }
     .pit-status {
       font-weight: bold;
@@ -332,10 +352,14 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
     }
 
     .events {
-      margin-top: 1.5rem;
+      margin-top: 0.5rem;
+      max-height: 4rem;
+      overflow-y: auto;
+      flex-shrink: 0;
     }
     .events h3 {
-      margin-bottom: 0.5rem;
+      margin: 0 0 0.25rem;
+      font-size: 0.8rem;
     }
     .event-item {
       display: flex;
