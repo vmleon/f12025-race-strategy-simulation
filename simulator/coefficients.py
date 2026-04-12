@@ -22,6 +22,9 @@ class Coefficients:
             v = self._store.get(self._key(knob_name, regime, -1))
             if v is not None:
                 return v
+        # Fall back from PLAYER to AI when player data is missing
+        if regime == "PLAYER":
+            return self.get(knob_name, "AI", sector)
         return 0.0
 
     def size(self) -> int:
@@ -47,5 +50,5 @@ class Coefficients:
             c.put("drs_advantage", regime, -1, -0.20)
             c.put("overtake_probability", regime, -1, 0.15)
             c.put("safety_car_rate", regime, -1, 0.01)
-            c.put("pit_stop_time_loss", regime, -1, 22_000.0)
+            c.put("pit_stop_time_loss", regime, -1, 3_000.0)
         return c

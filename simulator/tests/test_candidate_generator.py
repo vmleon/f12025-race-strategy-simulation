@@ -136,10 +136,13 @@ class TestGenerateCandidates:
         candidates = generate_candidates(snapshot, player_car_index=0)
         assert len(candidates) <= 50
 
-    def test_empty_tyre_sets_returns_empty(self):
-        snapshot = _make_snapshot(current_lap=10, total_laps=50, player_tyre_sets=[])
+    def test_empty_tyre_sets_uses_default_compounds(self):
+        snapshot = _make_snapshot(current_lap=5, total_laps=50, player_tyre_sets=[])
         candidates = generate_candidates(snapshot, player_car_index=0)
-        assert len(candidates) == 0
+        assert len(candidates) > 0, "Should generate candidates with default S/M/H compounds"
+        compounds_used = {s.new_compound for c in candidates for s in c.stops}
+        # Should use at least one non-current compound (player is on Soft=16)
+        assert len(compounds_used) > 0
 
     def test_pit_laps_in_valid_range(self):
         tyre_sets = [

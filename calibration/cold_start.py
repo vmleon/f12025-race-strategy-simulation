@@ -14,7 +14,7 @@ KNOB_DEFAULTS: list[tuple[str, float]] = [
     ("drs_advantage",       -0.20),
     ("overtake_probability", 0.15),
     ("safety_car_rate",      0.01),
-    ("pit_stop_time_loss",  22000),
+    ("pit_stop_time_loss",  3000),
 ]
 
 REGIMES = ["PLAYER", "AI"]

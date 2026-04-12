@@ -160,7 +160,10 @@ def _find_player(cars: list[CarSnapshot], index: int) -> CarSnapshot | None:
 
 def _get_available_compounds(tyre_sets: list[TyreSetInfo]) -> dict[int, str]:
     """Returns dict of compound code -> display name for available, non-fitted compounds
-    that pass the lap delta threshold."""
+    that pass the lap delta threshold. Falls back to standard dry compounds when
+    tyre set data is not yet available (early race laps)."""
+    if not tyre_sets:
+        return {16: "S", 17: "M", 18: "H"}
     compounds: dict[int, str] = {}
     for ts in tyre_sets:
         if not ts.available or ts.fitted:
