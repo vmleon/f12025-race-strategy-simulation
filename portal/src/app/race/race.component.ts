@@ -73,6 +73,11 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
                 [yellowSector]="yellowSector()"
               />
               <app-gap-indicator [ahead]="gapAhead()" [behind]="gapBehind()" />
+              <app-strategy-widget
+                [strategies]="strategyStrategies()"
+                [evaluatedAtLap]="strategyEvaluatedAtLap()"
+                [stale]="strategyStale()"
+              />
             </div>
             <table class="race-table">
               <thead>
@@ -137,11 +142,6 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
           <app-tyres-panel [car]="playerCar()" />
           <app-damage-panel [car]="playerCar()" />
           <app-penalties-panel [car]="playerCar()" [events]="penaltyEvents()" />
-          <app-strategy-widget
-            [strategies]="strategyStrategies()"
-            [evaluatedAtLap]="strategyEvaluatedAtLap()"
-            [stale]="strategyStale()"
-          />
         </div>
       </div>
     } @else {
