@@ -378,6 +378,8 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
     @media (max-width: 1200px) {
       .race-layout {
         flex-direction: column;
+        height: auto;
+        overflow: visible;
       }
       .right-column {
         width: 100%;
