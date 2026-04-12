@@ -99,6 +99,7 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
                   <th>S1</th>
                   <th>S2</th>
                   <th>S3</th>
+                  <th>Best</th>
                   <th>Tyre</th>
                   <th>Age</th>
                   <th>Pits</th>
@@ -115,6 +116,7 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
                     <td class="sector-time">{{ formatSector(car.lastSectorMs, 0) }}</td>
                     <td class="sector-time">{{ formatSector(car.lastSectorMs, 1) }}</td>
                     <td class="sector-time">{{ formatSector(car.lastSectorMs, 2) }}</td>
+                    <td class="sector-time">{{ bestLapForCar(car.idx) != null ? formatLapTime(bestLapForCar(car.idx)!) : '-' }}</td>
                     <td>
                       <span class="tyre" [attr.data-tyre]="car.tyre">{{ car.tyre }}</span>
                     </td>
@@ -406,6 +408,12 @@ export class RaceComponent implements OnInit, OnDestroy {
   strategyEvaluatedAtLap = signal(0);
   strategyStale = signal(false);
 
+  private bestLapMap = new Map<number, number>();
+
+  bestLapForCar(idx: number): number | null {
+    return this.bestLapMap.get(idx) ?? null;
+  }
+
   // Sector history tracking
   private sectorHistory = new Map<number, { lap: number; sector: number; timeMs: number }[]>();
   private prevSectors = new Map<number, number>();
@@ -524,6 +532,7 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.gapAhead.set(null);
     this.gapBehind.set(null);
     this.lastPlayerLaps.set([]);
+    this.bestLapMap.clear();
   }
 
   private updateSectorHistory(cars: CarSnapshot[]) {
@@ -587,6 +596,16 @@ export class RaceComponent implements OnInit, OnDestroy {
 
     this.gapAhead.set(carAhead ? this.computeGapRow(player, carAhead) : null);
     this.gapBehind.set(carBehind ? this.computeGapRow(player, carBehind) : null);
+  }
+
+  private updateBestLaps(cars: CarSnapshot[]) {
+    for (const car of cars) {
+      if (!car.lastLapTimeMs || car.lastLapTimeMs <= 0) continue;
+      const current = this.bestLapMap.get(car.idx);
+      if (current === undefined || car.lastLapTimeMs < current) {
+        this.bestLapMap.set(car.idx, car.lastLapTimeMs);
+      }
+    }
   }
 
   private updatePlayerLapHistory(cars: CarSnapshot[]) {
@@ -667,6 +686,7 @@ export class RaceComponent implements OnInit, OnDestroy {
           this.updateSectorHistory(msg.cars!);
           this.updateGapDeltas();
           this.updatePlayerLapHistory(msg.cars!);
+          this.updateBestLaps(msg.cars!);
         }
         if (msg.forecast) {
           this.forecast.set(msg.forecast);
@@ -683,6 +703,7 @@ export class RaceComponent implements OnInit, OnDestroy {
         this.gapAhead.set(null);
         this.gapBehind.set(null);
         this.lastPlayerLaps.set([]);
+        this.bestLapMap.clear();
         if (msg.trackId != null) this.trackId.set(msg.trackId);
         this.fetchActiveSessions();
         break;
