@@ -74,4 +74,42 @@ class RaceStateTest {
         assertTrue(ended.contains("sessionEnded"));
         assertNull(state.pollSessionEnded());
     }
+
+    @Test
+    void sessionUidChangeWithoutFinalClassificationFiresNewStart() {
+        RaceState state = new RaceState();
+
+        // Simulate FP session
+        state.fillTestData(0x1111L, 3, 1); // FP1 on Bahrain
+        String fpStarted = state.pollSessionStarted();
+        assertNotNull(fpStarted, "FP sessionStarted should fire");
+        assertTrue(fpStarted.contains("\"sessionUid\":\"1111\""));
+
+        // Transition directly to qualifying (no FinalClassification / markSessionEnded)
+        state.fillTestData(0x2222L, 3, 5); // Q1 on same track
+        String qStarted = state.pollSessionStarted();
+        assertNotNull(qStarted, "Qualifying sessionStarted should fire after UID change");
+        assertTrue(qStarted.contains("\"sessionUid\":\"2222\""));
+    }
+
+    @Test
+    void normalFinalClassificationFlowStillWorks() {
+        RaceState state = new RaceState();
+
+        // Session start
+        state.fillTestData(0xAAAAL, 3, 10);
+        assertNotNull(state.pollSessionStarted());
+
+        // Normal end via FinalClassification
+        state.markSessionEnded();
+        String ended = state.pollSessionEnded();
+        assertNotNull(ended, "sessionEnded should fire");
+        assertTrue(ended.contains("\"sessionUid\":\"aaaa\""));
+
+        // New session starts normally
+        state.fillTestData(0xBBBBL, 3, 10);
+        String started = state.pollSessionStarted();
+        assertNotNull(started, "New sessionStarted should fire after proper end");
+        assertTrue(started.contains("\"sessionUid\":\"bbbb\""));
+    }
 }

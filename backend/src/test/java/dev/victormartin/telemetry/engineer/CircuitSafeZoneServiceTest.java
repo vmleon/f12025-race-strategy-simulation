@@ -80,8 +80,10 @@ class CircuitSafeZoneServiceTest {
     }
 
     @Test
-    void currentZoneIndexReturnsMinusOneForUnknownTrack() {
-        assertEquals(-1, service.currentZoneIndex(999, 100f, 0));
+    void currentZoneIndexReturnsPermissiveFallbackForUnknownTrack() {
+        // Unconfigured tracks should allow delivery (consistent with isSafeToDeliver)
+        assertTrue(service.currentZoneIndex(999, 100f, 0) >= 0,
+                "Unconfigured tracks should return a non-negative zone index");
     }
 
     @Test

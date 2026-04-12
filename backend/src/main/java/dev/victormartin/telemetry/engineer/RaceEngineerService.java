@@ -36,6 +36,8 @@ public class RaceEngineerService {
     // -- session lifecycle -----------------------------------------------------
 
     public void onSessionStarted(String sessionUid, int trackId, int sessionType, int ersAssist, int drsAssist) {
+        // Remove any stale session for the same track (handles missed sessionEnded events)
+        sessions.values().removeIf(s -> s.trackId == trackId);
         SessionEngineerState session = new SessionEngineerState(sessionUid, trackId, sessionType, ersAssist, drsAssist);
         sessions.put(sessionUid, session);
         session.queue.enqueue(new EngineerMessage(

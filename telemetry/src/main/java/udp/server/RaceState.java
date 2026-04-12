@@ -95,6 +95,13 @@ public class RaceState {
     }
 
     public synchronized void updateFromSession(long sessionUid, SessionData session) {
+        if (this.sessionUid != 0 && this.sessionUid != sessionUid) {
+            // Session UID changed (e.g. FP → Qualifying) without a FinalClassification
+            // ending the old session first. Reset lifecycle flags so the new session's
+            // start event fires on the next TcpSender tick.
+            sessionStartSent = false;
+            sessionEndSent = false;
+        }
         this.sessionUid = sessionUid;
         this.trackId = session.trackId;
         this.weather = session.weather;
@@ -309,8 +316,19 @@ public class RaceState {
      * Fill with fake data for end-to-end testing.
      */
     public synchronized void fillTestData() {
-        this.sessionUid = 0xDEADBEEFCAFEBABEL;
-        this.trackId = 3;
+        fillTestData(0xDEADBEEFCAFEBABEL, 3, 10);
+    }
+
+    /** Overload with explicit session UID, trackId, and sessionType. */
+    public synchronized void fillTestData(long sessionUid, int trackId, int sessionType) {
+        // Trigger the same UID-change detection as updateFromSession
+        if (this.sessionUid != 0 && this.sessionUid != sessionUid) {
+            sessionStartSent = false;
+            sessionEndSent = false;
+        }
+        this.sessionUid = sessionUid;
+        this.trackId = trackId;
+        this.sessionType = sessionType;
         this.weather = 0;
         this.trackTemp = 32;
         this.airTemp = 24;

@@ -89,7 +89,7 @@ public class CircuitSafeZoneService {
      */
     public int currentZoneIndex(int trackId, float lapDistance, int speedKmh) {
         List<SafeZone> zones = circuits.get(trackId);
-        if (zones == null) return -1;
+        if (zones == null) return 0; // permissive fallback, consistent with isSafeToDeliver
         float offsetMetres = (speedKmh / 3.6f) * LAG_SECONDS;
         for (int i = 0; i < zones.size(); i++) {
             SafeZone zone = zones.get(i);
