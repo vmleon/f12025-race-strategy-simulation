@@ -78,6 +78,17 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
                 [evaluatedAtLap]="strategyEvaluatedAtLap()"
                 [stale]="strategyStale()"
               />
+              @if (lastPlayerLaps().length > 0) {
+                <div class="last-laps">
+                  <h3>Last Laps</h3>
+                  @for (entry of lastPlayerLaps(); track entry.lap) {
+                    <div class="lap-entry">
+                      <span class="lap-num">L{{ entry.lap }}</span>
+                      <span class="lap-time">{{ formatLapTime(entry.timeMs) }}</span>
+                    </div>
+                  }
+                </div>
+              }
             </div>
             <table class="race-table">
               <thead>
@@ -292,6 +303,32 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
       color: #fff;
     }
 
+    .last-laps {
+      background: #1a1a1a;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin-top: 0.75rem;
+    }
+    .last-laps h3 {
+      margin: 0 0 0.4rem;
+      font-size: 0.9rem;
+      color: #999;
+      text-transform: uppercase;
+    }
+    .lap-entry {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.2rem 0;
+      font-size: 0.8rem;
+    }
+    .lap-num {
+      color: #999;
+    }
+    .lap-time {
+      font-family: monospace;
+      color: #e0e0e0;
+    }
+
     .events {
       margin-top: 1.5rem;
     }
@@ -376,6 +413,7 @@ export class RaceComponent implements OnInit, OnDestroy {
 
   gapAhead = signal<GapRow | null>(null);
   gapBehind = signal<GapRow | null>(null);
+  lastPlayerLaps = signal<{ lap: number; timeMs: number }[]>([]);
 
   playerCar = computed(() => this.cars().find((c) => !c.ai) ?? null);
   penaltyEvents = computed(() => this.events().filter((e) => e.event === 'PENA'));
@@ -428,6 +466,15 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.resetState();
   }
 
+  formatLapTime(ms: number): string {
+    const totalSeconds = ms / 1000;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return minutes > 0
+      ? `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`
+      : seconds.toFixed(3);
+  }
+
   formatSector(sectors: number[] | undefined, idx: number): string {
     if (!sectors || sectors[idx] == null || sectors[idx] === 0) return '-';
     const ms = sectors[idx];
@@ -476,6 +523,7 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.prevLaps.clear();
     this.gapAhead.set(null);
     this.gapBehind.set(null);
+    this.lastPlayerLaps.set([]);
   }
 
   private updateSectorHistory(cars: CarSnapshot[]) {
@@ -541,6 +589,21 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.gapBehind.set(carBehind ? this.computeGapRow(player, carBehind) : null);
   }
 
+  private updatePlayerLapHistory(cars: CarSnapshot[]) {
+    const player = cars.find((c) => !c.ai);
+    if (!player || !player.lastLapTimeMs || player.lastLapTimeMs <= 0) return;
+    if (player.lap < 2) return; // need at least one completed lap
+
+    const completedLap = player.lap - 1;
+    const history = this.lastPlayerLaps();
+    const lastEntry = history.length > 0 ? history[history.length - 1] : null;
+    if (lastEntry && lastEntry.lap >= completedLap) return;
+
+    const updated = [...history, { lap: completedLap, timeMs: player.lastLapTimeMs }];
+    if (updated.length > 5) updated.splice(0, updated.length - 5);
+    this.lastPlayerLaps.set(updated);
+  }
+
   private computeGapRow(player: CarSnapshot, other: CarSnapshot): GapRow {
     const playerHist = this.sectorHistory.get(player.idx) ?? [];
     const otherHist = this.sectorHistory.get(other.idx) ?? [];
@@ -603,6 +666,7 @@ export class RaceComponent implements OnInit, OnDestroy {
           this.cars.set([...racing, ...out]);
           this.updateSectorHistory(msg.cars!);
           this.updateGapDeltas();
+          this.updatePlayerLapHistory(msg.cars!);
         }
         if (msg.forecast) {
           this.forecast.set(msg.forecast);
@@ -618,6 +682,7 @@ export class RaceComponent implements OnInit, OnDestroy {
         this.prevLaps.clear();
         this.gapAhead.set(null);
         this.gapBehind.set(null);
+        this.lastPlayerLaps.set([]);
         if (msg.trackId != null) this.trackId.set(msg.trackId);
         this.fetchActiveSessions();
         break;
