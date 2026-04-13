@@ -364,10 +364,10 @@ public class RaceEngineerService {
         int tyreAge = playerCar.has("tyreAge") ? playerCar.get("tyreAge").asInt() : 0;
 
         if (tyreAge >= 20 && session.lastTyreAgeAlert < 20) {
-            String compound = playerCar.has("tyre") ? playerCar.get("tyre").asText() : "tyres";
+            String compound = playerCar.has("tyre") ? playerCar.get("tyre").asText() : "";
             session.queue.enqueue(new EngineerMessage(
                     Priority.NORMAL,
-                    compound + " tyres are " + tyreAge + " laps old. Consider a pit stop.",
+                    capitalize(abbreviationToSpokenName(compound)) + " tyres are " + tyreAge + " laps old. Consider a pit stop.",
                     System.currentTimeMillis(), currentLap, 3));
             session.lastTyreAgeAlert = tyreAge;
         } else if (tyreAge >= 30 && session.lastTyreAgeAlert < 30) {
@@ -382,10 +382,10 @@ public class RaceEngineerService {
         if (tyreAge < session.previousTyreAge) {
             session.lastTyreAgeAlert = 0;
             for (int i = 0; i < session.lastWearAlertPct.length; i++) session.lastWearAlertPct[i] = 0;
-            String newCompound = playerCar.has("tyre") ? playerCar.get("tyre").asText() : "new";
+            String newCompound = playerCar.has("tyre") ? playerCar.get("tyre").asText() : "";
             session.queue.enqueue(new EngineerMessage(
                     Priority.NORMAL,
-                    "Copy, new " + newCompound + " tyres on. Take it easy for the out lap.",
+                    "Copy, new " + abbreviationToSpokenName(newCompound) + " tyres on. Take it easy for the out lap.",
                     System.currentTimeMillis(), currentLap, 1));
         }
         session.previousTyreAge = tyreAge;
@@ -863,6 +863,23 @@ public class RaceEngineerService {
 
     private SessionEngineerState findAnyActiveSession() {
         return sessions.values().stream().findFirst().orElse(null);
+    }
+
+    static String abbreviationToSpokenName(String abbr) {
+        if (abbr == null) return "unknown";
+        return switch (abbr) {
+            case "S" -> "soft";
+            case "M" -> "medium";
+            case "H" -> "hard";
+            case "I" -> "intermediate";
+            case "W" -> "wet";
+            default -> "unknown";
+        };
+    }
+
+    private static String capitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
     private static String mapCompoundName(int compound) {
