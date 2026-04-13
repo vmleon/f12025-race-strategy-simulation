@@ -1,5 +1,6 @@
 package dev.victormartin.telemetry.engineer;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -122,6 +123,14 @@ public class RaceEngineerService {
             if (session.isQualifying()) {
                 detectQualifyingSectorDelta(session, playerCar, currentLap);
                 detectQualifyingLapComplete(session, carsNode, playerCar, currentLap);
+            }
+
+            // Practice-only detectors.
+            if (session.isPractice()) {
+                detectPracticeGripMessages(session, currentLap);
+                detectPracticeTyreFuelSummary(session, playerCar, currentLap);
+                detectPracticeSectorComparison(session, carsNode, playerCar, currentLap);
+                detectPracticeTrackTraffic(session, carsNode, playerCar, currentLap, trackLength);
             }
 
             // Try to deliver a message
@@ -456,6 +465,187 @@ public class RaceEngineerService {
                 Priority.NORMAL, text,
                 System.currentTimeMillis(), currentLap, 2));
         session.lastPlayerLap = currentLap;
+    }
+
+    private static final String[] GRIP_MESSAGES = {
+        "Grip coming in, keep pushing.",
+        "Still warming up, take it easy.",
+        "Rear feels settled, good balance.",
+        "Fronts biting nicely.",
+        "Watch the understeer through the high-speed stuff."
+    };
+
+    private void detectPracticeGripMessages(SessionEngineerState session, int currentLap) {
+        if (currentLap < 2) return;
+        if (session.nextGripMessageLap == 0) {
+            session.nextGripMessageLap = currentLap + 5 + (int) (Math.random() * 3);
+            return;
+        }
+        if (currentLap < session.nextGripMessageLap) return;
+        if (currentLap == session.lastGripMessageLap) return;
+
+        int idx = (int) (Math.random() * GRIP_MESSAGES.length);
+        session.queue.enqueue(new EngineerMessage(
+                Priority.NORMAL,
+                GRIP_MESSAGES[idx],
+                System.currentTimeMillis(), currentLap, 3));
+        session.lastGripMessageLap = currentLap;
+        session.nextGripMessageLap = currentLap + 5 + (int) (Math.random() * 3);
+    }
+
+    private void detectPracticeTyreFuelSummary(SessionEngineerState session, JsonNode playerCar, int currentLap) {
+        if (currentLap < 2) return;
+        if (currentLap - session.lastTyreFuelSummaryLap < 4) return;
+
+        JsonNode wearNode = playerCar.get("tyreWear");
+        if (wearNode == null || !wearNode.isArray() || wearNode.size() < 4) return;
+
+        // wear order is [RL, RR, FL, FR]
+        int rearAvg = (int) Math.round((wearNode.get(0).asDouble() + wearNode.get(1).asDouble()) / 2.0);
+        int frontAvg = (int) Math.round((wearNode.get(2).asDouble() + wearNode.get(3).asDouble()) / 2.0);
+
+        int fuel = playerCar.has("fuel")
+                ? (int) Math.round(playerCar.get("fuel").asDouble())
+                : -1;
+        if (fuel < 0) return;
+
+        String text = "Fronts at " + frontAvg + "% wear, rears at " + rearAvg + "%, fuel "
+                + fuel + " kilograms.";
+        session.queue.enqueue(new EngineerMessage(
+                Priority.NORMAL,
+                text,
+                System.currentTimeMillis(), currentLap, 3));
+        session.lastTyreFuelSummaryLap = currentLap;
+    }
+
+    private void detectPracticeSectorComparison(SessionEngineerState session, JsonNode carsNode,
+                                                  JsonNode playerCar, int currentLap) {
+        // Update best sector times for every car on sector transitions.
+        for (JsonNode car : carsNode) {
+            int idx = car.has("idx") ? car.get("idx").asInt() : -1;
+            if (idx < 0 || idx >= session.previousCarSectors.length) continue;
+            int sector = car.has("sector") ? car.get("sector").asInt() : 0;
+            int prevSector = session.previousCarSectors[idx];
+            session.previousCarSectors[idx] = sector;
+
+            int completedSector = -1;
+            long timeMs = 0;
+            JsonNode sectorMs = car.get("lastSectorMs");
+            if (sectorMs == null || !sectorMs.isArray() || sectorMs.size() < 2) continue;
+
+            if (prevSector == 0 && sector == 1) {
+                completedSector = 0;
+                timeMs = sectorMs.get(0).asLong();
+            } else if (prevSector == 1 && sector == 2) {
+                completedSector = 1;
+                timeMs = sectorMs.get(1).asLong();
+            }
+            if (completedSector < 0 || timeMs <= 0) continue;
+
+            boolean isPlayer = car.has("ai") && !car.get("ai").asBoolean();
+            if (isPlayer) {
+                long playerBest = session.playerBestSectors[completedSector];
+                boolean newPlayerBest = playerBest == 0 || timeMs < playerBest;
+                if (newPlayerBest) {
+                    session.playerBestSectors[completedSector] = timeMs;
+                    fireSectorComparisonIfFaster(session, carsNode, completedSector, timeMs, currentLap);
+                }
+            } else {
+                long[] bests = session.bestSectorTimesByCar.computeIfAbsent(idx, k -> new long[3]);
+                if (bests[completedSector] == 0 || timeMs < bests[completedSector]) {
+                    bests[completedSector] = timeMs;
+                }
+            }
+        }
+    }
+
+    private void fireSectorComparisonIfFaster(SessionEngineerState session, JsonNode carsNode,
+                                                int sector, long playerBestMs, int currentLap) {
+        if (currentLap - session.lastSectorComparisonLap[sector] < 3) return;
+
+        long fastestOtherMs = 0;
+        int fastestCarIdx = -1;
+        for (Map.Entry<Integer, long[]> e : session.bestSectorTimesByCar.entrySet()) {
+            long ms = e.getValue()[sector];
+            if (ms <= 0) continue;
+            if (fastestOtherMs == 0 || ms < fastestOtherMs) {
+                fastestOtherMs = ms;
+                fastestCarIdx = e.getKey();
+            }
+        }
+        if (fastestCarIdx < 0 || fastestOtherMs >= playerBestMs) return;
+
+        long deltaMs = playerBestMs - fastestOtherMs;
+        if (deltaMs < 150) return;
+
+        String name = "Rival";
+        for (JsonNode car : carsNode) {
+            int idx = car.has("idx") ? car.get("idx").asInt() : -1;
+            if (idx == fastestCarIdx) {
+                if (car.has("name")) name = car.get("name").asText();
+                break;
+            }
+        }
+
+        String text = name + " is " + formatTenths(deltaMs / 1000.0) + " seconds faster in Sector "
+                + (sector + 1) + ".";
+        session.queue.enqueue(new EngineerMessage(
+                Priority.NORMAL,
+                text,
+                System.currentTimeMillis(), currentLap, 3));
+        session.lastSectorComparisonLap[sector] = currentLap;
+    }
+
+    private void detectPracticeTrackTraffic(SessionEngineerState session, JsonNode carsNode,
+                                              JsonNode playerCar, int currentLap, int trackLength) {
+        int pitStatus = playerCar.has("pitStatus") ? playerCar.get("pitStatus").asInt() : 0;
+
+        try {
+            // Reset stint flag when player leaves the pit lane
+            if (pitStatus == 0 && session.previousPitStatus > 0) {
+                session.trackTrafficMessageSentThisStint = false;
+            }
+            if (pitStatus == 0 || session.trackTrafficMessageSentThisStint) return;
+
+            float playerDist = playerCar.has("lapDist") ? (float) playerCar.get("lapDist").asDouble() : 0f;
+
+            float nearestApproachingSeconds = Float.MAX_VALUE;
+            String nearestName = null;
+            for (JsonNode car : carsNode) {
+                boolean isAi = car.has("ai") && car.get("ai").asBoolean();
+                if (!isAi) continue;
+                int otherPit = car.has("pitStatus") ? car.get("pitStatus").asInt() : 0;
+                if (otherPit > 0) continue;
+
+                float otherDist = car.has("lapDist") ? (float) car.get("lapDist").asDouble() : 0f;
+                float gap = playerDist - otherDist;
+                if (gap < 0) gap += trackLength;
+                float seconds = gap / 55f;
+                if (seconds < nearestApproachingSeconds) {
+                    nearestApproachingSeconds = seconds;
+                    nearestName = car.has("name") ? car.get("name").asText() : "a car";
+                }
+            }
+
+            if (nearestName == null) return;
+
+            String text;
+            if (nearestApproachingSeconds > 15f) {
+                text = "Track is clear, go now.";
+            } else if (nearestApproachingSeconds < 8f) {
+                text = "Hold position, " + nearestName + " about to pass.";
+            } else {
+                return;
+            }
+
+            session.queue.enqueue(new EngineerMessage(
+                    Priority.HIGH,
+                    text,
+                    System.currentTimeMillis(), currentLap, 2));
+            session.trackTrafficMessageSentThisStint = true;
+        } finally {
+            session.previousPitStatus = pitStatus;
+        }
     }
 
     private static String formatTenths(double value) {
@@ -906,6 +1096,7 @@ public class RaceEngineerService {
 
         boolean isRace() { return sessionType >= 10 && sessionType <= 12; }
         boolean isQualifying() { return sessionType >= 5 && sessionType <= 9; }
+        boolean isPractice() { return sessionType >= 1 && sessionType <= 4; }
         final RaceEngineerQueue queue = new RaceEngineerQueue();
 
         int lastPlayerLap = 0;
@@ -966,6 +1157,22 @@ public class RaceEngineerService {
         // Sector 3 not tracked separately — reported as part of lap-complete.
         final long[] bestSectorMs = new long[3];
         int previousPlayerSector = -1;
+
+        // Practice: grip message cadence
+        int lastGripMessageLap = 0;
+        int nextGripMessageLap = 0;
+
+        // Practice: tyre+fuel summary cadence
+        int lastTyreFuelSummaryLap = 0;
+
+        // Practice: sector comparison state (car idx -> [best S1, best S2, best S3] in ms)
+        final Map<Integer, long[]> bestSectorTimesByCar = new HashMap<>();
+        final long[] playerBestSectors = new long[3];
+        final int[] lastSectorComparisonLap = new int[3];
+        final int[] previousCarSectors = new int[22];
+
+        // Practice: track traffic (pit-stint-scoped)
+        boolean trackTrafficMessageSentThisStint = false;
 
         SessionEngineerState(String sessionUid, int trackId, int sessionType, int ersAssist, int drsAssist) {
             this.sessionUid = sessionUid;
