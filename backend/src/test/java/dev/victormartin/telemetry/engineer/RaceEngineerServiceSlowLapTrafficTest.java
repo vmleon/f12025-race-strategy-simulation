@@ -92,9 +92,12 @@ class RaceEngineerServiceSlowLapTrafficTest {
     @Test
     void doesNotFireWhenRivalFarAway() {
         startSession(2);
-        // Rival > 4s behind: gap > 220m. rivalDist=5280 wraps to 223m gap ≈ 4.05s
-        primeSlowBuffer(5280.0f);
-        service.onStateUpdate(stateJson(0.20f, 5285.0f));
+        // Both prime and advanced rival positions keep gap > 4s.
+        // primed: rivalDist=5250, gap=(200-5250+5303)/55=253/55≈4.60s
+        // advanced: rivalDist=5260, gap=(200-5260+5303)/55=243/55≈4.42s
+        // closing but gap still > 4.0s → should not fire
+        primeSlowBuffer(5250.0f);
+        service.onStateUpdate(stateJson(0.20f, 5260.0f));
         assertEquals(0, broadcastsContaining("closing fast behind").size(),
                 "Should NOT fire when gap > 4s, got: " + broadcasts);
     }

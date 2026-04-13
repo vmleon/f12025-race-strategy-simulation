@@ -1134,7 +1134,7 @@ public class RaceEngineerService {
 
     private static final int THROTTLE_BUFFER_SIZE = 3;
     private static final float SLOW_LAP_THROTTLE_THRESHOLD = 0.40f;
-    private static final float SLOW_LAP_GAP_THRESHOLD_SEC = 3.5f;
+    private static final float SLOW_LAP_GAP_THRESHOLD_SEC = 4.0f;
     private static final long SLOW_LAP_COOLDOWN_MS = 15_000L;
 
     private static void updateThrottleBuffer(SessionEngineerState session, JsonNode playerCar) {
