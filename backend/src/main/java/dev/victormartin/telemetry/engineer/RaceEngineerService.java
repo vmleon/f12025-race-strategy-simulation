@@ -1,5 +1,7 @@
 package dev.victormartin.telemetry.engineer;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -79,6 +81,8 @@ public class RaceEngineerService {
             }
             if (playerCar == null) return;
 
+            updateThrottleBuffer(session, playerCar);
+
             int currentLap = playerCar.has("lap") ? playerCar.get("lap").asInt() : 1;
             float lapDistance = playerCar.has("lapDist") ? (float) playerCar.get("lapDist").asDouble() : 0f;
             int totalLaps = state.has("totalLaps") ? state.get("totalLaps").asInt() : 0;
@@ -123,6 +127,7 @@ public class RaceEngineerService {
             if (session.isQualifying()) {
                 detectQualifyingSectorDelta(session, playerCar, currentLap);
                 detectQualifyingLapComplete(session, carsNode, playerCar, currentLap);
+                detectSlowLapTrafficWarning(session, carsNode, playerCar, currentLap, trackLength);
             }
 
             // Practice-only detectors.
@@ -131,6 +136,7 @@ public class RaceEngineerService {
                 detectPracticeTyreFuelSummary(session, playerCar, currentLap);
                 detectPracticeSectorComparison(session, carsNode, playerCar, currentLap);
                 detectPracticeTrackTraffic(session, carsNode, playerCar, currentLap, trackLength);
+                detectSlowLapTrafficWarning(session, carsNode, playerCar, currentLap, trackLength);
             }
 
             // Try to deliver a message
@@ -648,6 +654,60 @@ public class RaceEngineerService {
         }
     }
 
+    private void detectSlowLapTrafficWarning(SessionEngineerState session, JsonNode carsNode,
+                                               JsonNode playerCar, int currentLap, int trackLength) {
+        if (!isPlayerOnSlowLap(session)) {
+            session.previousSlowLapGapBehind = -1f;
+            return;
+        }
+
+        int playerPos = playerCar.has("pos") ? playerCar.get("pos").asInt() : 0;
+        JsonNode carBehind = null;
+        for (JsonNode car : carsNode) {
+            int pos = car.has("pos") ? car.get("pos").asInt() : 0;
+            if (pos == playerPos + 1) {
+                carBehind = car;
+                break;
+            }
+        }
+        if (carBehind == null) {
+            session.previousSlowLapGapBehind = -1f;
+            return;
+        }
+
+        int behindIdx = carBehind.has("idx") ? carBehind.get("idx").asInt() : -1;
+        String behindName = carBehind.has("name") ? carBehind.get("name").asText() : "Car behind";
+
+        float playerLapDist = playerCar.has("lapDist") ? (float) playerCar.get("lapDist").asDouble() : 0f;
+        float behindLapDist = carBehind.has("lapDist") ? (float) carBehind.get("lapDist").asDouble() : 0f;
+        int playerLap = playerCar.has("lap") ? playerCar.get("lap").asInt() : 0;
+        int behindLap = carBehind.has("lap") ? carBehind.get("lap").asInt() : 0;
+        if (playerLap != behindLap) {
+            session.previousSlowLapGapBehind = -1f;
+            return;
+        }
+
+        float gap = playerLapDist - behindLapDist;
+        if (gap < 0) gap += trackLength;
+        float gapSeconds = gap / 55f;
+
+        boolean closing = session.previousSlowLapGapBehind > 0 && gapSeconds < session.previousSlowLapGapBehind;
+        session.previousSlowLapGapBehind = gapSeconds;
+
+        if (gapSeconds >= SLOW_LAP_GAP_THRESHOLD_SEC) return;
+        if (!closing) return;
+
+        long now = System.currentTimeMillis();
+        Long lastFired = session.slowLapCooldownByCar.get(behindIdx);
+        if (lastFired != null && (now - lastFired) < SLOW_LAP_COOLDOWN_MS) return;
+
+        session.queue.enqueue(new EngineerMessage(
+                Priority.HIGH,
+                behindName + " closing fast behind, let them through.",
+                now, currentLap, 2));
+        session.slowLapCooldownByCar.put(behindIdx, now);
+    }
+
     private static String formatTenths(double value) {
         double rounded = Math.round(value * 10) / 10.0;
         if (rounded == Math.floor(rounded)) return String.format("%.0f", rounded);
@@ -1072,6 +1132,27 @@ public class RaceEngineerService {
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
+    private static final int THROTTLE_BUFFER_SIZE = 3;
+    private static final float SLOW_LAP_THROTTLE_THRESHOLD = 0.40f;
+    private static final float SLOW_LAP_GAP_THRESHOLD_SEC = 3.5f;
+    private static final long SLOW_LAP_COOLDOWN_MS = 15_000L;
+
+    private static void updateThrottleBuffer(SessionEngineerState session, JsonNode playerCar) {
+        if (!playerCar.has("throttle")) return;
+        float throttle = (float) playerCar.get("throttle").asDouble();
+        session.playerThrottleBuffer.addLast(throttle);
+        while (session.playerThrottleBuffer.size() > THROTTLE_BUFFER_SIZE) {
+            session.playerThrottleBuffer.removeFirst();
+        }
+    }
+
+    private static boolean isPlayerOnSlowLap(SessionEngineerState session) {
+        if (session.playerThrottleBuffer.size() < THROTTLE_BUFFER_SIZE) return false;
+        float sum = 0f;
+        for (Float f : session.playerThrottleBuffer) sum += f;
+        return (sum / session.playerThrottleBuffer.size()) < SLOW_LAP_THROTTLE_THRESHOLD;
+    }
+
     private static String mapCompoundName(int compound) {
         return switch (compound) {
             case 16 -> "Softs";
@@ -1173,6 +1254,11 @@ public class RaceEngineerService {
 
         // Practice: track traffic (pit-stint-scoped)
         boolean trackTrafficMessageSentThisStint = false;
+
+        // Slow-lap throttle buffer (rolling 3 samples) and per-driver cooldowns
+        final Deque<Float> playerThrottleBuffer = new ArrayDeque<>();
+        final Map<Integer, Long> slowLapCooldownByCar = new HashMap<>();
+        float previousSlowLapGapBehind = -1f;
 
         SessionEngineerState(String sessionUid, int trackId, int sessionType, int ersAssist, int drsAssist) {
             this.sessionUid = sessionUid;
