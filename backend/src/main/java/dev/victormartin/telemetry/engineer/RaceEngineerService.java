@@ -135,7 +135,7 @@ public class RaceEngineerService {
                 detectPracticeGripMessages(session, currentLap);
                 detectPracticeTyreFuelSummary(session, playerCar, currentLap);
                 detectPracticeSectorComparison(session, carsNode, playerCar, currentLap);
-                detectPracticeTrackTraffic(session, carsNode, playerCar, currentLap, trackLength);
+                detectSessionTrackTraffic(session, carsNode, playerCar, currentLap, trackLength);
                 detectSlowLapTrafficWarning(session, carsNode, playerCar, currentLap, trackLength);
             }
 
@@ -602,7 +602,7 @@ public class RaceEngineerService {
         session.lastSectorComparisonLap[sector] = currentLap;
     }
 
-    private void detectPracticeTrackTraffic(SessionEngineerState session, JsonNode carsNode,
+    private void detectSessionTrackTraffic(SessionEngineerState session, JsonNode carsNode,
                                               JsonNode playerCar, int currentLap, int trackLength) {
         int pitStatus = playerCar.has("pitStatus") ? playerCar.get("pitStatus").asInt() : 0;
 
