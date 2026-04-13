@@ -156,3 +156,42 @@ class TestGenerateCandidates:
             for stop in c.stops:
                 assert stop.on_lap > 10, f"Pit lap {stop.on_lap} should be > current lap 10"
                 assert stop.on_lap < 50, f"Pit lap {stop.on_lap} should be < total laps 50"
+
+    def test_filters_candidates_with_overlong_soft_stint(self):
+        """A 1-stop candidate where the Soft stint exceeds the lifespan (30) must be pruned."""
+        # Player on Soft (16) at lap 5, total 50 laps, tyre_age=5 (default _make_car).
+        # Effective first-stint length = (pit_lap - 5) + 5.
+        # Lifespan(Soft) = 30, so pit_lap must be <= 30 to keep the candidate.
+        # player_pits=1 satisfies the two-compound rule so candidates aren't filtered for that reason.
+        tyre_sets = [
+            _make_tyre_set(16, fitted=True, usable_life=40, wear=5),
+            _make_tyre_set(17, available=True),
+        ]
+        snapshot = _make_snapshot(current_lap=5, total_laps=50, player_compound=16,
+                                  player_pits=1, player_tyre_sets=tyre_sets)
+
+        candidates = generate_candidates(snapshot, player_car_index=0)
+
+        # Every retained 1-stop candidate's effective Soft first stint must be <= 30 laps.
+        for c in candidates:
+            if len(c.stops) == 1:
+                effective_stint = (c.stops[0].on_lap - 5) + 5  # +5 for starting tyre_age
+                assert effective_stint <= 30, (
+                    f"Candidate {c.label}: soft first stint = {effective_stint} laps, exceeds lifespan 30"
+                )
+
+    def test_keeps_valid_short_stint_candidates(self):
+        """A scenario where 1-stop candidates fit within lifespan must produce some candidates."""
+        tyre_sets = [
+            _make_tyre_set(17, fitted=True, usable_life=37, wear=0),
+            _make_tyre_set(16, available=True),
+        ]
+        snapshot = _make_snapshot(current_lap=5, total_laps=20, player_compound=17,
+                                  player_pits=1, player_tyre_sets=tyre_sets)
+
+        candidates = generate_candidates(snapshot, player_car_index=0)
+
+        one_stop = [c for c in candidates if len(c.stops) == 1]
+        assert len(one_stop) > 0, (
+            f"Expected at least one valid 1-stop candidate, got: {[c.label for c in candidates]}"
+        )

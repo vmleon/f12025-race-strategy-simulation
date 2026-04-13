@@ -9,6 +9,7 @@ from simulator.models import (
     StrategyCandidate,
     TyreSetInfo,
 )
+from simulator.tyre_lifespan import compound_lifespan
 
 logger = logging.getLogger("simulator")
 
@@ -134,6 +135,18 @@ def generate_candidates(
                             )
                         )
 
+    # Lifespan pruning: drop candidates whose stints exceed compound lifespan.
+    candidates = [
+        c for c in candidates
+        if _candidate_fits_lifespans(
+            c,
+            starting_compound=current_compound,
+            starting_tyre_age=player.tyre_age_laps,
+            current_lap=snapshot.current_lap,
+            total_laps=snapshot.total_laps,
+        )
+    ]
+
     pre_truncate = len(candidates)
 
     # Truncate to max candidates, preferring 1-stop over 2-stop
@@ -184,3 +197,37 @@ def _compute_lap_step(remaining_laps: int) -> int:
     if remaining_laps <= 30:
         return 3
     return 5
+
+
+def _candidate_fits_lifespans(
+    candidate: StrategyCandidate,
+    starting_compound: int,
+    starting_tyre_age: int,
+    current_lap: int,
+    total_laps: int,
+) -> bool:
+    """Return True if every stint in the candidate fits within its compound's lifespan.
+
+    Stint length conventions:
+    - First stint: from current_lap up to (but not including) the first pit lap,
+      plus the laps already accumulated on the fitted tyre (starting_tyre_age).
+    - Middle stints: from previous pit_lap to next pit_lap.
+    - Final stint: from last pit_lap through total_laps inclusive.
+    """
+    stint_start = current_lap
+    stint_compound = starting_compound
+    age_offset = starting_tyre_age
+
+    for stop in candidate.stops:
+        stint_len = (stop.on_lap - stint_start) + age_offset
+        if stint_len > compound_lifespan(stint_compound):
+            return False
+        stint_start = stop.on_lap
+        stint_compound = stop.new_compound
+        age_offset = 0  # fresh tyre after pit
+
+    final_stint_len = (total_laps - stint_start + 1) + age_offset
+    if final_stint_len > compound_lifespan(stint_compound):
+        return False
+
+    return True
