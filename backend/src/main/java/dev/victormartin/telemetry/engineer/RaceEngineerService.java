@@ -127,6 +127,7 @@ public class RaceEngineerService {
             if (session.isQualifying()) {
                 detectQualifyingSectorDelta(session, playerCar, currentLap);
                 detectQualifyingLapComplete(session, carsNode, playerCar, currentLap);
+                detectSessionTrackTraffic(session, carsNode, playerCar, currentLap, trackLength);
                 detectSlowLapTrafficWarning(session, carsNode, playerCar, currentLap, trackLength);
             }
 
