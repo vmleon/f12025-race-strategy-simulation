@@ -9,6 +9,7 @@ import numpy as np
 from simulator.car_state import CarState
 from simulator.coefficients import Coefficients
 from simulator.models import Penalty
+from simulator.tyre_lifespan import compound_lifespan
 from simulator.models import CarResult, RaceSnapshot, SimulationResult
 
 DEFAULT_ITERATIONS = 1_000
@@ -251,14 +252,9 @@ class MonteCarloEngine:
                     self._execute_pit_stop(car, stop.new_compound)
                     return
 
-        # AI heuristic: pit when tyres are very old
+        # AI heuristic: pit at the game-imposed compound lifespan (the cliff).
         if car.ai_controlled:
-            threshold = {
-                16: 15 + self.rng.randint(0, 5),   # soft: 15-20 laps
-                17: 25 + self.rng.randint(0, 5),   # medium: 25-30 laps
-                18: 35 + self.rng.randint(0, 5),   # hard: 35-40 laps
-            }.get(car.tyre_compound, 25)
-            if car.tyre_age_laps >= threshold:
+            if car.tyre_age_laps >= compound_lifespan(car.tyre_compound):
                 new_compound = 18 if car.tyre_compound == 16 else 17
                 self._execute_pit_stop(car, new_compound)
 

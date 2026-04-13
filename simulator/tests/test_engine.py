@@ -247,3 +247,34 @@ class TestPenalties:
         # All cars have empty penalties by default
         for car_result in r1.cars:
             assert 1.0 <= car_result.mean_position <= 3.0
+
+
+def test_ai_pits_at_exactly_soft_lifespan_30():
+    """AI on Soft should NOT pit at age 29 but SHOULD pit at age 30 (game-imposed lifespan)."""
+    from simulator.engine import MonteCarloEngine
+    from simulator.coefficients import Coefficients
+    from simulator.car_state import CarState
+
+    engine = MonteCarloEngine(Coefficients(), seed=42)
+    snapshot = _make_snapshot()
+
+    # Age 29: should NOT pit (under lifespan 30)
+    car_young = CarState(
+        car_index=1, driver_name="AI", ai_controlled=True, position=2,
+        tyre_compound=16, tyre_age_laps=29, fuel_kg=50.0,
+        fuel_burn_per_sector_kg=0.18, front_wing_damage=0, floor_damage=0,
+        engine_damage=0, num_pit_stops=0, total_time_ms=0.0, current_lap=20,
+    )
+    engine._check_pit_stop(car_young, lap=20, snapshot=snapshot)
+    assert car_young.num_pit_stops == 0, "AI should NOT pit at age 29 (under lifespan 30)"
+
+    # Age 30: SHOULD pit
+    car_due = CarState(
+        car_index=1, driver_name="AI", ai_controlled=True, position=2,
+        tyre_compound=16, tyre_age_laps=30, fuel_kg=50.0,
+        fuel_burn_per_sector_kg=0.18, front_wing_damage=0, floor_damage=0,
+        engine_damage=0, num_pit_stops=0, total_time_ms=0.0, current_lap=20,
+    )
+    engine._check_pit_stop(car_due, lap=20, snapshot=snapshot)
+    assert car_due.num_pit_stops == 1, "AI should pit at age 30 (lifespan)"
+    assert car_due.tyre_age_laps == 0, "Tyre age should reset after pit"
