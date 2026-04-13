@@ -54,78 +54,78 @@ class RaceEngineerServicePerCornerWearTest {
         }
     }
 
-    // -- 25% threshold per corner ---------------------------------------------
+    // -- 24% threshold per corner ---------------------------------------------
 
     @Test
-    void rearLeftCrosses25Percent() {
-        flush(5, 26f, 0f, 0f, 0f);
+    void rearLeftCrosses24Percent() {
+        flush(5, 25f, 0f, 0f, 0f);
         List<String> msgs = broadcastsContaining("Rear-left starting to degrade");
-        assertEquals(1, msgs.size(), "RL 25% should fire once, got: " + broadcasts);
+        assertEquals(1, msgs.size(), "RL 24% should fire once, got: " + broadcasts);
         assertTrue(msgs.get(0).contains("NORMAL"));
     }
 
     @Test
-    void rearRightCrosses25Percent() {
-        flush(5, 0f, 26f, 0f, 0f);
+    void rearRightCrosses24Percent() {
+        flush(5, 0f, 25f, 0f, 0f);
         assertEquals(1, broadcastsContaining("Rear-right starting to degrade").size(),
-                "RR 25% should fire once, got: " + broadcasts);
+                "RR 24% should fire once, got: " + broadcasts);
     }
 
     @Test
-    void frontLeftCrosses25Percent() {
-        flush(5, 0f, 0f, 26f, 0f);
+    void frontLeftCrosses24Percent() {
+        flush(5, 0f, 0f, 25f, 0f);
         assertEquals(1, broadcastsContaining("Front-left starting to degrade").size(),
-                "FL 25% should fire once, got: " + broadcasts);
+                "FL 24% should fire once, got: " + broadcasts);
     }
 
     @Test
-    void frontRightCrosses25Percent() {
-        flush(5, 0f, 0f, 0f, 26f);
+    void frontRightCrosses24Percent() {
+        flush(5, 0f, 0f, 0f, 25f);
         assertEquals(1, broadcastsContaining("Front-right starting to degrade").size(),
-                "FR 25% should fire once, got: " + broadcasts);
+                "FR 24% should fire once, got: " + broadcasts);
     }
 
-    // -- 50% threshold per corner ---------------------------------------------
+    // -- 37% threshold per corner ---------------------------------------------
 
     @Test
-    void rearLeftCrosses50Percent() {
-        flush(5, 51f, 0f, 0f, 0f);
+    void rearLeftCrosses37Percent() {
+        flush(5, 38f, 0f, 0f, 0f);
         List<String> msgs = broadcastsContaining("Rear-left is finished");
-        assertEquals(1, msgs.size(), "RL 50% should fire once, got: " + broadcasts);
+        assertEquals(1, msgs.size(), "RL 37% should fire once, got: " + broadcasts);
         assertTrue(msgs.get(0).contains("HIGH"));
     }
 
     @Test
-    void rearRightCrosses50Percent() {
-        flush(5, 0f, 51f, 0f, 0f);
+    void rearRightCrosses37Percent() {
+        flush(5, 0f, 38f, 0f, 0f);
         assertEquals(1, broadcastsContaining("Rear-right is finished").size(),
-                "RR 50% should fire once, got: " + broadcasts);
+                "RR 37% should fire once, got: " + broadcasts);
     }
 
     @Test
-    void frontLeftCrosses50Percent() {
-        flush(5, 0f, 0f, 51f, 0f);
+    void frontLeftCrosses37Percent() {
+        flush(5, 0f, 0f, 38f, 0f);
         assertEquals(1, broadcastsContaining("Front-left is finished").size(),
-                "FL 50% should fire once, got: " + broadcasts);
+                "FL 37% should fire once, got: " + broadcasts);
     }
 
     @Test
-    void frontRightCrosses50Percent() {
-        flush(5, 0f, 0f, 0f, 51f);
+    void frontRightCrosses37Percent() {
+        flush(5, 0f, 0f, 0f, 38f);
         assertEquals(1, broadcastsContaining("Front-right is finished").size(),
-                "FR 50% should fire once, got: " + broadcasts);
+                "FR 37% should fire once, got: " + broadcasts);
     }
 
     // -- dedup within a stint --------------------------------------------------
 
     @Test
     void doesNotRepeatSameThresholdWithinStint() {
-        // Cross 25% multiple times: only one message.
-        flush(5, 30f, 0f, 0f, 0f);
-        flush(6, 35f, 0f, 0f, 0f);
-        flush(7, 40f, 0f, 0f, 0f);
+        // Cross 24% multiple times: only one message.
+        flush(5, 25f, 0f, 0f, 0f);
+        flush(6, 30f, 0f, 0f, 0f);
+        flush(7, 35f, 0f, 0f, 0f);
         assertEquals(1, broadcastsContaining("Rear-left starting to degrade").size(),
-                "Should not repeat 25% alert, got: " + broadcasts);
+                "Should not repeat 24% alert, got: " + broadcasts);
     }
 
     // -- reset on tyre change --------------------------------------------------
@@ -133,12 +133,12 @@ class RaceEngineerServicePerCornerWearTest {
     @Test
     void tyreChangeResetsCornerTracking() {
         // Build up wear and fire alert.
-        flush(10, 30f, 0f, 0f, 0f);
+        flush(10, 25f, 0f, 0f, 0f);
         assertEquals(1, broadcastsContaining("Rear-left starting to degrade").size());
 
         // Tyre change: tyreAge drops (e.g., 10 → 1), wear resets to 0 in-game, then climbs again.
         flush(1, 5f, 0f, 0f, 0f);
-        flush(3, 30f, 0f, 0f, 0f);
+        flush(3, 25f, 0f, 0f, 0f);
         assertEquals(2, broadcastsContaining("Rear-left starting to degrade").size(),
                 "Alert should fire again for new stint, got: " + broadcasts);
     }

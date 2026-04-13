@@ -484,18 +484,18 @@ public class RaceEngineerService {
             int wear = (int) wearNode.get(i).asDouble();
             int lastAlert = session.lastWearAlertPct[i];
 
-            if (wear >= 50 && lastAlert < 50) {
+            if (wear >= 37 && lastAlert < 37) {
                 session.queue.enqueue(new EngineerMessage(
                         Priority.HIGH,
                         CORNER_NAMES[i] + " is finished, manage it.",
                         System.currentTimeMillis(), currentLap, 2));
-                session.lastWearAlertPct[i] = 50;
-            } else if (wear >= 25 && lastAlert < 25) {
+                session.lastWearAlertPct[i] = 37;
+            } else if (wear >= 24 && lastAlert < 24) {
                 session.queue.enqueue(new EngineerMessage(
                         Priority.NORMAL,
                         CORNER_NAMES[i] + " starting to degrade.",
                         System.currentTimeMillis(), currentLap, 3));
-                session.lastWearAlertPct[i] = 25;
+                session.lastWearAlertPct[i] = 24;
             }
         }
     }
