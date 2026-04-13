@@ -29,6 +29,7 @@ class RaceStateTest {
         assertTrue(json.contains("\"flDmg\":0"));
         assertTrue(json.contains("\"engDmg\":0"));
         assertTrue(json.contains("\"resultStatus\":2"));
+        assertTrue(json.contains("\"throttle\":0.80"));
     }
 
     @Test
