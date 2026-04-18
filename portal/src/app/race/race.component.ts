@@ -622,7 +622,10 @@ export class RaceComponent implements OnInit, OnDestroy {
   }
 
   sessionLabel(s: ActiveSessionDto): string {
-    return `${trackName(s.trackId)} (${s.sessionUid.substring(0, 8)})`;
+    const parts = [s.trackName || 'Unknown track'];
+    if (s.sessionType) parts.push(s.sessionType);
+    const label = parts.join(' · ');
+    return s.live ? `● LIVE — ${label}` : label;
   }
 
   onSessionSelected(event: Event) {
@@ -664,7 +667,8 @@ export class RaceComponent implements OnInit, OnDestroy {
       if (sessions.length === 0) {
         this.selectedSessionUid.set(null);
       } else if (!selected || !sessions.some((s) => s.sessionUid === selected)) {
-        this.selectedSessionUid.set(sessions[0].sessionUid);
+        const preferred = sessions.find((s) => s.live) ?? sessions[0];
+        this.selectedSessionUid.set(preferred.sessionUid);
         this.resetState();
       }
     });

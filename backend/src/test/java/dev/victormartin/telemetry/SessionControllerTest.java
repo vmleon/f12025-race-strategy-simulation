@@ -60,9 +60,28 @@ class SessionControllerTest {
                 .andExpect(jsonPath("$[0].sessionUid").value("abc123"))
                 .andExpect(jsonPath("$[0].trackName").value("Monaco"))
                 .andExpect(jsonPath("$[0].sessionType").value("Race"))
+                .andExpect(jsonPath("$[0].live").value(true))
                 .andExpect(jsonPath("$[1].sessionUid").value("def456"))
                 .andExpect(jsonPath("$[1].trackName").value("Bahrain"))
-                .andExpect(jsonPath("$[1].sessionType").value("Practice 1"));
+                .andExpect(jsonPath("$[1].sessionType").value("Practice 1"))
+                .andExpect(jsonPath("$[1].live").value(true));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void activeSortsLiveSessionsFirst() throws Exception {
+        long now = System.currentTimeMillis();
+        when(sessionStateHolder.getActiveSessions())
+                .thenReturn(List.of(
+                        new SessionStateHolder.SessionInfo("stale1", 5, now - 60_000),
+                        new SessionStateHolder.SessionInfo("live1", 3, now)));
+
+        mockMvc.perform(get("/api/sessions/active"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].sessionUid").value("live1"))
+                .andExpect(jsonPath("$[0].live").value(true))
+                .andExpect(jsonPath("$[1].sessionUid").value("stale1"))
+                .andExpect(jsonPath("$[1].live").value(false));
     }
 
     @SuppressWarnings("unchecked")

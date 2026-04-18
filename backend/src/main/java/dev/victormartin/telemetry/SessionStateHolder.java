@@ -19,8 +19,14 @@ public class SessionStateHolder {
     }
 
     public void onSessionStarted(String sessionUid, int trackId) {
-        sessions.put(sessionUid, new SessionInfo(sessionUid, trackId));
+        sessions.put(sessionUid, new SessionInfo(sessionUid, trackId, System.currentTimeMillis()));
         System.out.println("Session started: uid=" + sessionUid + " trackId=" + trackId);
+    }
+
+    public void onStateReceived(String sessionUid) {
+        long now = System.currentTimeMillis();
+        sessions.computeIfPresent(sessionUid,
+                (k, old) -> new SessionInfo(k, old.trackId(), now));
     }
 
     public void onSessionEnded(String sessionUid) {
@@ -46,5 +52,9 @@ public class SessionStateHolder {
         return sessions.containsKey(sessionUid);
     }
 
-    public record SessionInfo(String sessionUid, int trackId) {}
+    public record SessionInfo(String sessionUid, int trackId, long lastStateAtMs) {
+        public SessionInfo(String sessionUid, int trackId) {
+            this(sessionUid, trackId, System.currentTimeMillis());
+        }
+    }
 }

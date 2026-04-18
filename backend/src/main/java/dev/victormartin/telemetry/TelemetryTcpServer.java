@@ -121,6 +121,9 @@ public class TelemetryTcpServer implements CommandLineRunner {
                     queueService.enqueue("PDBADMIN.SESSION_LIFECYCLE", line);
                 }
                 case "state" -> {
+                    if (node.has("sessionUid")) {
+                        sessionStateHolder.onStateReceived(node.get("sessionUid").asText());
+                    }
                     raceWebSocketHandler.broadcast(line);
                     simulationOrchestrator.onStateUpdate(line);
                     strategyOrchestrator.onStateUpdate(line);

@@ -37,10 +37,13 @@ public class SessionController {
         this.jdbc = jdbc;
     }
 
-    public record ActiveSessionDto(String sessionUid, String trackName, String sessionType) {}
+    public record ActiveSessionDto(String sessionUid, String trackName, String sessionType, boolean live) {}
+
+    private static final long LIVE_THRESHOLD_MS = 5_000;
 
     @GetMapping("/active")
     public List<ActiveSessionDto> activeSessions() {
+        long now = System.currentTimeMillis();
         return sessionStateHolder.getActiveSessions().stream()
                 .map(s -> {
                     String sessionType = "";
@@ -50,11 +53,14 @@ public class SessionController {
                                 Integer.class, s.sessionUid());
                         sessionType = GameMappings.sessionTypeName(typeId);
                     } catch (Exception ignored) {}
+                    boolean live = (now - s.lastStateAtMs()) < LIVE_THRESHOLD_MS;
                     return new ActiveSessionDto(
                             s.sessionUid(),
                             GameMappings.trackName(s.trackId()),
-                            sessionType);
+                            sessionType,
+                            live);
                 })
+                .sorted((a, b) -> Boolean.compare(b.live(), a.live()))
                 .toList();
     }
 

@@ -3,7 +3,9 @@ import { HttpClient } from '@angular/common/http';
 
 export interface ActiveSessionDto {
   sessionUid: string;
-  trackId: number;
+  trackName: string;
+  sessionType: string;
+  live: boolean;
 }
 
 export interface SessionDto {

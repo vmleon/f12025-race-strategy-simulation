@@ -66,6 +66,11 @@ struct ConnectView: View {
                                     selectedUid = session.sessionUid
                                 } label: {
                                     HStack {
+                                        if session.live {
+                                            Circle()
+                                                .fill(Color.green)
+                                                .frame(width: 8, height: 8)
+                                        }
                                         VStack(alignment: .leading) {
                                             Text(session.trackName)
                                                 .font(.body)
@@ -76,6 +81,12 @@ struct ConnectView: View {
                                             }
                                         }
                                         Spacer()
+                                        if session.live {
+                                            Text("LIVE")
+                                                .font(.caption2)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.green)
+                                        }
                                         if selectedUid == session.sessionUid {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .foregroundColor(.accentColor)
@@ -153,9 +164,8 @@ struct ConnectView: View {
                 do {
                     let decoded = try JSONDecoder().decode([ActiveSession].self, from: data)
                     sessions = decoded
-                    if decoded.count == 1 {
-                        selectedUid = decoded.first?.sessionUid
-                    }
+                    selectedUid = decoded.first(where: { $0.live })?.sessionUid
+                        ?? (decoded.count == 1 ? decoded.first?.sessionUid : nil)
                     if decoded.isEmpty {
                         errorMessage = "No active sessions"
                     }
@@ -179,10 +189,11 @@ struct ConnectView: View {
 
         let second = await fetchSessionsAsync()
 
-        if let firstSession = first, first?.count == 1,
-           let secondSession = second, second?.count == 1,
-           firstSession[0].sessionUid == secondSession[0].sessionUid {
-            let uid = firstSession[0].sessionUid
+        let firstLive = first?.first(where: { $0.live })
+        let secondLive = second?.first(where: { $0.live })
+
+        if let firstLive, let secondLive, firstLive.sessionUid == secondLive.sessionUid {
+            let uid = firstLive.sessionUid
             await MainActor.run {
                 webSocket.connect(host: host, sessionUid: uid)
                 onConnected()
@@ -191,9 +202,8 @@ struct ConnectView: View {
             await MainActor.run {
                 if let second, !second.isEmpty {
                     sessions = second
-                    if second.count == 1 {
-                        selectedUid = second[0].sessionUid
-                    }
+                    selectedUid = second.first(where: { $0.live })?.sessionUid
+                        ?? (second.count == 1 ? second[0].sessionUid : nil)
                 }
                 autoConnecting = false
             }
