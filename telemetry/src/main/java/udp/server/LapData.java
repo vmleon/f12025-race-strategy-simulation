@@ -91,6 +91,11 @@ public class LapData {
         return sector2TimeMinutesPart * 60_000L + sector2TimeMSPart;
     }
 
+    /** Authoritative delta in milliseconds to the car in front (game-computed, accounts for sector pace). */
+    public long deltaToCarInFrontInMS() {
+        return deltaToCarInFrontMinutesPart * 60_000L + deltaToCarInFrontMSPart;
+    }
+
     /**
      * Parse an array of 22 LapData entries from the buffer (position must be at offset 29).
      * Returns null if the buffer is too small.

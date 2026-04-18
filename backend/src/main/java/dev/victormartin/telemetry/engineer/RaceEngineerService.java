@@ -10,19 +10,22 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import org.springframework.stereotype.Component;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import dev.victormartin.telemetry.engineer.EngineerMessage.Priority;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 import dev.victormartin.telemetry.simulation.StrategyEvaluation;
 
 /**
- * Orchestrates the race engineer message queue.
- * Reacts to live race state, generates messages, and delivers them
- * to clients via WebSocket when the player is in a safe zone.
+ * v1 race engineer orchestrator. Cut-over to {@code engineer.v2.RaceEngineerServiceV2}
+ * happened on 2026-04-18. This class is no longer a Spring component and is
+ * not on the production dispatch path; tests in this package still construct
+ * it directly. Kept as a reference until v2 is confirmed in a live playtest,
+ * then will be deleted.
  */
-@Component
 public class RaceEngineerService {
+
+    private static final Logger TRACE = LoggerFactory.getLogger("engineer.trace");
 
     private final CircuitSafeZoneService safeZoneService;
     private final RaceEngineerWebSocketHandler webSocketHandler;
@@ -88,6 +91,22 @@ public class RaceEngineerService {
             int totalLaps = state.has("totalLaps") ? state.get("totalLaps").asInt() : 0;
             int trackLength = state.has("trackLength") ? state.get("trackLength").asInt() : 5000;
             int speedKmh = playerCar.has("speed") ? playerCar.get("speed").asInt() : 0;
+
+            // Trace pit-status transition independently of detector-mutated previousPitStatus.
+            int pitStatusNow = playerCar.has("pitStatus") ? playerCar.get("pitStatus").asInt() : 0;
+            int pitLaneActive = playerCar.has("pitLaneTimerActive") ? playerCar.get("pitLaneTimerActive").asInt() : 0;
+            int pitLaneMs = playerCar.has("pitLaneTimeMs") ? playerCar.get("pitLaneTimeMs").asInt() : 0;
+            float throttle = playerCar.has("throttle") ? (float) playerCar.get("throttle").asDouble() : -1f;
+            int playerPos = playerCar.has("pos") ? playerCar.get("pos").asInt() : 0;
+            String sessionKind = session.isRace() ? "race" : session.isQualifying() ? "quali" : session.isPractice() ? "practice" : "other";
+            TRACE.debug("TICK session={} sessionType={} lap={} lapDist={} pos={} pitStatus={} pitLaneActive={} pitLaneMs={} speedKmh={} throttle={}",
+                    sessionKind, session.sessionType, currentLap, lapDistance, playerPos,
+                    pitStatusNow, pitLaneActive, pitLaneMs, speedKmh, throttle);
+            if (pitStatusNow != session.traceLastPitStatus) {
+                TRACE.debug("PIT_TRANSITION from={} to={} lap={} lapDist={} pitLaneActive={} pitLaneMs={}",
+                        session.traceLastPitStatus, pitStatusNow, currentLap, lapDistance, pitLaneActive, pitLaneMs);
+                session.traceLastPitStatus = pitStatusNow;
+            }
 
             // Keep assist flags in sync with telemetry (session packet may update them)
             if (state.has("ersAssist")) session.ersAssist = state.get("ersAssist").asInt();
@@ -611,8 +630,17 @@ public class RaceEngineerService {
             // Reset stint flag when player leaves the pit lane
             if (pitStatus == 0 && session.previousPitStatus > 0) {
                 session.trackTrafficMessageSentThisStint = false;
+                TRACE.debug("DETECTOR detectSessionTrackTraffic decision=reset_stint_flag previousPit={} pitStatus={}",
+                        session.previousPitStatus, pitStatus);
             }
-            if (pitStatus == 0 || session.trackTrafficMessageSentThisStint) return;
+            if (pitStatus == 0) {
+                TRACE.debug("DETECTOR detectSessionTrackTraffic decision=skip reason=on_track pitStatus={}", pitStatus);
+                return;
+            }
+            if (session.trackTrafficMessageSentThisStint) {
+                TRACE.debug("DETECTOR detectSessionTrackTraffic decision=skip reason=already_sent_this_stint pitStatus={}", pitStatus);
+                return;
+            }
 
             float playerDist = playerCar.has("lapDist") ? (float) playerCar.get("lapDist").asDouble() : 0f;
 
@@ -634,17 +662,27 @@ public class RaceEngineerService {
                 }
             }
 
-            if (nearestName == null) return;
-
-            String text;
-            if (nearestApproachingSeconds > 15f) {
-                text = "Track is clear, go now.";
-            } else if (nearestApproachingSeconds < 8f) {
-                text = "Hold position, " + nearestName + " about to pass.";
-            } else {
+            if (nearestName == null) {
+                TRACE.debug("DETECTOR detectSessionTrackTraffic decision=skip reason=no_ai_on_track pitStatus={}", pitStatus);
                 return;
             }
 
+            String text;
+            String fireReason;
+            if (nearestApproachingSeconds > 15f) {
+                text = "Track is clear, go now.";
+                fireReason = "clear_window";
+            } else if (nearestApproachingSeconds < 8f) {
+                text = "Hold position, " + nearestName + " about to pass.";
+                fireReason = "hold_position";
+            } else {
+                TRACE.debug("DETECTOR detectSessionTrackTraffic decision=skip reason=in_dead_zone pitStatus={} nearestSec={} nearestName={}",
+                        pitStatus, nearestApproachingSeconds, nearestName);
+                return;
+            }
+
+            TRACE.debug("DETECTOR detectSessionTrackTraffic decision=fire reason={} pitStatus={} nearestSec={} nearestName={}",
+                    fireReason, pitStatus, nearestApproachingSeconds, nearestName);
             session.queue.enqueue(new EngineerMessage(
                     Priority.HIGH,
                     text,
@@ -657,8 +695,11 @@ public class RaceEngineerService {
 
     private void detectSlowLapTrafficWarning(SessionEngineerState session, JsonNode carsNode,
                                                JsonNode playerCar, int currentLap, int trackLength) {
+        int pitStatus = playerCar.has("pitStatus") ? playerCar.get("pitStatus").asInt() : 0;
         if (!isPlayerOnSlowLap(session)) {
             session.previousSlowLapGapBehind = -1f;
+            TRACE.debug("DETECTOR detectSlowLapTrafficWarning decision=skip reason=not_slow_lap pitStatus={} throttleBufSize={}",
+                    pitStatus, session.playerThrottleBuffer.size());
             return;
         }
 
@@ -673,6 +714,7 @@ public class RaceEngineerService {
         }
         if (carBehind == null) {
             session.previousSlowLapGapBehind = -1f;
+            TRACE.debug("DETECTOR detectSlowLapTrafficWarning decision=skip reason=no_car_behind pitStatus={} playerPos={}", pitStatus, playerPos);
             return;
         }
 
@@ -685,6 +727,8 @@ public class RaceEngineerService {
         int behindLap = carBehind.has("lap") ? carBehind.get("lap").asInt() : 0;
         if (playerLap != behindLap) {
             session.previousSlowLapGapBehind = -1f;
+            TRACE.debug("DETECTOR detectSlowLapTrafficWarning decision=skip reason=lap_mismatch pitStatus={} playerLap={} behindLap={} behindName={}",
+                    pitStatus, playerLap, behindLap, behindName);
             return;
         }
 
@@ -693,15 +737,30 @@ public class RaceEngineerService {
         float gapSeconds = gap / 55f;
 
         boolean closing = session.previousSlowLapGapBehind > 0 && gapSeconds < session.previousSlowLapGapBehind;
+        float prevGap = session.previousSlowLapGapBehind;
         session.previousSlowLapGapBehind = gapSeconds;
 
-        if (gapSeconds >= SLOW_LAP_GAP_THRESHOLD_SEC) return;
-        if (!closing) return;
+        if (gapSeconds >= SLOW_LAP_GAP_THRESHOLD_SEC) {
+            TRACE.debug("DETECTOR detectSlowLapTrafficWarning decision=skip reason=gap_too_large pitStatus={} gapSec={} thresholdSec={} behindName={}",
+                    pitStatus, gapSeconds, SLOW_LAP_GAP_THRESHOLD_SEC, behindName);
+            return;
+        }
+        if (!closing) {
+            TRACE.debug("DETECTOR detectSlowLapTrafficWarning decision=skip reason=not_closing pitStatus={} gapSec={} prevGap={} behindName={}",
+                    pitStatus, gapSeconds, prevGap, behindName);
+            return;
+        }
 
         long now = System.currentTimeMillis();
         Long lastFired = session.slowLapCooldownByCar.get(behindIdx);
-        if (lastFired != null && (now - lastFired) < SLOW_LAP_COOLDOWN_MS) return;
+        if (lastFired != null && (now - lastFired) < SLOW_LAP_COOLDOWN_MS) {
+            TRACE.debug("DETECTOR detectSlowLapTrafficWarning decision=skip reason=cooldown pitStatus={} gapSec={} ageMs={} behindName={}",
+                    pitStatus, gapSeconds, (now - lastFired), behindName);
+            return;
+        }
 
+        TRACE.debug("DETECTOR detectSlowLapTrafficWarning decision=fire pitStatus={} gapSec={} prevGap={} behindName={} behindIdx={}",
+                pitStatus, gapSeconds, prevGap, behindName, behindIdx);
         session.queue.enqueue(new EngineerMessage(
                 Priority.HIGH,
                 behindName + " closing fast behind, let them through.",
@@ -759,6 +818,8 @@ public class RaceEngineerService {
         // trigger a spurious message; the pit-exit recap in detectPitStopCompleted
         // covers that transition and resets previousPlayerPosition.
         if (pitStatus > 0 || session.previousPitStatus > 0) {
+            TRACE.debug("DETECTOR detectPositionChange decision=skip reason=in_pit_cycle pitStatus={} previousPit={}",
+                    pitStatus, session.previousPitStatus);
             return;
         }
 
@@ -822,10 +883,14 @@ public class RaceEngineerService {
         // Track pit entry time
         if (pitStatus > 0 && session.previousPitStatus == 0) {
             session.pitEnteredAt = System.currentTimeMillis();
+            TRACE.debug("DETECTOR detectPitStopCompleted decision=pit_entry_detected pitStatus={} pitCount={}",
+                    pitStatus, pitCount);
         }
 
         // Pit exit detected: pitStatus back to 0, pit count increased
         if (pitStatus == 0 && session.previousPitStatus > 0 && pitCount > session.previousPitCount) {
+            TRACE.debug("DETECTOR detectPitStopCompleted decision=pit_exit_detected previousPit={} pitCount={} previousPitCount={}",
+                    session.previousPitStatus, pitCount, session.previousPitCount);
             if (session.pitEnteredAt > 0) {
                 float durationSeconds = (System.currentTimeMillis() - session.pitEnteredAt) / 1000f;
                 session.queue.enqueue(new EngineerMessage(
@@ -877,7 +942,13 @@ public class RaceEngineerService {
     private void detectPitWindowMessages(SessionEngineerState session, JsonNode playerCar,
                                           int currentLap, int trackLength) {
         int target = session.recommendedPitLap;
-        if (target <= 0 || target < currentLap) return;
+        if (target <= 0 || target < currentLap) {
+            TRACE.debug("DETECTOR detectPitWindowMessages decision=skip reason=no_target_or_passed targetLap={} currentLap={}",
+                    target, currentLap);
+            return;
+        }
+        TRACE.debug("DETECTOR detectPitWindowMessages targetLap={} currentLap={} delta={} lastKind={} lastAnnouncedTarget={}",
+                target, currentLap, target - currentLap, session.lastPitMessageKind, session.lastAnnouncedPitTargetLap);
 
         // Strategy picked a new target lap — reset the emission state for the new target.
         if (target != session.lastAnnouncedPitTargetLap) {
@@ -1260,6 +1331,9 @@ public class RaceEngineerService {
         final Deque<Float> playerThrottleBuffer = new ArrayDeque<>();
         final Map<Integer, Long> slowLapCooldownByCar = new HashMap<>();
         float previousSlowLapGapBehind = -1f;
+
+        // Trace-only: last observed pitStatus, decoupled from detector mutation order.
+        int traceLastPitStatus = 0;
 
         SessionEngineerState(String sessionUid, int trackId, int sessionType, int ersAssist, int drsAssist) {
             this.sessionUid = sessionUid;

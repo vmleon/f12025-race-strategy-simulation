@@ -111,6 +111,9 @@ export interface RaceMessage {
   airTemp?: number;
   safetyCarStatus?: number;
   trackLength?: number;
+  sessionType?: number;
+  sessionTimeLeft?: number;
+  sessionDuration?: number;
   cars?: CarSnapshot[];
   forecast?: WeatherForecastSample[];
   // event fields

@@ -16,7 +16,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import dev.victormartin.telemetry.engineer.RaceEngineerService;
+import dev.victormartin.telemetry.engineer.v2.RaceEngineerServiceV2;
 
 @Component
 public class TelemetryTcpServer implements CommandLineRunner {
@@ -25,7 +25,7 @@ public class TelemetryTcpServer implements CommandLineRunner {
     private final SessionStateHolder sessionStateHolder;
     private final SimulationOrchestrator simulationOrchestrator;
     private final StrategyOrchestrator strategyOrchestrator;
-    private final RaceEngineerService raceEngineerService;
+    private final RaceEngineerServiceV2 raceEngineerService;
     private final QueueService queueService;
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -37,7 +37,7 @@ public class TelemetryTcpServer implements CommandLineRunner {
                               SessionStateHolder sessionStateHolder,
                               SimulationOrchestrator simulationOrchestrator,
                               StrategyOrchestrator strategyOrchestrator,
-                              RaceEngineerService raceEngineerService,
+                              RaceEngineerServiceV2 raceEngineerService,
                               QueueService queueService,
                               JdbcTemplate jdbc) {
         this.raceWebSocketHandler = raceWebSocketHandler;

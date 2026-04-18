@@ -5,17 +5,17 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import dev.victormartin.telemetry.engineer.RaceEngineerService;
+import dev.victormartin.telemetry.engineer.v2.RaceEngineerServiceV2;
 
 @Component
 public class SessionCatchUp implements ApplicationRunner {
 
     private final JdbcTemplate jdbc;
     private final SessionStateHolder sessionStateHolder;
-    private final RaceEngineerService raceEngineerService;
+    private final RaceEngineerServiceV2 raceEngineerService;
 
     public SessionCatchUp(JdbcTemplate jdbc, SessionStateHolder sessionStateHolder,
-                          RaceEngineerService raceEngineerService) {
+                          RaceEngineerServiceV2 raceEngineerService) {
         this.jdbc = jdbc;
         this.sessionStateHolder = sessionStateHolder;
         this.raceEngineerService = raceEngineerService;

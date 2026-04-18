@@ -49,6 +49,9 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
         @if (totalLaps()) {
           <span class="badge">Lap {{ currentLap() }} / {{ totalLaps() }}</span>
         }
+        @if (showSessionRemaining() && sessionTimeLeft() != null) {
+          <span class="badge">{{ sessionRemainingLabel() }} left</span>
+        }
         @if (weather() != null) {
           <span class="badge">{{ weatherLabel() }}</span>
         }
@@ -82,53 +85,110 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
                 <div class="last-laps">
                   <h3>Last Laps</h3>
                   @for (entry of lastPlayerLaps(); track entry.lap) {
-                    <div class="lap-entry">
+                    <div
+                      class="lap-entry"
+                      [class.fastest]="bestLapOverallMs() != null && entry.timeMs === bestLapOverallMs()"
+                    >
                       <span class="lap-num">L{{ entry.lap }}</span>
-                      <span class="lap-time">{{ formatLapTime(entry.timeMs) }}</span>
+                      <span class="lap-right">
+                        <span class="tyre" [attr.data-tyre]="entry.tyre">{{ entry.tyre }}</span>
+                        <span class="lap-time">{{ formatLapTime(entry.timeMs) }}</span>
+                      </span>
                     </div>
                   }
                 </div>
               }
             </div>
             <div class="table-scroll">
-              <table class="race-table">
-                <thead>
-                  <tr>
-                    <th>Pos</th>
-                    <th>Driver</th>
-                    <th>Lap</th>
-                    <th>S1</th>
-                    <th>S2</th>
-                    <th>S3</th>
-                    <th>Best</th>
-                    <th>Tyre</th>
-                    <th>Age</th>
-                    <th>Pits</th>
-                    <th>Pit</th>
-                    <th>Fuel</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (car of cars(); track car.idx) {
-                    <tr [class.in-pit]="car.pitStatus !== 0" [class.ai]="car.ai" [class.out]="(car.resultStatus ?? 2) >= 4">
-                      <td class="pos">{{ (car.resultStatus ?? 2) >= 4 ? 'OUT' : car.pos }}</td>
-                      <td class="driver">{{ car.name || 'Car ' + car.idx }}</td>
-                      <td>{{ car.lap }}</td>
-                      <td class="sector-time">{{ formatSector(car.lastSectorMs, 0) }}</td>
-                      <td class="sector-time">{{ formatSector(car.lastSectorMs, 1) }}</td>
-                      <td class="sector-time">{{ formatSector(car.lastSectorMs, 2) }}</td>
-                      <td class="sector-time">{{ bestLapForCar(car.idx) != null ? formatLapTime(bestLapForCar(car.idx)!) : '-' }}</td>
-                      <td>
-                        <span class="tyre" [attr.data-tyre]="car.tyre">{{ car.tyre }}</span>
-                      </td>
-                      <td>{{ car.tyreAge }}</td>
-                      <td>{{ car.pits ?? 0 }}</td>
-                      <td class="pit-status">{{ pitLabel(car.pitStatus) }}</td>
-                      <td>{{ car.fuel != null ? (car.fuel | number: '1.1-1') + ' kg' : '-' }}</td>
+              @if (showSessionRemaining()) {
+                <table class="race-table">
+                  <thead>
+                    <tr>
+                      <th>Pos</th>
+                      <th>Driver</th>
+                      <th>S1</th>
+                      <th>S2</th>
+                      <th>S3</th>
+                      <th>Best Lap</th>
                     </tr>
-                  }
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    @for (row of bestTimesRows(); track row.carIdx) {
+                      <tr [class.ai]="row.ai" [class.out]="row.out">
+                        <td class="pos">{{ row.out ? 'OUT' : row.pos }}</td>
+                        <td class="driver">{{ row.name }}</td>
+                        <td
+                          class="sector-time"
+                          [class.fastest]="row.bestS1 != null && row.bestS1 === bestS1Ms()"
+                          [class.pb]="row.bestS1 != null && row.bestS1 !== bestS1Ms()"
+                        >
+                          {{ row.bestS1 != null ? formatMs(row.bestS1) : '-' }}
+                        </td>
+                        <td
+                          class="sector-time"
+                          [class.fastest]="row.bestS2 != null && row.bestS2 === bestS2Ms()"
+                          [class.pb]="row.bestS2 != null && row.bestS2 !== bestS2Ms()"
+                        >
+                          {{ row.bestS2 != null ? formatMs(row.bestS2) : '-' }}
+                        </td>
+                        <td
+                          class="sector-time"
+                          [class.fastest]="row.bestS3 != null && row.bestS3 === bestS3Ms()"
+                          [class.pb]="row.bestS3 != null && row.bestS3 !== bestS3Ms()"
+                        >
+                          {{ row.bestS3 != null ? formatMs(row.bestS3) : '-' }}
+                        </td>
+                        <td
+                          class="sector-time"
+                          [class.fastest]="row.bestLap != null && row.bestLap === bestLapOverallMs()"
+                          [class.pb]="row.bestLap != null && row.bestLap !== bestLapOverallMs()"
+                        >
+                          {{ row.bestLap != null ? formatLapTime(row.bestLap) : '-' }}
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              } @else {
+                <table class="race-table">
+                  <thead>
+                    <tr>
+                      <th>Pos</th>
+                      <th>Driver</th>
+                      <th>Lap</th>
+                      <th>S1</th>
+                      <th>S2</th>
+                      <th>S3</th>
+                      <th>Best</th>
+                      <th>Tyre</th>
+                      <th>Age</th>
+                      <th>Pits</th>
+                      <th>Pit</th>
+                      <th>Fuel</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (car of cars(); track car.idx) {
+                      <tr [class.in-pit]="car.pitStatus !== 0" [class.ai]="car.ai" [class.out]="(car.resultStatus ?? 2) >= 4">
+                        <td class="pos">{{ (car.resultStatus ?? 2) >= 4 ? 'OUT' : car.pos }}</td>
+                        <td class="driver">{{ car.name || 'Car ' + car.idx }}</td>
+                        <td>{{ car.lap }}</td>
+                        <td class="sector-time" [class.fastest]="isFastestSector(car, 0)">{{ formatSector(car.lastSectorMs, 0) }}</td>
+                        <td class="sector-time" [class.fastest]="isFastestSector(car, 1)">{{ formatSector(car.lastSectorMs, 1) }}</td>
+                        <td class="sector-time" [class.fastest]="isFastestSector(car, 2)">{{ formatSector(car.lastSectorMs, 2) }}</td>
+                        <td class="sector-time">{{ bestLapForCar(car.idx) != null ? formatLapTime(bestLapForCar(car.idx)!) : '-' }}</td>
+                        <td>
+                          <span class="tyre" [attr.data-tyre]="car.tyre">{{ car.tyre }}</span>
+                        </td>
+                        <td>{{ car.tyreAge }}</td>
+                        <td>{{ car.pits ?? 0 }}</td>
+                        <td class="pit-status">{{ pitLabel(car.pitStatus) }}</td>
+                        <td>{{ car.fuel != null ? (car.fuel | number: '1.1-1') + ' kg' : '-' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              }
             </div>
           </div>
 
@@ -340,8 +400,23 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
     .lap-entry {
       display: flex;
       justify-content: space-between;
-      padding: 0.2rem 0;
+      align-items: center;
+      padding: 0.2rem 0.3rem;
       font-size: 0.8rem;
+      border-radius: 3px;
+    }
+    .lap-entry.fastest {
+      background: #9c27b0;
+      color: #fff;
+    }
+    .lap-entry.fastest .lap-num,
+    .lap-entry.fastest .lap-time {
+      color: #fff;
+    }
+    .lap-right {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
     }
     .lap-num {
       color: #999;
@@ -349,6 +424,14 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
     .lap-time {
       font-family: monospace;
       color: #e0e0e0;
+    }
+    .race-table td.sector-time.fastest {
+      background: #9c27b0;
+      color: #fff;
+    }
+    .race-table td.sector-time.pb {
+      background: #1b5e20;
+      color: #fff;
     }
 
     .events {
@@ -422,6 +505,9 @@ export class RaceComponent implements OnInit, OnDestroy {
   airTemp = signal<number | null>(null);
   safetyCarStatus = signal<number | null>(null);
   trackLength = signal(0);
+  sessionType = signal<number | null>(null);
+  sessionTimeLeft = signal<number | null>(null);
+  sessionDuration = signal<number | null>(null);
   yellowSector = signal<number | null>(null);
   cars = signal<CarSnapshot[]>([]);
   events = signal<RaceMessage[]>([]);
@@ -447,7 +533,39 @@ export class RaceComponent implements OnInit, OnDestroy {
 
   gapAhead = signal<GapRow | null>(null);
   gapBehind = signal<GapRow | null>(null);
-  lastPlayerLaps = signal<{ lap: number; timeMs: number }[]>([]);
+  lastPlayerLaps = signal<{ lap: number; timeMs: number; tyre: string }[]>([]);
+
+  bestLapOverallMs = signal<number | null>(null);
+  bestS1Ms = signal<number | null>(null);
+  bestS2Ms = signal<number | null>(null);
+  bestS3Ms = signal<number | null>(null);
+
+  private carBestS1 = new Map<number, number>();
+  private carBestS2 = new Map<number, number>();
+  private carBestS3 = new Map<number, number>();
+  private prevCarSnapshot = new Map<number, { s1: number; s2: number; lap: number }>();
+
+  bestTimesRows = signal<
+    {
+      carIdx: number;
+      pos: number | null;
+      name: string;
+      ai: boolean;
+      out: boolean;
+      bestS1: number | null;
+      bestS2: number | null;
+      bestS3: number | null;
+      bestLap: number | null;
+    }[]
+  >([]);
+
+  isFastestSector(car: CarSnapshot, idx: number): boolean {
+    const val = car.lastSectorMs?.[idx];
+    if (!val || val <= 0) return false;
+    if (idx === 0) return val === this.bestS1Ms();
+    if (idx === 1) return val === this.bestS2Ms();
+    return false;
+  }
 
   playerCar = computed(() => this.cars().find((c) => !c.ai) ?? null);
   penaltyEvents = computed(() => this.events().filter((e) => e.event === 'PENA'));
@@ -459,6 +577,19 @@ export class RaceComponent implements OnInit, OnDestroy {
     const labels = ['Clear', 'Light Cloud', 'Overcast', 'Light Rain', 'Heavy Rain', 'Storm'];
     return labels[w] ?? `Weather ${w}`;
   });
+  showSessionRemaining = computed(() => {
+    const t = this.sessionType();
+    if (t == null) return false;
+    return (t >= 1 && t <= 9) || t === 14;
+  });
+  sessionRemainingLabel = computed(() => {
+    const s = this.sessionTimeLeft();
+    if (s == null) return '';
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  });
+
   safetyCarLabel = computed(() => {
     const s = this.safetyCarStatus();
     if (s === 1) return 'Full SC';
@@ -516,6 +647,10 @@ export class RaceComponent implements OnInit, OnDestroy {
     return s.toFixed(3);
   }
 
+  formatMs(ms: number): string {
+    return (ms / 1000).toFixed(3);
+  }
+
   pitLabel(status: number): string {
     if (status === 1) return 'PIT LANE';
     if (status === 2) return 'PITTING';
@@ -547,6 +682,9 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.airTemp.set(null);
     this.safetyCarStatus.set(null);
     this.trackLength.set(0);
+    this.sessionType.set(null);
+    this.sessionTimeLeft.set(null);
+    this.sessionDuration.set(null);
     this.yellowSector.set(null);
     this.forecast.set([]);
     this.strategyStrategies.set([]);
@@ -559,6 +697,15 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.gapBehind.set(null);
     this.lastPlayerLaps.set([]);
     this.bestLapMap.clear();
+    this.bestLapOverallMs.set(null);
+    this.bestS1Ms.set(null);
+    this.bestS2Ms.set(null);
+    this.bestS3Ms.set(null);
+    this.carBestS1.clear();
+    this.carBestS2.clear();
+    this.carBestS3.clear();
+    this.prevCarSnapshot.clear();
+    this.bestTimesRows.set([]);
   }
 
   private updateSectorHistory(cars: CarSnapshot[]) {
@@ -624,14 +771,93 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.gapBehind.set(carBehind ? this.computeGapRow(player, carBehind) : null);
   }
 
-  private updateBestLaps(cars: CarSnapshot[]) {
+  private updateBestTimes(cars: CarSnapshot[]) {
+    let overallLap = this.bestLapOverallMs();
+    let overallS1 = this.bestS1Ms();
+    let overallS2 = this.bestS2Ms();
+    let overallS3 = this.bestS3Ms();
+
     for (const car of cars) {
-      if (!car.lastLapTimeMs || car.lastLapTimeMs <= 0) continue;
-      const current = this.bestLapMap.get(car.idx);
-      if (current === undefined || car.lastLapTimeMs < current) {
-        this.bestLapMap.set(car.idx, car.lastLapTimeMs);
+      const s1 = car.lastSectorMs?.[0] ?? 0;
+      const s2 = car.lastSectorMs?.[1] ?? 0;
+
+      if (s1 > 0) {
+        const prev = this.carBestS1.get(car.idx);
+        if (prev === undefined || s1 < prev) this.carBestS1.set(car.idx, s1);
+        if (overallS1 === null || s1 < overallS1) overallS1 = s1;
+      }
+      if (s2 > 0) {
+        const prev = this.carBestS2.get(car.idx);
+        if (prev === undefined || s2 < prev) this.carBestS2.set(car.idx, s2);
+        if (overallS2 === null || s2 < overallS2) overallS2 = s2;
+      }
+
+      if (car.lastLapTimeMs && car.lastLapTimeMs > 0) {
+        const prev = this.bestLapMap.get(car.idx);
+        if (prev === undefined || car.lastLapTimeMs < prev) {
+          this.bestLapMap.set(car.idx, car.lastLapTimeMs);
+        }
+        if (overallLap === null || car.lastLapTimeMs < overallLap) {
+          overallLap = car.lastLapTimeMs;
+        }
+
+        // Derive S3 from the lap that just ended, using the previous snapshot's S1/S2
+        const prevSnap = this.prevCarSnapshot.get(car.idx);
+        if (
+          prevSnap &&
+          car.lap > prevSnap.lap &&
+          prevSnap.s1 > 0 &&
+          prevSnap.s2 > 0 &&
+          car.lastLapTimeMs > prevSnap.s1 + prevSnap.s2
+        ) {
+          const s3 = car.lastLapTimeMs - prevSnap.s1 - prevSnap.s2;
+          const prev = this.carBestS3.get(car.idx);
+          if (prev === undefined || s3 < prev) this.carBestS3.set(car.idx, s3);
+          if (overallS3 === null || s3 < overallS3) overallS3 = s3;
+        }
+      }
+
+      this.prevCarSnapshot.set(car.idx, { s1, s2, lap: car.lap });
+    }
+
+    if (overallLap !== this.bestLapOverallMs()) this.bestLapOverallMs.set(overallLap);
+    if (overallS1 !== this.bestS1Ms()) this.bestS1Ms.set(overallS1);
+    if (overallS2 !== this.bestS2Ms()) this.bestS2Ms.set(overallS2);
+    if (overallS3 !== this.bestS3Ms()) this.bestS3Ms.set(overallS3);
+  }
+
+  private buildBestTimesRows(cars: CarSnapshot[]) {
+    const rows = cars
+      .filter((c) => (c.resultStatus ?? 2) >= 2)
+      .map((c) => ({
+        carIdx: c.idx,
+        pos: null as number | null,
+        name: c.name || `Car ${c.idx}`,
+        ai: c.ai ?? true,
+        out: (c.resultStatus ?? 2) >= 4,
+        bestS1: this.carBestS1.get(c.idx) ?? null,
+        bestS2: this.carBestS2.get(c.idx) ?? null,
+        bestS3: this.carBestS3.get(c.idx) ?? null,
+        bestLap: this.bestLapMap.get(c.idx) ?? null,
+        _posFallback: c.pos,
+      }));
+
+    rows.sort((a, b) => {
+      if (a.out !== b.out) return a.out ? 1 : -1;
+      if (a.bestLap != null && b.bestLap != null) return a.bestLap - b.bestLap;
+      if (a.bestLap != null) return -1;
+      if (b.bestLap != null) return 1;
+      return a._posFallback - b._posFallback;
+    });
+
+    let counter = 0;
+    for (const r of rows) {
+      if (!r.out) {
+        counter += 1;
+        r.pos = counter;
       }
     }
+    return rows.map(({ _posFallback, ...rest }) => rest);
   }
 
   private updatePlayerLapHistory(cars: CarSnapshot[]) {
@@ -644,7 +870,10 @@ export class RaceComponent implements OnInit, OnDestroy {
     const lastEntry = history.length > 0 ? history[history.length - 1] : null;
     if (lastEntry && lastEntry.lap >= completedLap) return;
 
-    const updated = [...history, { lap: completedLap, timeMs: player.lastLapTimeMs }];
+    const updated = [
+      ...history,
+      { lap: completedLap, timeMs: player.lastLapTimeMs, tyre: player.tyre },
+    ];
     if (updated.length > 5) updated.splice(0, updated.length - 5);
     this.lastPlayerLaps.set(updated);
   }
@@ -700,6 +929,9 @@ export class RaceComponent implements OnInit, OnDestroy {
         if (msg.airTemp != null) this.airTemp.set(msg.airTemp);
         if (msg.safetyCarStatus != null) this.safetyCarStatus.set(msg.safetyCarStatus);
         if (msg.trackLength != null) this.trackLength.set(msg.trackLength);
+        if (msg.sessionType != null) this.sessionType.set(msg.sessionType);
+        if (msg.sessionTimeLeft != null) this.sessionTimeLeft.set(msg.sessionTimeLeft);
+        if (msg.sessionDuration != null) this.sessionDuration.set(msg.sessionDuration);
         if (msg.cars) {
           const active = msg.cars.filter((c) => (c.resultStatus ?? 2) >= 2);
           const racing = active
@@ -712,7 +944,8 @@ export class RaceComponent implements OnInit, OnDestroy {
           this.updateSectorHistory(msg.cars!);
           this.updateGapDeltas();
           this.updatePlayerLapHistory(msg.cars!);
-          this.updateBestLaps(msg.cars!);
+          this.updateBestTimes(msg.cars!);
+          this.bestTimesRows.set(this.buildBestTimesRows(msg.cars!));
         }
         if (msg.forecast) {
           this.forecast.set(msg.forecast);
@@ -730,6 +963,15 @@ export class RaceComponent implements OnInit, OnDestroy {
         this.gapBehind.set(null);
         this.lastPlayerLaps.set([]);
         this.bestLapMap.clear();
+        this.bestLapOverallMs.set(null);
+        this.bestS1Ms.set(null);
+        this.bestS2Ms.set(null);
+        this.bestS3Ms.set(null);
+        this.carBestS1.clear();
+        this.carBestS2.clear();
+        this.carBestS3.clear();
+        this.prevCarSnapshot.clear();
+        this.bestTimesRows.set([]);
         if (msg.trackId != null) this.trackId.set(msg.trackId);
         this.fetchActiveSessions();
         break;

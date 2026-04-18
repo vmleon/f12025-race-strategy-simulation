@@ -23,6 +23,8 @@ public class SessionData {
     public final int sessionType;          // uint8
     public final int trackId;              // int8
     public final int formula;              // uint8
+    public final int sessionTimeLeft;      // uint16 (seconds)
+    public final int sessionDuration;      // uint16 (seconds)
     public final int safetyCarStatus;      // uint8
     public final int aiDifficulty;         // uint8
     public final int ersAssist;            // uint8
@@ -69,8 +71,8 @@ public class SessionData {
         this.sessionType = Byte.toUnsignedInt(buf.get());
         this.trackId = buf.get(); // signed
         this.formula = Byte.toUnsignedInt(buf.get());
-        buf.getShort(); // sessionTimeLeft
-        buf.getShort(); // sessionDuration
+        this.sessionTimeLeft = Short.toUnsignedInt(buf.getShort());
+        this.sessionDuration = Short.toUnsignedInt(buf.getShort());
         buf.get();      // pitSpeedLimit
         buf.get();      // gamePaused
         buf.get();      // isSpectating

@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+import OSLog
+
+private let log = Logger(subsystem: "dev.victormartin.VirtualRaceEngineer", category: "websocket")
 
 @Observable
 final class WebSocketService: @unchecked Sendable {
@@ -17,6 +20,7 @@ final class WebSocketService: @unchecked Sendable {
     var onMessage: ((EngineerMessage) -> Void)?
 
     func connect(host: String, sessionUid: String) {
+        log.info("connect host=\(host, privacy: .public) sessionUid=\(sessionUid, privacy: .public)")
         self.host = host
         self.sessionUid = sessionUid
         self.reconnectAttempt = 0
@@ -42,10 +46,12 @@ final class WebSocketService: @unchecked Sendable {
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
 
         guard let url = URL(string: "\(scheme)://\(cleanHost)/ws/race-engineer") else {
+            log.error("openConnection: invalid URL host=\(self.host, privacy: .public)")
             state = .disconnected
             return
         }
 
+        log.info("openConnection url=\(url.absoluteString, privacy: .public) attempt=\(self.reconnectAttempt)")
         state = reconnectAttempt == 0 ? .connecting : .reconnecting(attempt: reconnectAttempt)
 
         session = URLSession(configuration: .default)
@@ -72,7 +78,8 @@ final class WebSocketService: @unchecked Sendable {
                 }
                 self.receiveMessage()
 
-            case .failure:
+            case .failure(let error):
+                log.error("receive failure: \(error.localizedDescription, privacy: .public)")
                 self.scheduleReconnect()
             }
         }
@@ -90,20 +97,32 @@ final class WebSocketService: @unchecked Sendable {
 
     private func handleData(_ data: Data) {
         if let event = try? JSONDecoder().decode(SessionEvent.self, from: data),
-           event.type == "sessionStarted", event.sessionUid != sessionUid {
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                MainActor.assumeIsolated {
-                    self.sessionUid = event.sessionUid
-                    self.messages = []
+           event.type == "sessionStarted" {
+            if event.sessionUid != sessionUid {
+                log.info("sessionStarted: switching sessionUid \(self.sessionUid, privacy: .public) -> \(event.sessionUid, privacy: .public)")
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    MainActor.assumeIsolated {
+                        self.sessionUid = event.sessionUid
+                        self.messages = []
+                    }
                 }
+            } else {
+                log.debug("sessionStarted: same uid \(event.sessionUid, privacy: .public), ignoring")
             }
             return
         }
 
-        guard let message = try? JSONDecoder().decode(EngineerMessage.self, from: data) else { return }
-        guard message.sessionUid == sessionUid else { return }
+        guard let message = try? JSONDecoder().decode(EngineerMessage.self, from: data) else {
+            // Not an EngineerMessage shape — likely a state/event broadcast; ignore quietly.
+            return
+        }
+        guard message.sessionUid == sessionUid else {
+            log.warning("DROP message with sessionUid=\(message.sessionUid, privacy: .public) (expected \(self.sessionUid, privacy: .public)) text=\"\(message.text, privacy: .public)\"")
+            return
+        }
 
+        log.info("ACCEPT priority=\(message.priority.rawValue, privacy: .public) text=\"\(message.text, privacy: .public)\"")
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             MainActor.assumeIsolated {

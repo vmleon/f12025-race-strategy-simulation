@@ -24,6 +24,8 @@ public class RaceState {
     private int ersAssist;
     private int drsAssist;
     private int sessionType;
+    private int sessionTimeLeft;
+    private int sessionDuration;
 
     // Per-car state
     private final CarState[] cars = new CarState[NUM_CARS];
@@ -66,6 +68,9 @@ public class RaceState {
         String tyreCompound = "M";
         int tyreAge;
         int pitStatus;
+        int pitLaneTimerActive;
+        int pitLaneTimeInLaneInMS;
+        long deltaToCarInFrontMs;
         float fuelInTank;
         int numPitStops;
         int frontWingDamage;
@@ -116,6 +121,8 @@ public class RaceState {
         this.ersAssist = session.ersAssist;
         this.drsAssist = session.drsAssist;
         this.sessionType = session.sessionType;
+        this.sessionTimeLeft = session.sessionTimeLeft;
+        this.sessionDuration = session.sessionDuration;
         this.sessionActive = true;
     }
 
@@ -130,6 +137,9 @@ public class RaceState {
             cars[i].lastSectorMs[2] = 0; // sector 3 not directly available
             cars[i].lastLapTimeMs = lap.lastLapTimeInMS;
             cars[i].pitStatus = lap.pitStatus;
+            cars[i].pitLaneTimerActive = lap.pitLaneTimerActive;
+            cars[i].pitLaneTimeInLaneInMS = lap.pitLaneTimeInLaneInMS;
+            cars[i].deltaToCarInFrontMs = lap.deltaToCarInFrontInMS();
             cars[i].numPitStops = lap.numPitStops;
             cars[i].resultStatus = lap.resultStatus;
             cars[i].lapDistance = lap.lapDistance;
@@ -241,6 +251,9 @@ public class RaceState {
           .append(",\"trackLength\":").append(trackLength)
           .append(",\"ersAssist\":").append(ersAssist)
           .append(",\"drsAssist\":").append(drsAssist)
+          .append(",\"sessionType\":").append(sessionType)
+          .append(",\"sessionTimeLeft\":").append(sessionTimeLeft)
+          .append(",\"sessionDuration\":").append(sessionDuration)
           .append(",\"cars\":[");
 
         for (int i = 0; i < NUM_CARS; i++) {
@@ -257,6 +270,9 @@ public class RaceState {
               .append(",\"tyre\":\"").append(c.tyreCompound)
               .append("\",\"tyreAge\":").append(c.tyreAge)
               .append(",\"pitStatus\":").append(c.pitStatus)
+              .append(",\"deltaToFrontMs\":").append(c.deltaToCarInFrontMs)
+              .append(",\"pitLaneTimerActive\":").append(c.pitLaneTimerActive)
+              .append(",\"pitLaneTimeMs\":").append(c.pitLaneTimeInLaneInMS)
               .append(",\"fuel\":").append(String.format("%.1f", c.fuelInTank))
               .append(",\"pits\":").append(c.numPitStops)
               .append(",\"fwDmg\":").append(c.frontWingDamage)
@@ -313,6 +329,33 @@ public class RaceState {
 
         sb.append('}');
         return sb.toString();
+    }
+
+    /**
+     * One-line, parseable summary of the player car's pit-relevant fields.
+     * Throwaway diagnostic instrumentation: feeds telemetry.trace.log so the
+     * backend's engineer-trace can be cross-checked against raw telemetry.
+     */
+    public synchronized String toPlayerTraceSummary() {
+        if (!sessionActive) return null;
+        int playerIdx = -1;
+        for (int i = 0; i < NUM_CARS; i++) {
+            if (!cars[i].aiControlled) { playerIdx = i; break; }
+        }
+        if (playerIdx < 0) return null;
+        CarState c = cars[playerIdx];
+        return "ts=" + System.currentTimeMillis()
+                + " sessionType=" + sessionType
+                + " idx=" + playerIdx
+                + " lap=" + c.lap
+                + " sector=" + c.sector
+                + " lapDist=" + String.format("%.1f", c.lapDistance)
+                + " pitStatus=" + c.pitStatus
+                + " pitLaneActive=" + c.pitLaneTimerActive
+                + " pitLaneMs=" + c.pitLaneTimeInLaneInMS
+                + " pits=" + c.numPitStops
+                + " speed=" + c.speed
+                + " throttle=" + String.format("%.2f", c.throttle);
     }
 
     /**

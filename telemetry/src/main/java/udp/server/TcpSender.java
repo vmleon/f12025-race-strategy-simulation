@@ -1,6 +1,7 @@
 package udp.server;
 
 import java.io.BufferedWriter;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
@@ -15,14 +16,39 @@ public class TcpSender implements Runnable {
     private static final long INITIAL_BACKOFF_MS = 3_000;
     private static final long MAX_BACKOFF_MS = 30_000;
 
+    private static final String TRACE_FILE = "telemetry.trace.log";
+
     private final RaceState raceState;
     private final String host;
     private final int port;
+    private BufferedWriter traceWriter;
 
     public TcpSender(RaceState raceState, String host, int port) {
         this.raceState = raceState;
         this.host = host;
         this.port = port;
+        try {
+            this.traceWriter = new BufferedWriter(new FileWriter(TRACE_FILE, true));
+            this.traceWriter.write("# trace started at " + System.currentTimeMillis());
+            this.traceWriter.newLine();
+            this.traceWriter.flush();
+            System.out.println("Telemetry trace log: " + TRACE_FILE);
+        } catch (IOException e) {
+            System.err.println("Failed to open trace log " + TRACE_FILE + ": " + e.getMessage());
+            this.traceWriter = null;
+        }
+    }
+
+    private void writeTrace(String line) {
+        if (traceWriter == null || line == null) return;
+        try {
+            traceWriter.write(line);
+            traceWriter.newLine();
+            traceWriter.flush();
+        } catch (IOException e) {
+            // Don't let trace failures kill the sender; print once and continue.
+            System.err.println("Trace log write failed: " + e.getMessage());
+        }
     }
 
     @Override
@@ -68,6 +94,7 @@ public class TcpSender implements Runnable {
                         writer.write(line);
                         writer.newLine();
                         writer.flush();
+                        writeTrace(raceState.toPlayerTraceSummary());
                     }
 
                     Thread.sleep(1_000);
