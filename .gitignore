@@ -52,3 +52,4 @@ telemetry/src/main/resources/config.properties
 backend/src/main/resources/application.properties
 simulator/config.properties
 calibration/config.properties
+logs/
