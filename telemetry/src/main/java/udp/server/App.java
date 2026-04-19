@@ -15,6 +15,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 public class App {
 
@@ -61,6 +62,8 @@ public class App {
                     PacketHeader header = PacketHeader.parse(received.data(), received.length());
 
                     if (header != null) {
+                        MDC.put("sessionUid", String.valueOf(header.sessionUID));
+                        try {
                         if (header.packetFormat != 2025 || header.gameYear != 25) {
                             log.warn("[{}] unexpected format={} year={}", received.sender(), header.packetFormat, header.gameYear);
                         }
@@ -180,6 +183,9 @@ public class App {
                                 }
                             }
                             default -> {}
+                        }
+                        } finally {
+                            MDC.remove("sessionUid");
                         }
                     }
                 } catch (InterruptedException e) {
