@@ -58,7 +58,7 @@ public class DamageDetector implements RadioDetector {
             }
         }
 
-        // Evaluate crossings in fixed part order. First match wins.
+        // First pass: severe tier across all parts in order.
         for (int i = 0; i < NUM_PARTS; i++) {
             JsonNode node = pc.get(WIRE_KEYS[i]);
             if (node == null || !node.canConvertToInt()) continue;
@@ -70,6 +70,13 @@ public class DamageDetector implements RadioDetector {
                         PART_LABEL[i] + " is heavily damaged.",
                         tick.wallClockMs(), tick.currentLap(), 2));
             }
+        }
+
+        // Second pass: light tier across all parts in order.
+        for (int i = 0; i < NUM_PARTS; i++) {
+            JsonNode node = pc.get(WIRE_KEYS[i]);
+            if (node == null || !node.canConvertToInt()) continue;
+            int v = node.asInt();
             if (v >= LIGHT && armed[i] < LIGHT) {
                 armed[i] = LIGHT;
                 return Optional.of(new EngineerMessage(

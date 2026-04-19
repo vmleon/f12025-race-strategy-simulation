@@ -181,4 +181,33 @@ class DamageDetectorTest {
         assertTrue(msg.isPresent());
         assertEquals("Rear wing has light damage.", msg.get().text());
     }
+
+    @Test
+    void severeCrossingWinsOverEarlierLightCrossing() {
+        // FW crosses light (4), floor crosses severe (15). Expect "Floor is heavily damaged."
+        ObjectNode car = emptyPlayerCar();
+        car.put("fwDmg", 4);
+        car.put("flDmg", 15);
+        var first = detector.evaluate(tickWith(car));
+        assertTrue(first.isPresent());
+        assertEquals("Floor is heavily damaged.", first.get().text());
+        // Next tick, same values: FW light is still un-armed, fires now.
+        var second = detector.evaluate(tickWith(car));
+        assertTrue(second.isPresent());
+        assertEquals("Front wing has light damage.", second.get().text());
+    }
+
+    @Test
+    void sameSeverityTieBreaksByFixedPartOrder() {
+        // FW and RW both cross light in the same tick. FW comes first in the fixed order.
+        ObjectNode car = emptyPlayerCar();
+        car.put("fwDmg", 4);
+        car.put("rwDmg", 4);
+        var first = detector.evaluate(tickWith(car));
+        assertTrue(first.isPresent());
+        assertEquals("Front wing has light damage.", first.get().text());
+        var second = detector.evaluate(tickWith(car));
+        assertTrue(second.isPresent());
+        assertEquals("Rear wing has light damage.", second.get().text());
+    }
 }
