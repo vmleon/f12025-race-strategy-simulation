@@ -76,4 +76,38 @@ class DamageDetectorTest {
         car.put("fwDmg", 5);
         assertTrue(detector.evaluate(tickWith(car)).isEmpty());
     }
+
+    @Test
+    void frontWingSevereCrossingFiresImmediate() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("fwDmg", 8);
+        var msg = detector.evaluate(tickWith(car));
+        assertTrue(msg.isPresent());
+        assertEquals(EngineerMessage.Priority.IMMEDIATE, msg.get().priority());
+        assertEquals("Front wing is heavily damaged.", msg.get().text());
+    }
+
+    @Test
+    void jumpPastLightStraightToSevereFiresSevereOnly() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("fwDmg", 12);
+        var first = detector.evaluate(tickWith(car));
+        assertTrue(first.isPresent());
+        assertEquals("Front wing is heavily damaged.", first.get().text());
+        // Same value next tick — no second "light" message.
+        assertTrue(detector.evaluate(tickWith(car)).isEmpty());
+    }
+
+    @Test
+    void upgradeFromLightToSevereFiresSevere() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("fwDmg", 4);
+        assertTrue(detector.evaluate(tickWith(car)).isPresent()); // light
+        car.put("fwDmg", 9);
+        var msg = detector.evaluate(tickWith(car));
+        assertTrue(msg.isPresent());
+        assertEquals("Front wing is heavily damaged.", msg.get().text());
+        // And no re-fire while stuck severe.
+        assertTrue(detector.evaluate(tickWith(car)).isEmpty());
+    }
 }

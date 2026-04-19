@@ -25,6 +25,7 @@ import dev.victormartin.telemetry.engineer.v2.SessionKind;
 public class DamageDetector implements RadioDetector {
 
     private static final int LIGHT = 3;
+    private static final int SEVERE = 7;
     // parts[0] = front wing; more added in later tasks.
     private final Map<String, int[]> armedByUid = new ConcurrentHashMap<>();
 
@@ -44,6 +45,13 @@ public class DamageDetector implements RadioDetector {
         JsonNode fwNode = pc.get("fwDmg");
         if (fwNode == null || !fwNode.canConvertToInt()) return Optional.empty();
         int fw = fwNode.asInt();
+        if (fw >= SEVERE && armed[0] < SEVERE) {
+            armed[0] = SEVERE;
+            return Optional.of(new EngineerMessage(
+                    Priority.IMMEDIATE,
+                    "Front wing is heavily damaged.",
+                    tick.wallClockMs(), tick.currentLap(), 2));
+        }
         if (fw >= LIGHT && armed[0] < LIGHT) {
             armed[0] = LIGHT;
             return Optional.of(new EngineerMessage(
