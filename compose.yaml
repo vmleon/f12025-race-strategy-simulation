@@ -1,0 +1,69 @@
+# Podman Compose for the F1 Race Strategy PoC stack.
+# Oracle is NOT in this compose — run `python manage.py local setup` first.
+# Telemetry uses host networking for UDP; the other services use the default bridge.
+
+services:
+
+  telemetry:
+    build:
+      context: ./telemetry
+      dockerfile: Containerfile
+    image: tfg-telemetry:dev
+    network_mode: host
+    volumes:
+      - ./logs:/app/logs
+    environment:
+      - ORACLE_HOST=localhost
+      - ORACLE_PORT=1521
+      - TCP_BACKEND_HOST=localhost
+      - TCP_BACKEND_PORT=9090
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Containerfile
+    image: tfg-backend:dev
+    ports:
+      - "8080:8080"   # REST + WS
+      - "9090:9090"   # TCP ingestion from telemetry
+    volumes:
+      - ./logs:/app/logs
+    environment:
+      - ORACLE_HOST=host.containers.internal
+      - ORACLE_PORT=1521
+      - SIMULATOR_URL=http://simulator:8081
+
+  simulator:
+    build:
+      context: ./simulator
+      dockerfile: Containerfile
+    image: tfg-simulator:dev
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./logs:/app/logs
+    environment:
+      - ORACLE_HOST=host.containers.internal
+      - ORACLE_PORT=1521
+
+  calibration:
+    build:
+      context: ./calibration
+      dockerfile: Containerfile
+    image: tfg-calibration:dev
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    environment:
+      - ORACLE_HOST=host.containers.internal
+      - ORACLE_PORT=1521
+
+  portal:
+    build:
+      context: ./portal
+      dockerfile: Containerfile
+    image: tfg-portal:dev
+    ports:
+      - "4200:4200"
+    depends_on:
+      - backend
