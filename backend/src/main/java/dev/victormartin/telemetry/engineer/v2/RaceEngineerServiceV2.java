@@ -19,6 +19,7 @@ import dev.victormartin.telemetry.engineer.RaceEngineerQueue;
 import dev.victormartin.telemetry.engineer.RaceEngineerWebSocketHandler;
 import dev.victormartin.telemetry.engineer.v2.detectors.CarAheadDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.CarBehindDetector;
+import dev.victormartin.telemetry.engineer.v2.detectors.DamageDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.DrsDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.ErsModeDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.FlagChangesDetector;
@@ -88,6 +89,7 @@ public class RaceEngineerServiceV2 {
                 new PenaltiesDetector(),
                 new TyreConditionDetector(),
                 new PerCornerWearDetector(),
+                new DamageDetector(),
                 new DrsDetector(),
                 new ErsModeDetector(),
                 new WeatherDetector(),
