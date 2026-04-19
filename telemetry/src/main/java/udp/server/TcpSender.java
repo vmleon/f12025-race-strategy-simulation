@@ -79,6 +79,7 @@ public class TcpSender implements Runnable {
                         writer.write(started);
                         writer.newLine();
                         writer.flush();
+                        log.info("TCP frame sent type=sessionStarted bytes={}", started.length());
                     }
 
                     String ended = raceState.pollSessionEnded();
@@ -86,6 +87,7 @@ public class TcpSender implements Runnable {
                         writer.write(ended);
                         writer.newLine();
                         writer.flush();
+                        log.info("TCP frame sent type=sessionEnded bytes={}", ended.length());
                     }
 
                     // Send queued events
@@ -94,6 +96,7 @@ public class TcpSender implements Runnable {
                         writer.write(event);
                         writer.newLine();
                         writer.flush();
+                        log.info("TCP frame sent type=event bytes={}", event.length());
                     }
 
                     // Send state snapshot
@@ -103,6 +106,7 @@ public class TcpSender implements Runnable {
                         writer.newLine();
                         writer.flush();
                         writeTrace(raceState.toPlayerTraceSummary());
+                        log.debug("TCP frame sent type=state bytes={}", line.length());
                     }
 
                     Thread.sleep(1_000);
