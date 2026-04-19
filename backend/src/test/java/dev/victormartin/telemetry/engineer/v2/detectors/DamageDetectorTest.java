@@ -127,4 +127,58 @@ class DamageDetectorTest {
         assertTrue(msg.isPresent());
         assertEquals("Front wing has light damage.", msg.get().text());
     }
+
+    @Test
+    void rearWingFiresLightAndSevere() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("rwDmg", 4);
+        var light = detector.evaluate(tickWith(car));
+        assertTrue(light.isPresent());
+        assertEquals("Rear wing has light damage.", light.get().text());
+
+        car.put("rwDmg", 10);
+        var severe = detector.evaluate(tickWith(car));
+        assertTrue(severe.isPresent());
+        assertEquals("Rear wing is heavily damaged.", severe.get().text());
+    }
+
+    @Test
+    void floorFiresSevere() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("flDmg", 15);
+        var msg = detector.evaluate(tickWith(car));
+        assertTrue(msg.isPresent());
+        assertEquals("Floor is heavily damaged.", msg.get().text());
+        assertEquals(EngineerMessage.Priority.IMMEDIATE, msg.get().priority());
+    }
+
+    @Test
+    void diffuserFiresLight() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("diffDmg", 3);
+        var msg = detector.evaluate(tickWith(car));
+        assertTrue(msg.isPresent());
+        assertEquals("Diffuser has light damage.", msg.get().text());
+    }
+
+    @Test
+    void sidepodFiresLight() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("spDmg", 6);
+        var msg = detector.evaluate(tickWith(car));
+        assertTrue(msg.isPresent());
+        assertEquals("Sidepod has light damage.", msg.get().text());
+    }
+
+    @Test
+    void partsHaveIndependentArmedState() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("fwDmg", 10);
+        assertTrue(detector.evaluate(tickWith(car)).isPresent()); // FW severe
+        // FW armed at severe; RW fresh.
+        car.put("rwDmg", 4);
+        var msg = detector.evaluate(tickWith(car));
+        assertTrue(msg.isPresent());
+        assertEquals("Rear wing has light damage.", msg.get().text());
+    }
 }
