@@ -99,7 +99,11 @@ public class TelemetryTcpServer implements CommandLineRunner {
                 MDC.put("sessionUid", mdcSet);
             }
 
-            log.info("TCP frame received type={} bytes={}", type, line.length());
+            if ("state".equals(type) || type.isEmpty()) {
+                log.debug("TCP frame received type={} bytes={}", type, line.length());
+            } else {
+                log.info("TCP frame received type={} bytes={}", type, line.length());
+            }
 
             switch (type) {
                 case "sessionStarted" -> {
