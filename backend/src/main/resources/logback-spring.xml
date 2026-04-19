@@ -1,11 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
-    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <property name="UNIFIED_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%-5level] [backend     ] [sess=%-10.10X{sessionUid:--}] %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${UNIFIED_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="BACKEND_FILE" class="ch.qos.logback.core.FileAppender">
+        <file>../logs/backend.log</file>
+        <append>false</append>
+        <encoder>
+            <pattern>${UNIFIED_PATTERN}</pattern>
+        </encoder>
+    </appender>
 
     <appender name="ENGINEER_TRACE" class="ch.qos.logback.core.FileAppender">
-        <file>backend.engineer.trace.log</file>
-        <append>true</append>
+        <file>../logs/backend.engineer.trace.log</file>
+        <append>false</append>
         <encoder>
             <pattern>%d{HH:mm:ss.SSS} %msg%n</pattern>
         </encoder>
@@ -17,5 +33,6 @@
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="BACKEND_FILE"/>
     </root>
 </configuration>
