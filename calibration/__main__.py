@@ -39,10 +39,9 @@ def main() -> None:
         print(f"Calibration complete for track {track_id}")
 
     elif command == "service":
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-        )
+        from calibration.log_config import configure_logging
+
+        configure_logging()
         logger = logging.getLogger("calibration")
         logger.info("Starting calibration service")
 
