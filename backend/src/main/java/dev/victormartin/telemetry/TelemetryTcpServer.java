@@ -10,6 +10,9 @@ import java.nio.charset.StandardCharsets;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.dao.DuplicateKeyException;
@@ -28,6 +31,7 @@ public class TelemetryTcpServer implements CommandLineRunner {
     private final RaceEngineerServiceV2 raceEngineerService;
     private final QueueService queueService;
     private final JdbcTemplate jdbc;
+    private static final Logger log = LoggerFactory.getLogger(TelemetryTcpServer.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${telemetry.tcp.port:9090}")
@@ -58,16 +62,16 @@ public class TelemetryTcpServer implements CommandLineRunner {
 
     private void acceptLoop() {
         try (ServerSocket serverSocket = new ServerSocket(port)) {
-            System.out.println("Telemetry TCP server listening on port " + port);
+            log.info("Telemetry TCP server listening on port {}", port);
 
             while (!Thread.currentThread().isInterrupted()) {
                 Socket client = serverSocket.accept();
-                System.out.println("Telemetry client connected: " + client.getRemoteSocketAddress());
+                log.info("Telemetry client connected: {}", client.getRemoteSocketAddress());
                 handleClient(client);
-                System.out.println("Telemetry client disconnected: " + client.getRemoteSocketAddress());
+                log.info("Telemetry client disconnected: {}", client.getRemoteSocketAddress());
             }
         } catch (IOException e) {
-            System.err.println("Telemetry TCP server error: " + e.getMessage());
+            log.error("Telemetry TCP server error: {}", e.getMessage(), e);
         }
     }
 
@@ -80,14 +84,22 @@ public class TelemetryTcpServer implements CommandLineRunner {
                 routeMessage(line);
             }
         } catch (IOException e) {
-            System.err.println("Error reading from telemetry client: " + e.getMessage());
+            log.error("Error reading from telemetry client: {}", e.getMessage(), e);
         }
     }
 
     private void routeMessage(String line) {
+        String mdcSet = null;
         try {
             JsonNode node = objectMapper.readTree(line);
             String type = node.has("type") ? node.get("type").asText() : "";
+
+            if (node.has("sessionUid")) {
+                mdcSet = node.get("sessionUid").asText();
+                MDC.put("sessionUid", mdcSet);
+            }
+
+            log.info("TCP frame received type={} bytes={}", type, line.length());
 
             switch (type) {
                 case "sessionStarted" -> {
@@ -140,6 +152,10 @@ public class TelemetryTcpServer implements CommandLineRunner {
         } catch (Exception e) {
             // If parsing fails, forward as-is
             raceWebSocketHandler.broadcast(line);
+        } finally {
+            if (mdcSet != null) {
+                MDC.remove("sessionUid");
+            }
         }
     }
 }
