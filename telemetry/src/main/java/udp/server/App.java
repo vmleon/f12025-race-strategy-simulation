@@ -13,8 +13,12 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class App {
+
+    private static final Logger log = LoggerFactory.getLogger(App.class);
 
     private record ReceivedPacket(byte[] data, int length, String sender) {}
 
@@ -58,8 +62,7 @@ public class App {
 
                     if (header != null) {
                         if (header.packetFormat != 2025 || header.gameYear != 25) {
-                            System.out.printf("[%s] WARNING: unexpected format=%d year=%d%n",
-                                    received.sender(), header.packetFormat, header.gameYear);
+                            log.warn("[{}] unexpected format={} year={}", received.sender(), header.packetFormat, header.gameYear);
                         }
 
                         tracker.onPacketReceived(header, received.length());
@@ -92,7 +95,7 @@ public class App {
                                             case 2 -> "TIER2";
                                             default -> "GAP";
                                         };
-                                        System.out.printf("  SECTOR [%s] car=%d sector=%d lap=%d time=%dms%n",
+                                        log.info("SECTOR [{}] car={} sector={} lap={} time={}ms",
                                                 tierLabel, t.carIndex(), t.completedSector(), t.lapNumber(),
                                                 snapshot.sectorTimeMs());
                                     }
@@ -192,25 +195,25 @@ public class App {
             socket.close();
         }));
 
-        System.out.println("UDP Server listening on " + host + ":" + port);
+        log.info("UDP Server listening on {}:{}", host, port);
         for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
             if (ni.isLoopback() || !ni.isUp()) continue;
             for (InetAddress addr : Collections.list(ni.getInetAddresses())) {
                 if (addr.getAddress().length == 4) { // IPv4 only
-                    System.out.println("Telemetry listening at " + addr.getHostAddress() + ":" + port);
+                    log.info("Telemetry listening at {}:{}", addr.getHostAddress(), port);
                 }
             }
         }
-        System.out.println("Buffer size: " + bufferSizeInBytes + " bytes");
+        log.info("Buffer size: {} bytes", bufferSizeInBytes);
 
         // Database connectivity check
         try (Connection conn = connFactory.getConnection()) {
-            System.out.println("Database: OK (" + conn.getMetaData().getURL() + ")");
+            log.info("Database: OK ({})", conn.getMetaData().getURL());
         } catch (Exception e) {
-            System.err.println("Database: FAILED (" + e.getMessage() + ")");
+            log.error("Database: FAILED ({})", e.getMessage(), e);
             Throwable cause = e.getCause();
             while (cause != null) {
-                System.err.println("  Caused by: " + cause.getMessage());
+                log.error("  Caused by: {}", cause.getMessage());
                 cause = cause.getCause();
             }
         }
@@ -226,7 +229,7 @@ public class App {
             byte[] copy = Arrays.copyOf(packet.getData(), len);
 
             if (!queue.offer(new ReceivedPacket(copy, len, sender))) {
-                System.err.println("Queue full, dropping packet from " + sender);
+                log.warn("Queue full, dropping packet from {}", sender);
             }
         }
     }

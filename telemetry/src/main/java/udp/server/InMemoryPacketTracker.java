@@ -2,8 +2,12 @@ package udp.server;
 
 import java.util.HashMap;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class InMemoryPacketTracker implements PacketTracker {
+
+    private static final Logger log = LoggerFactory.getLogger(InMemoryPacketTracker.class);
 
     private static class TypeStats {
         long received;
@@ -19,8 +23,8 @@ public class InMemoryPacketTracker implements PacketTracker {
     @Override
     public void onPacketReceived(PacketHeader header, int packetSize) {
         if (currentSessionUID != -1 && header.sessionUID != currentSessionUID) {
-            System.out.println("\n--- Session changed (0x" + Long.toHexString(currentSessionUID)
-                    + " -> 0x" + Long.toHexString(header.sessionUID) + "), resetting stats ---\n");
+            log.info("Session changed (0x{} -> 0x{}), resetting stats",
+                    Long.toHexString(currentSessionUID), Long.toHexString(header.sessionUID));
             statsByType.clear();
             totalReceived = 0;
         }
@@ -41,17 +45,14 @@ public class InMemoryPacketTracker implements PacketTracker {
 
     @Override
     public void printSummary() {
-        System.out.println();
-        System.out.println("=== Packet Statistics ===");
-        System.out.printf("Total received: %d%n", totalReceived);
+        log.info("=== Packet Statistics ===");
+        log.info("Total received: {}", totalReceived);
         if (currentSessionUID != -1) {
-            System.out.printf("Session UID: 0x%X%n", currentSessionUID);
+            log.info("Session UID: 0x{}", Long.toHexString(currentSessionUID).toUpperCase());
         }
-        System.out.println();
 
-        System.out.printf("%-20s %10s %12s %10s%n",
-                "Type", "Received", "Avg Size", "Pkts/sec");
-        System.out.println("-".repeat(62));
+        log.info(String.format("%-20s %10s %12s %10s", "Type", "Received", "Avg Size", "Pkts/sec"));
+        log.info("-".repeat(62));
 
         statsByType.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
@@ -62,11 +63,10 @@ public class InMemoryPacketTracker implements PacketTracker {
                     long avgSize = s.received > 0 ? s.totalBytes / s.received : 0;
                     double pktsPerSec = packetsPerSecond(s);
 
-                    System.out.printf("%-20s %10d %10d B %10.1f%n",
-                            name, s.received, avgSize, pktsPerSec);
+                    log.info(String.format("%-20s %10d %10d B %10.1f", name, s.received, avgSize, pktsPerSec));
                 });
 
-        System.out.println("=========================");
+        log.info("=========================");
     }
 
     private static double packetsPerSecond(TypeStats stats) {

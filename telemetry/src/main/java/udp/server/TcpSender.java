@@ -6,12 +6,16 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Daemon thread that connects to the backend TCP server and sends
  * race state snapshots as newline-delimited JSON at ~1Hz.
  */
 public class TcpSender implements Runnable {
+
+    private static final Logger log = LoggerFactory.getLogger(TcpSender.class);
 
     private static final long INITIAL_BACKOFF_MS = 3_000;
     private static final long MAX_BACKOFF_MS = 30_000;
@@ -32,9 +36,9 @@ public class TcpSender implements Runnable {
             this.traceWriter.write("# trace started at " + System.currentTimeMillis());
             this.traceWriter.newLine();
             this.traceWriter.flush();
-            System.out.println("Telemetry trace log: " + TRACE_FILE);
+            log.info("Telemetry trace log: {}", TRACE_FILE);
         } catch (IOException e) {
-            System.err.println("Failed to open trace log " + TRACE_FILE + ": " + e.getMessage());
+            log.error("Failed to open trace log {}: {}", TRACE_FILE, e.getMessage(), e);
             this.traceWriter = null;
         }
     }
@@ -47,7 +51,7 @@ public class TcpSender implements Runnable {
             traceWriter.flush();
         } catch (IOException e) {
             // Don't let trace failures kill the sender; print once and continue.
-            System.err.println("Trace log write failed: " + e.getMessage());
+            log.warn("Trace log write failed: {}", e.getMessage());
         }
     }
 
@@ -60,7 +64,7 @@ public class TcpSender implements Runnable {
                  BufferedWriter writer = new BufferedWriter(
                          new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
 
-                System.out.println("Connected to backend TCP at " + host + ":" + port);
+                log.info("Connected to backend TCP at {}:{}", host, port);
                 backoff = INITIAL_BACKOFF_MS; // reset on successful connect
                 raceState.resetSessionStartSent(); // re-send sessionStarted to new backend
 
@@ -100,7 +104,7 @@ public class TcpSender implements Runnable {
                     Thread.sleep(1_000);
                 }
             } catch (IOException e) {
-                System.err.println("TCP connection lost (" + e.getMessage() + "), reconnecting in " + backoff + "ms");
+                log.warn("TCP connection lost ({}), reconnecting in {}ms", e.getMessage(), backoff);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;

@@ -8,8 +8,12 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Properties;
 import java.util.Random;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Client {
+
+    private static final Logger log = LoggerFactory.getLogger(Client.class);
 
     // Packet sizes from F1 25 spec (includes 29-byte header)
     private static final int[] PACKET_SIZES = {
@@ -66,8 +70,8 @@ public class Client {
         int totalFrames = durationSeconds * fps;
         long frameDurationNanos = 1_000_000_000L / fps;
 
-        System.out.println("Simulating F1 25 telemetry to " + host + ":" + port);
-        System.out.printf("Duration: %ds at %dfps (%d frames)%n", durationSeconds, fps, totalFrames);
+        log.info("Simulating F1 25 telemetry to {}:{}", host, port);
+        log.info("Duration: {}s at {}fps ({} frames)", durationSeconds, fps, totalFrames);
 
         InetAddress address = InetAddress.getByName(host);
         DatagramSocket socket = new DatagramSocket();
@@ -108,8 +112,8 @@ public class Client {
         }
 
         double actualDuration = (System.nanoTime() - startTime) / 1_000_000_000.0;
-        System.out.printf("Done. Sent %d packets in %.1fs (%.0f pkts/sec)%n",
-                packetsSent, actualDuration, packetsSent / actualDuration);
+        log.info("Done. Sent {} packets in {}s ({} pkts/sec)",
+                packetsSent, String.format("%.1f", actualDuration), String.format("%.0f", packetsSent / actualDuration));
         socket.close();
     }
 

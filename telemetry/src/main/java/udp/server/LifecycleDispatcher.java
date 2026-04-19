@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Orchestrates database writes for session lifecycle data.
@@ -14,6 +16,8 @@ import java.util.Set;
  * without deduplication. Tyre sets are re-snapshotted on pit stop detection.
  */
 public class LifecycleDispatcher {
+
+    private static final Logger log = LoggerFactory.getLogger(LifecycleDispatcher.class);
 
     private final ConnectionFactory connectionFactory;
     private final DbWriter dbWriter;
@@ -55,9 +59,9 @@ public class LifecycleDispatcher {
         try (Connection conn = connectionFactory.getConnection()) {
             dbWriter.insertSession(conn, record);
             conn.commit();
-            System.out.printf("  DB session uid=%d track=%d%n", sessionUid, session.trackId);
+            log.info("DB session uid={} track={}", sessionUid, session.trackId);
         } catch (SQLException e) {
-            System.err.printf("Failed to insert session uid=%d: %s%n", sessionUid, e.getMessage());
+            log.error("Failed to insert session uid={}: {}", sessionUid, e.getMessage(), e);
             seenSessions.remove(sessionUid);
         }
     }
@@ -78,9 +82,9 @@ public class LifecycleDispatcher {
         try (Connection conn = connectionFactory.getConnection()) {
             dbWriter.insertParticipants(conn, records);
             conn.commit();
-            System.out.printf("  DB participants uid=%d count=%d%n", sessionUid, records.size());
+            log.info("DB participants uid={} count={}", sessionUid, records.size());
         } catch (SQLException e) {
-            System.err.printf("Failed to insert participants uid=%d: %s%n", sessionUid, e.getMessage());
+            log.error("Failed to insert participants uid={}: {}", sessionUid, e.getMessage(), e);
             seenParticipants.remove(sessionUid);
         }
     }
@@ -111,11 +115,9 @@ public class LifecycleDispatcher {
         try (Connection conn = connectionFactory.getConnection()) {
             dbWriter.insertEvent(conn, record);
             conn.commit();
-            System.out.printf("  DB event uid=%d code=%s car=%s%n",
-                    sessionUid, event.eventCode, carIndex);
+            log.info("DB event uid={} code={} car={}", sessionUid, event.eventCode, carIndex);
         } catch (SQLException e) {
-            System.err.printf("Failed to insert event uid=%d code=%s: %s%n",
-                    sessionUid, event.eventCode, e.getMessage());
+            log.error("Failed to insert event uid={} code={}: {}", sessionUid, event.eventCode, e.getMessage(), e);
         }
     }
 
@@ -138,11 +140,9 @@ public class LifecycleDispatcher {
                     fbFrame, fbTime);
             dbWriter.insertEvent(conn, record);
             conn.commit();
-            System.out.printf("  DB flashback uid=%d rewindToFrame=%d deleted=%d%n",
-                    sessionUid, fbFrame, deleted);
+            log.info("DB flashback uid={} rewindToFrame={} deleted={}", sessionUid, fbFrame, deleted);
         } catch (SQLException e) {
-            System.err.printf("Failed to handle flashback uid=%d: %s%n",
-                    sessionUid, e.getMessage());
+            log.error("Failed to handle flashback uid={}: {}", sessionUid, e.getMessage(), e);
         }
     }
 
@@ -157,8 +157,7 @@ public class LifecycleDispatcher {
             dbWriter.insertSectorSnapshots(conn, snapshots);
             conn.commit();
         } catch (SQLException e) {
-            System.err.printf("Failed to insert %d sector snapshots: %s%n",
-                    snapshots.size(), e.getMessage());
+            log.error("Failed to insert {} sector snapshots: {}", snapshots.size(), e.getMessage(), e);
         }
     }
 
@@ -181,11 +180,9 @@ public class LifecycleDispatcher {
         try (Connection conn = connectionFactory.getConnection()) {
             dbWriter.insertTyreSets(conn, records);
             conn.commit();
-            System.out.printf("  DB tyreSets uid=%d car=%d sets=%d%n",
-                    sessionUid, packet.carIdx(), records.size());
+            log.info("DB tyreSets uid={} car={} sets={}", sessionUid, packet.carIdx(), records.size());
         } catch (SQLException e) {
-            System.err.printf("Failed to insert tyre sets uid=%d car=%d: %s%n",
-                    sessionUid, packet.carIdx(), e.getMessage());
+            log.error("Failed to insert tyre sets uid={} car={}: {}", sessionUid, packet.carIdx(), e.getMessage(), e);
         }
     }
 
@@ -210,10 +207,9 @@ public class LifecycleDispatcher {
         try (Connection conn = connectionFactory.getConnection()) {
             dbWriter.insertFinalClassifications(conn, records);
             conn.commit();
-            System.out.printf("  DB finalClassification uid=%d cars=%d%n", sessionUid, records.size());
+            log.info("DB finalClassification uid={} cars={}", sessionUid, records.size());
         } catch (SQLException e) {
-            System.err.printf("Failed to insert final classifications uid=%d: %s%n",
-                    sessionUid, e.getMessage());
+            log.error("Failed to insert final classifications uid={}: {}", sessionUid, e.getMessage(), e);
             seenFinalClassifications.remove(sessionUid);
         }
     }
