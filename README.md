@@ -10,7 +10,7 @@ graph LR
     Ingest["Telemetry Server<br/><i>Plain Java 23</i>"]
     DB[("Oracle AI DB 26ai<br/><i>8 tables + TxEventQ</i>")]
     Backend["Backend API<br/><i>Spring Boot 3.5.3</i>"]
-    Calibration["Calibration<br/><i>Python CLI</i>"]
+    Calibration["Calibration<br/><i>Python service worker</i>"]
     Simulator["Simulator<br/><i>FastAPI, port 8081</i>"]
     Portal["Web Portal<br/><i>Angular 21</i>"]
     Client["iOS Client<br/><i>SwiftUI</i>"]
@@ -32,7 +32,7 @@ The system operates as five connected pipelines:
 
 **1. Ingestion** — The telemetry server listens for UDP packets from the F1 2025 game (~80–100 packets/sec). It maintains an in-memory snapshot of all 20 cars and writes to the database only on **sector transitions** (3 per lap × 20 cars ≈ 60 rows/lap). Discrete events (safety car, penalties, retirements, collisions) are captured immediately. Live race state is pushed to the backend via **TCP (port 9090)** at ~1 Hz.
 
-**2. Calibration** — The backend enqueues calibration requests via **Oracle TxEventQ**. A Python CLI consumer (`calibration/`) reads all accumulated sector snapshots for the track and fits 11 model knobs (tyre degradation per compound, fuel effect, dirty air, DRS advantage, damage penalties, overtake probability, safety car rate). Coefficients are fitted **separately for Player and AI cars** because the game uses different physics models for each.
+**2. Calibration** — The backend enqueues calibration requests via **Oracle TxEventQ**. A Python service worker (`calibration/`) reads all accumulated sector snapshots for the track and fits 11 model knobs (tyre degradation per compound, fuel effect, dirty air, DRS advantage, damage penalties, overtake probability, safety car rate). Coefficients are fitted **separately for Player and AI cars** because the game uses different physics models for each.
 
 **3. Simulation** — During a race the backend enqueues simulation requests via **TxEventQ**. The simulator service (`simulator/`, FastAPI on port 8081) runs a Monte Carlo engine (1,000–10,000 iterations with early stopping) that loads the fitted coefficients and current race state, then simulates at per-sector granularity. Each iteration samples from the calibrated distributions to project sector times, overtakes, and pit stop outcomes. The output is a probability distribution of finishing positions for each car. Simulations auto-trigger on lap completions, pit stops, safety car deployments, and disruptive events (with 3-second debounce).
 
@@ -61,7 +61,7 @@ graph TD
     end
 
     subgraph Calibration
-        Fit["Fit 11 Knobs<br/><i>Python CLI<br/>per track, per regime<br/>(PLAYER / AI)</i>"]
+        Fit["Fit 11 Knobs<br/><i>Python service worker<br/>per track, per regime<br/>(PLAYER / AI)</i>"]
     end
 
     subgraph Simulation
@@ -95,15 +95,15 @@ graph TD
 
 ## Modules
 
-| Module         | Role                                                                                                                        | Tech                                    |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| `telemetry/`   | UDP server: receives F1 2025 packets, maintains in-memory state, snapshots on sector transitions, pushes live state via TCP | Plain Java 23, Oracle UCP, Oracle JDBC  |
-| `backend/`     | REST/WebSocket API: bridges portal and clients with database, orchestrates calibration and simulation triggers via TxEventQ | Spring Boot 3.5.3, Java 23              |
-| `calibration/` | Batch CLI: outlier detection + sklearn/numpy fitting of physics model coefficients per track                                | Python 3.12+, sklearn, numpy            |
-| `simulator/`   | Monte Carlo race strategy simulation service, consumes TxEventQ requests                                                    | Python 3.12+, FastAPI                   |
-| `portal/`      | Web UI: live race table, strategy comparison, calibration dashboard, session browser, drivers overview                      | Angular 21                              |
-| `database/`    | Oracle AI Database 26ai schema (8 tables + TxEventQ queues), Liquibase migrations                                           | Liquibase, SQL                          |
-| `client/`      | iOS app: real-time race engineer voice assistant for the driver                                                             | SwiftUI, WebSocket, AVSpeechSynthesizer |
+| Module         | Role                                                                                                                                                   | Tech                                    |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
+| `telemetry/`   | UDP server: receives F1 2025 packets, maintains in-memory state, snapshots on sector transitions, pushes live state via TCP                            | Plain Java 23, Oracle UCP, Oracle JDBC  |
+| `backend/`     | REST/WebSocket API: bridges portal and clients with database, orchestrates calibration and simulation triggers via TxEventQ                            | Spring Boot 3.5.3, Java 23              |
+| `calibration/` | Always-on worker: consumes `CALIBRATION_REQUEST` from TxEventQ, runs outlier detection + sklearn/numpy fitting of physics model coefficients per track | Python 3.12+, sklearn, numpy            |
+| `simulator/`   | Monte Carlo race strategy simulation service, consumes TxEventQ requests                                                                               | Python 3.12+, FastAPI                   |
+| `portal/`      | Web UI: live race table, strategy comparison, calibration dashboard, session browser, drivers overview                                                 | Angular 21                              |
+| `database/`    | Oracle AI Database 26ai schema (8 tables + TxEventQ queues), Liquibase migrations                                                                      | Liquibase, SQL                          |
+| `client/`      | iOS app: real-time race engineer voice assistant for the driver                                                                                        | SwiftUI, WebSocket, AVSpeechSynthesizer |
 
 ### Key Design Choices
 
@@ -204,10 +204,10 @@ python -m venv venv               # one-time: create virtualenv
 source venv/bin/activate          # activate (Windows: venv\Scripts\activate)
 pip install -r requirements.txt   # install calibration deps
 cd ..
-python -m calibration service
+python -m calibration
 ```
 
-Runs as a long-lived worker that consumes `CALIBRATION_REQUEST` messages from TxEventQ. One-off runs for a single track are also available via `python -m calibration run <trackId>`.
+Runs as a long-lived worker that consumes `CALIBRATION_REQUEST` messages from TxEventQ. It has no other invocation mode.
 
 ### 5. Simulator
 
@@ -237,6 +237,21 @@ Runs on http://localhost:4200, proxies `/api` and `/ws` calls to the backend.
 ### 7. iOS Client
 
 Xcode project in `client/Virtual Race Engineer/`. Open in Xcode and run on a device or simulator.
+
+### 8. Compose (run all services at once)
+
+Instead of starting telemetry, backend, simulator, calibration, and portal in separate terminals, bring the full stack up with one command. Oracle is NOT in the compose file — it is still managed by `manage.py local setup` (step 1).
+
+```bash
+pip install podman-compose          # one-time: install compose plugin
+python manage.py local setup        # start Oracle first (required)
+podman compose up --build -d        # build + start 5 services in the background
+podman compose ps                   # see container status
+podman compose logs -f <service>    # follow one service's container log
+podman compose down                 # stop and remove 5 services (Oracle keeps running)
+```
+
+All services write structured logs to `logs/` at the repo root (shared host mount). On macOS Podman Desktop the containers reach Oracle via `host.containers.internal`; telemetry uses host networking so it uses `localhost` for the UDP port and Oracle.
 
 ## Docs
 
