@@ -7,10 +7,20 @@ import threading
 
 import oracledb
 
+from calibration.log_config import session_uid
 from calibration.pipeline import run
 from calibration.queue import dequeue_calibration_request
 
 logger = logging.getLogger("calibration")
+
+
+def _apply_session_context(payload: dict) -> object:
+    """Set the session_uid contextvar from a message payload.
+
+    Returns a token usable with session_uid.reset() to restore the prior value.
+    """
+    uid = str(payload.get("sessionUid") or "-")
+    return session_uid.set(uid)
 
 
 def run_worker(pool: oracledb.ConnectionPool, shutdown_event: threading.Event):
@@ -22,14 +32,18 @@ def run_worker(pool: oracledb.ConnectionPool, shutdown_event: threading.Event):
                 if request is None:
                     continue
 
-                track_id = request.get("trackId")
-                trigger = request.get("trigger", "unknown")
-                logger.info("Processing calibration request for track %s (trigger: %s)", track_id, trigger)
+                token = _apply_session_context(request)
+                try:
+                    track_id = request.get("trackId")
+                    trigger = request.get("trigger", "unknown")
+                    logger.info("Processing calibration request for track %s (trigger: %s)", track_id, trigger)
 
-                conn.autocommit = False
-                run(conn, track_id)
-                conn.commit()
-                logger.info("Calibration complete for track %s", track_id)
+                    conn.autocommit = False
+                    run(conn, track_id)
+                    conn.commit()
+                    logger.info("Calibration complete for track %s", track_id)
+                finally:
+                    session_uid.reset(token)
 
         except Exception:
             logger.error("Error processing calibration request", exc_info=True)
