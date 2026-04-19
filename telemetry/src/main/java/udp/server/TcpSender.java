@@ -20,7 +20,7 @@ public class TcpSender implements Runnable {
     private static final long INITIAL_BACKOFF_MS = 3_000;
     private static final long MAX_BACKOFF_MS = 30_000;
 
-    private static final String TRACE_FILE = "telemetry.trace.log";
+    private static final String TRACE_FILE = "../logs/telemetry.trace.log";
 
     private final RaceState raceState;
     private final String host;
@@ -32,7 +32,11 @@ public class TcpSender implements Runnable {
         this.host = host;
         this.port = port;
         try {
-            this.traceWriter = new BufferedWriter(new FileWriter(TRACE_FILE, true));
+            java.nio.file.Path tracePath = java.nio.file.Paths.get(TRACE_FILE);
+            if (tracePath.getParent() != null) {
+                java.nio.file.Files.createDirectories(tracePath.getParent());
+            }
+            this.traceWriter = new BufferedWriter(new FileWriter(TRACE_FILE, false));
             this.traceWriter.write("# trace started at " + System.currentTimeMillis());
             this.traceWriter.newLine();
             this.traceWriter.flush();
