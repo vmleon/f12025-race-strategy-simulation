@@ -54,4 +54,26 @@ class DamageDetectorTest {
         assertEquals(Set.of(), detector.appliesToStates());
         assertEquals(Set.of(), detector.appliesToSessions());
     }
+
+    @Test
+    void frontWingLightCrossingFiresHighPriority() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("fwDmg", 4);
+        var msg = detector.evaluate(tickWith(car));
+        assertTrue(msg.isPresent());
+        assertEquals(EngineerMessage.Priority.HIGH, msg.get().priority());
+        assertEquals("Front wing has light damage.", msg.get().text());
+    }
+
+    @Test
+    void frontWingStaysArmedAndDoesNotReFire() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("fwDmg", 4);
+        assertTrue(detector.evaluate(tickWith(car)).isPresent());
+        // Next tick, still 4%: no new message.
+        assertTrue(detector.evaluate(tickWith(car)).isEmpty());
+        // Bump to 5% — still within the same tier, no re-fire.
+        car.put("fwDmg", 5);
+        assertTrue(detector.evaluate(tickWith(car)).isEmpty());
+    }
 }
