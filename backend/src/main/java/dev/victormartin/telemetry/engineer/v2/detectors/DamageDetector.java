@@ -45,6 +45,10 @@ public class DamageDetector implements RadioDetector {
         JsonNode fwNode = pc.get("fwDmg");
         if (fwNode == null || !fwNode.canConvertToInt()) return Optional.empty();
         int fw = fwNode.asInt();
+        if (armed[0] > 0 && fw < armed[0] - 1) {
+            armed[0] = 0;
+        }
+
         if (fw >= SEVERE && armed[0] < SEVERE) {
             armed[0] = SEVERE;
             return Optional.of(new EngineerMessage(

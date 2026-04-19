@@ -110,4 +110,21 @@ class DamageDetectorTest {
         // And no re-fire while stuck severe.
         assertTrue(detector.evaluate(tickWith(car)).isEmpty());
     }
+
+    @Test
+    void repairResetsArmedStateAndAllowsReFire() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("fwDmg", 12);
+        assertTrue(detector.evaluate(tickWith(car)).isPresent()); // severe
+
+        // Pit stop — damage returns to 0.
+        car.put("fwDmg", 0);
+        assertTrue(detector.evaluate(tickWith(car)).isEmpty());
+
+        // Later impact to 4% fires light again.
+        car.put("fwDmg", 4);
+        var msg = detector.evaluate(tickWith(car));
+        assertTrue(msg.isPresent());
+        assertEquals("Front wing has light damage.", msg.get().text());
+    }
 }
