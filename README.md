@@ -122,46 +122,55 @@ graph TD
 - Java 23
 - Python 3.12+
 - Node 22+
-- Podman (for Oracle database container)
-- SQLcl 24.3+ (for Oracle MCP server — optional)
-- Xcode (for iOS client)
+- Podman (for Oracle + the compose stack)
+- SQLcl 24.3+ (optional, for the Oracle MCP server)
+- Xcode (optional, for the iOS client)
 
-### 1. Database
+### Quick start
+
+From a clean clone:
 
 ```bash
-python -m venv venv               # one-time: create virtualenv at project root
-source venv/bin/activate          # activate (Windows: venv\Scripts\activate)
-pip install -r requirements.txt   # install manage.py CLI deps
+python -m venv venv                  # one-time: create virtualenv at project root
+source venv/bin/activate             # Windows: venv\Scripts\activate
+pip install -r requirements.txt      # installs manage.py + podman-compose
 ```
 
 ```bash
-python manage.py local setup      # start Oracle container + run Liquibase migrations
+python manage.py local setup         # Oracle container + Liquibase + generated configs + Java build (~5-6 min)
+podman compose up --build -d         # build + start telemetry, backend, simulator, calibration, portal
 ```
 
+Check endpoints and point the F1 2025 game at the right UDP target:
+
 ```bash
-python manage.py local status     # verify DB is ready
+python manage.py info                # consolidated endpoints + game setup info
+podman compose ps                    # container status
+podman compose logs -f <service>     # follow one service's log (e.g. backend)
 ```
 
-Backup and restore:
+Portal is at http://localhost:4200. Logs from all services land in `logs/` at the repo root.
+
+### Clean up
 
 ```bash
-python manage.py local export     # export all data to database/backups/
+podman compose down                  # stop and remove the 5 service containers
+python manage.py local clean         # stop Oracle + remove container + clear password from .env
 ```
 
+### Database backup & restore
+
+Export all session + calibration data to a timestamped SQL file under `database/backups/`:
+
 ```bash
-python manage.py local import     # import latest backup (or specify path)
+python manage.py local export
 ```
 
-Cleanup:
+Import the latest backup (or pass an explicit path):
 
 ```bash
-python manage.py local clean      # stop & remove Oracle container
-```
-
-Recover from `ORA-28000: the account is locked` (too many failed logins):
-
-```bash
-python manage.py local unlock     # unlock pdbadmin & reset failed-login counter
+python manage.py local import
+python manage.py local import database/backups/export_20250101_120000.sql
 ```
 
 ### Oracle MCP Server (optional)
@@ -169,12 +178,37 @@ python manage.py local unlock     # unlock pdbadmin & reset failed-login counter
 Enables Claude Code to query the database directly via SQLcl's MCP server.
 
 ```bash
-python manage.py mcp setup       # create SQLcl saved connection (f1strategy_local)
+python manage.py mcp setup           # create SQLcl saved connection (f1strategy_local)
 ```
 
 The project includes a `.mcp.json` that configures the SQLcl MCP server. After running the setup, restart Claude Code to pick up the connection.
 
-### 2. Telemetry Server
+### Troubleshooting
+
+- **Backend or telemetry container exits immediately after `podman compose up`.** The Java images bundle `application.properties` / `config.properties` at build time. If the jars were built before `manage.py local setup` generated those configs (or after a subsequent setup regenerated the password), the bundled configs are stale. Re-run the setup — it rebuilds the Java artifacts at the end — then compose up again with `--build`:
+  ```bash
+  podman compose down
+  python manage.py local setup
+  podman compose up --build -d
+  ```
+
+- **`ORA-28000: the account is locked`.** Too many failed logins. Unlock and reset the counter:
+  ```bash
+  python manage.py local unlock
+  ```
+
+- **`podman machine is not running` (macOS).** Start the Podman VM:
+  ```bash
+  podman machine start
+  ```
+
+- **`manage.py local status` shows the container is not running.** Start it with `podman start f1strategy_db`, or run `python manage.py local setup` again (it will recreate the container if it doesn't exist).
+
+### Running services in separate terminals (for development)
+
+When iterating on a single service it's often faster to run it directly on the host than rebuild the container. Start Oracle with `python manage.py local setup` first, then one of the following per terminal.
+
+#### Telemetry server
 
 ```bash
 cd telemetry && ./gradlew run
@@ -182,13 +216,13 @@ cd telemetry && ./gradlew run
 
 Listens on UDP port 20777 (configurable in `src/main/resources/config.properties`). Point the F1 2025 game's telemetry output to this address.
 
-**Test client** (simulates F1 25 telemetry):
+Test client (simulates F1 25 telemetry):
 
 ```bash
 cd telemetry && ./gradlew runClient
 ```
 
-### 3. Backend
+#### Backend
 
 ```bash
 cd backend && ./gradlew bootRun
@@ -196,37 +230,37 @@ cd backend && ./gradlew bootRun
 
 Runs on http://localhost:8080. Connects to telemetry via TCP on port 9090.
 
-### 4. Calibration
+#### Calibration
 
 ```bash
 cd calibration
-python -m venv venv               # one-time: create virtualenv
-source venv/bin/activate          # activate (Windows: venv\Scripts\activate)
-pip install -r requirements.txt   # install calibration deps
+python -m venv venv                  # one-time
+source venv/bin/activate
+pip install -r requirements.txt
 cd ..
 python -m calibration
 ```
 
-Runs as a long-lived worker that consumes `CALIBRATION_REQUEST` messages from TxEventQ. It has no other invocation mode.
+Long-lived worker that consumes `CALIBRATION_REQUEST` from TxEventQ.
 
-### 5. Simulator
+#### Simulator
 
 ```bash
 cd simulator
-python -m venv venv               # one-time: create virtualenv
-source venv/bin/activate          # activate (Windows: venv\Scripts\activate)
-pip install -r requirements.txt   # install simulator deps
+python -m venv venv                  # one-time
+source venv/bin/activate
+pip install -r requirements.txt
 cd ..
 python -m simulator
 ```
 
-Runs on http://localhost:8081. Consumes simulation requests from TxEventQ. Can run without Oracle for testing:
+Runs on http://localhost:8081. Can run without Oracle for testing:
 
 ```bash
 SIMULATOR_USE_DB=false python -m simulator
 ```
 
-### 6. Portal
+#### Portal
 
 ```bash
 cd portal && npm start
@@ -234,24 +268,9 @@ cd portal && npm start
 
 Runs on http://localhost:4200, proxies `/api` and `/ws` calls to the backend.
 
-### 7. iOS Client
+#### iOS Client
 
 Xcode project in `client/Virtual Race Engineer/`. Open in Xcode and run on a device or simulator.
-
-### 8. Compose (run all services at once)
-
-Instead of starting telemetry, backend, simulator, calibration, and portal in separate terminals, bring the full stack up with one command. Oracle is NOT in the compose file — it is still managed by `manage.py local setup` (step 1).
-
-```bash
-pip install podman-compose          # one-time: install compose plugin
-python manage.py local setup        # start Oracle first (required)
-podman compose up --build -d        # build + start 5 services in the background
-podman compose ps                   # see container status
-podman compose logs -f <service>    # follow one service's container log
-podman compose down                 # stop and remove 5 services (Oracle keeps running)
-```
-
-All services write structured logs to `logs/` at the repo root (shared host mount). On macOS Podman Desktop the containers reach Oracle via `host.containers.internal`; telemetry uses host networking so it uses `localhost` for the UDP port and Oracle.
 
 ## Docs
 
