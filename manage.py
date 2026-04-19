@@ -121,6 +121,24 @@ def _get_password():
     return os.environ.get("F1STRATEGY_DB_PASSWORD", "")
 
 
+def _get_host_ip():
+    """Return this host's primary non-loopback IPv4 address.
+
+    Uses the UDP-connect trick: opening a UDP socket to any address tells the
+    kernel which local interface would be used, without sending a packet.
+    Falls back to 127.0.0.1 if no non-loopback route is available.
+    """
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("10.255.255.255", 1))
+        return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
 def _format_sql_value(val):
     """Format a Python value as an Oracle SQL literal."""
     if val is None:
@@ -146,6 +164,46 @@ def _db_connect(password):
 @click.group()
 def cli():
     """F1 Strategy development environment manager."""
+
+
+@cli.command()
+def info():
+    """Show consolidated connection info for the running stack."""
+    host_ip = _get_host_ip()
+
+    db_exists = _container_exists()
+    db_running = db_exists and _container_running()
+    if db_running:
+        db_status = "[green]running[/green]"
+    elif db_exists:
+        db_status = "[yellow]stopped[/yellow]"
+    else:
+        db_status = "[red]not set up[/red] (run: python manage.py local setup)"
+
+    password = _get_password()
+    password_note = "(set)" if password else "(not set)"
+
+    console.print(Panel(
+        f"[bold]F1 2025 game → Telemetry[/bold]\n"
+        f"  IP:     {host_ip}  (use 127.0.0.1 if the game runs on this machine)\n"
+        f"  UDP:    20777\n"
+        f"  Format: 2025   Broadcast: off\n"
+        f"\n"
+        f"[bold]Portal[/bold]\n"
+        f"  http://localhost:4200\n"
+        f"\n"
+        f"[bold]Backend[/bold]\n"
+        f"  REST:      http://localhost:8080\n"
+        f"  WebSocket: ws://localhost:8080/ws/race\n"
+        f"  TCP in:    localhost:9090  (from telemetry)\n"
+        f"\n"
+        f"[bold]Simulator[/bold]\n"
+        f"  http://localhost:8081\n"
+        f"\n"
+        f"[bold]Database[/bold]  {db_status}\n"
+        f"  localhost:1521/FREEPDB1   user: pdbadmin   password: {password_note}",
+        title="F1 Strategy — Service Info",
+    ))
 
 
 @cli.group()
