@@ -285,6 +285,21 @@ def setup():
     console.print("[bold]Generating service config files...[/bold]")
     _generate_configs(password)
 
+    # Rebuild Java artifacts so compose images pick up fresh configs.
+    console.print("[bold]Rebuilding telemetry + backend artifacts...[/bold]")
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    telemetry_dir = os.path.join(base_dir, "telemetry")
+    console.print("  [dim]./gradlew installDist (telemetry)...[/dim]")
+    _run(["./gradlew", "installDist", "-q"], cwd=telemetry_dir)
+    console.print("  [green]Built[/green] telemetry/build/install/telemetry/")
+
+    backend_dir = os.path.join(base_dir, "backend")
+    console.print("  [dim]./gradlew bootJar (backend)...[/dim]")
+    _run(["./gradlew", "bootJar", "-q"], cwd=backend_dir)
+    console.print("  [green]Built[/green] backend/build/libs/")
+
     console.print(Panel(
         f"[green]Database setup complete![/green]\n\n"
         f"  Host:     localhost\n"
