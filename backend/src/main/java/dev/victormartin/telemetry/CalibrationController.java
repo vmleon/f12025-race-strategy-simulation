@@ -3,6 +3,7 @@ package dev.victormartin.telemetry;
 import java.util.List;
 import java.util.Map;
 
+import org.slf4j.MDC;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -72,8 +73,12 @@ public class CalibrationController {
 
     @PostMapping("/run")
     public ResponseEntity<Map<String, String>> run(@RequestParam int trackId) {
+        String sessionUid = MDC.get("sessionUid");
+        if (sessionUid == null || sessionUid.isBlank()) sessionUid = "-";
         queueService.enqueue("PDBADMIN.CALIBRATION_REQUEST",
-                "{\"trackId\":" + trackId + ",\"trigger\":\"manual\"}");
+                "{\"trackId\":" + trackId
+                        + ",\"trigger\":\"manual\""
+                        + ",\"sessionUid\":\"" + sessionUid + "\"}");
         return ResponseEntity.accepted()
                 .body(Map.of("status", "accepted",
                              "trackId", String.valueOf(trackId)));

@@ -4,6 +4,8 @@ import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.slf4j.MDC;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,8 +34,11 @@ public class SimulationController {
     public ResponseEntity<Map<String, String>> run(@RequestBody RaceSnapshot snapshot) {
         try {
             String jobId = java.util.UUID.randomUUID().toString().substring(0, 8);
+            String sessionUid = MDC.get("sessionUid");
+            if (sessionUid == null || sessionUid.isBlank()) sessionUid = "-";
             String payload = objectMapper.writeValueAsString(Map.of(
                     "jobId", jobId,
+                    "sessionUid", sessionUid,
                     "raceSnapshot", snapshot));
             queueService.enqueue("PDBADMIN.SIMULATION_REQUEST", payload);
             return ResponseEntity.accepted()

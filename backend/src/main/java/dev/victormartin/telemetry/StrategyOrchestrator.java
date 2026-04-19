@@ -13,6 +13,8 @@ import java.util.concurrent.TimeUnit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -23,6 +25,7 @@ import dev.victormartin.telemetry.simulation.StrategyEvaluation;
 @Component
 public class StrategyOrchestrator {
 
+    private static final Logger log = LoggerFactory.getLogger(StrategyOrchestrator.class);
     private static final long DEBOUNCE_MS = 3_000;
 
     private final QueueService queueService;
@@ -77,7 +80,7 @@ public class StrategyOrchestrator {
                 scheduleDebouncedRun();
             }
         } catch (Exception e) {
-            System.err.println("StrategyOrchestrator: failed to parse state: " + e.getMessage());
+            log.warn("StrategyOrchestrator: failed to parse state: {}", e.getMessage());
         }
     }
 
@@ -89,7 +92,7 @@ public class StrategyOrchestrator {
                 scheduleDebouncedRun();
             }
         } catch (Exception e) {
-            System.err.println("StrategyOrchestrator: failed to parse event: " + e.getMessage());
+            log.warn("StrategyOrchestrator: failed to parse event: {}", e.getMessage());
         }
     }
 
@@ -105,7 +108,7 @@ public class StrategyOrchestrator {
 
     public void completeJob(String jobId, int evaluatedAtLap, StrategyEvaluation evaluation) {
         leaderboard = new StrategyLeaderboard(evaluatedAtLap, false, evaluation);
-        System.out.println("StrategyOrchestrator: leaderboard updated at lap " + evaluatedAtLap);
+        log.info("StrategyOrchestrator: leaderboard updated at lap {}", evaluatedAtLap);
         broadcastLeaderboard();
         raceEngineerService.onStrategyEvaluation(evaluatedAtLap, evaluation);
     }
@@ -199,17 +202,16 @@ public class StrategyOrchestrator {
             }
 
             String jobId = UUID.randomUUID().toString().substring(0, 8);
+            String uid = sessionUid != null ? sessionUid : "-";
             String payload = objectMapper.writeValueAsString(Map.of(
                     "jobId", jobId,
+                    "sessionUid", uid,
                     "playerCarIndex", playerCarIndex,
                     "raceSnapshot", snapshot));
             queueService.enqueue("PDBADMIN.STRATEGY_REQUEST", payload);
-            System.out.println("StrategyOrchestrator: enqueued strategy request " + jobId
-                    + " (lap=" + snapshot.currentLap() + "/" + snapshot.totalLaps()
-                    + ", playerCarIndex=" + playerCarIndex
-                    + ", playerTyreSets=" + playerTyreSets + ")");
+            log.info("StrategyOrchestrator: enqueued strategy request {} (lap={}/{}, playerCarIndex={}, playerTyreSets={})", jobId, snapshot.currentLap(), snapshot.totalLaps(), playerCarIndex, playerTyreSets);
         } catch (Exception e) {
-            System.err.println("StrategyOrchestrator: failed to enqueue: " + e.getMessage());
+            log.error("StrategyOrchestrator: failed to enqueue: {}", e.getMessage(), e);
         }
     }
 
@@ -264,7 +266,7 @@ public class StrategyOrchestrator {
                                         row.get("FITTED") != null && ((Number) row.get("FITTED")).intValue() == 1));
                     }
                 } catch (Exception e) {
-                    System.err.println("StrategyOrchestrator: failed to load tyre sets: " + e.getMessage());
+                    log.warn("StrategyOrchestrator: failed to load tyre sets: {}", e.getMessage());
                 }
             }
 
@@ -301,7 +303,7 @@ public class StrategyOrchestrator {
             return new RaceSnapshot(trackId, totalLaps, currentLap, currentSector,
                     weather, trackTemp, airTemp, safetyCar, cars, null);
         } catch (Exception e) {
-            System.err.println("StrategyOrchestrator: snapshot assembly failed: " + e.getMessage());
+            log.warn("StrategyOrchestrator: snapshot assembly failed: {}", e.getMessage());
             return null;
         }
     }
@@ -328,7 +330,7 @@ public class StrategyOrchestrator {
                     "evaluation", lb.evaluation()));
             raceWebSocketHandler.broadcast(json);
         } catch (Exception e) {
-            System.err.println("StrategyOrchestrator: broadcast failed: " + e.getMessage());
+            log.warn("StrategyOrchestrator: broadcast failed: {}", e.getMessage());
         }
     }
 

@@ -8,11 +8,14 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import javax.sql.DataSource;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 @Component
 public class QueueService {
 
+    private static final Logger log = LoggerFactory.getLogger(QueueService.class);
     private static final long BACKOFF_INITIAL_MS = 2_000;
     private static final long BACKOFF_MAX_MS = 60_000;
 
@@ -46,8 +49,9 @@ public class QueueService {
             cs.setString(2, queueName);
             cs.execute();
             conn.commit();
+            log.info("Enqueued {} payloadBytes={}", queueName, jsonPayload.length());
         } catch (Exception e) {
-            System.err.println("QueueService: enqueue to " + queueName + " failed: " + e.getMessage());
+            log.error("QueueService: enqueue to {} failed: {}", queueName, e.getMessage(), e);
         }
     }
 
@@ -96,8 +100,7 @@ public class QueueService {
             }
             long wait = backoffMs.merge(queueName, BACKOFF_INITIAL_MS,
                     (prev, init) -> Math.min(prev * 2, BACKOFF_MAX_MS));
-            System.err.println("QueueService: dequeue from " + queueName + " failed: " + e.getMessage()
-                    + " (backing off " + wait + "ms)");
+            log.warn("QueueService: dequeue from {} failed: {} (backing off {}ms)", queueName, e.getMessage(), wait);
             try {
                 Thread.sleep(wait);
             } catch (InterruptedException ie) {

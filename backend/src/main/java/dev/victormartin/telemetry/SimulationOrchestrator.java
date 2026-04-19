@@ -13,6 +13,8 @@ import java.util.concurrent.TimeUnit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
@@ -26,6 +28,7 @@ import dev.victormartin.telemetry.simulation.SimulationResult;
 @Component
 public class SimulationOrchestrator {
 
+    private static final Logger log = LoggerFactory.getLogger(SimulationOrchestrator.class);
     private static final long DEBOUNCE_MS = 3_000;
     private static final int MAX_STORED_RESULTS = 50;
 
@@ -66,7 +69,7 @@ public class SimulationOrchestrator {
                 scheduleDebouncedRun();
             }
         } catch (Exception e) {
-            System.err.println("SimulationOrchestrator: failed to parse state: " + e.getMessage());
+            log.warn("SimulationOrchestrator: failed to parse state: {}", e.getMessage());
         }
     }
 
@@ -80,12 +83,12 @@ public class SimulationOrchestrator {
 
             switch (event) {
                 case "SCAR", "RTMT", "COLL" -> {
-                    System.out.println("SimulationOrchestrator: disruptive event " + event);
+                    log.info("SimulationOrchestrator: disruptive event {}", event);
                     scheduleDebouncedRun();
                 }
             }
         } catch (Exception e) {
-            System.err.println("SimulationOrchestrator: failed to parse event: " + e.getMessage());
+            log.warn("SimulationOrchestrator: failed to parse event: {}", e.getMessage());
         }
     }
 
@@ -122,7 +125,7 @@ public class SimulationOrchestrator {
         SimulationJob existing = jobs.get(jobId);
         if (existing != null) {
             jobs.put(jobId, new SimulationJob(jobId, existing.startedAt(), result));
-            System.out.println("SimulationOrchestrator: job " + jobId + " completed");
+            log.info("SimulationOrchestrator: job {} completed", jobId);
         }
     }
 
@@ -143,7 +146,7 @@ public class SimulationOrchestrator {
                 }
             }
             if (leaderLap > previousLeaderLap && previousLeaderLap > 0) {
-                System.out.println("SimulationOrchestrator: leader completed lap " + leaderLap);
+                log.info("SimulationOrchestrator: leader completed lap {}", leaderLap);
                 triggered = true;
             }
             previousLeaderLap = leaderLap;
@@ -154,7 +157,7 @@ public class SimulationOrchestrator {
                 int pitStatus = car.has("pitStatus") ? car.get("pitStatus").asInt() : 0;
                 if (idx >= 0 && idx < previousPitStatus.length) {
                     if (pitStatus > 0 && previousPitStatus[idx] == 0) {
-                        System.out.println("SimulationOrchestrator: pit stop detected for car " + idx);
+                        log.info("SimulationOrchestrator: pit stop detected for car {}", idx);
                         triggered = true;
                     }
                     previousPitStatus[idx] = pitStatus;
@@ -165,7 +168,7 @@ public class SimulationOrchestrator {
         // 3. Safety car status change
         int scStatus = state.has("safetyCarStatus") ? state.get("safetyCarStatus").asInt() : 0;
         if (scStatus != previousSafetyCarStatus) {
-            System.out.println("SimulationOrchestrator: safety car status changed " + previousSafetyCarStatus + " -> " + scStatus);
+            log.info("SimulationOrchestrator: safety car status changed {} -> {}", previousSafetyCarStatus, scStatus);
             triggered = true;
         }
         previousSafetyCarStatus = scStatus;
@@ -204,18 +207,20 @@ public class SimulationOrchestrator {
         try {
             RaceSnapshot snapshot = assembleSnapshot(state);
             if (snapshot == null) {
-                System.err.println("SimulationOrchestrator: failed to assemble snapshot for job " + jobId);
+                log.error("SimulationOrchestrator: failed to assemble snapshot for job {}", jobId);
                 jobs.remove(jobId);
                 return jobId;
             }
 
+            String sessionUid = state.has("sessionUid") ? state.get("sessionUid").asText() : "-";
             String payload = objectMapper.writeValueAsString(Map.of(
                     "jobId", jobId,
+                    "sessionUid", sessionUid,
                     "raceSnapshot", snapshot));
             queueService.enqueue("PDBADMIN.SIMULATION_REQUEST", payload);
-            System.out.println("SimulationOrchestrator: enqueued simulation request " + jobId);
+            log.info("SimulationOrchestrator: enqueued simulation request {}", jobId);
         } catch (Exception e) {
-            System.err.println("SimulationOrchestrator: job " + jobId + " failed to enqueue: " + e.getMessage());
+            log.error("SimulationOrchestrator: job {} failed to enqueue: {}", jobId, e.getMessage(), e);
             jobs.remove(jobId);
         }
 
@@ -282,7 +287,7 @@ public class SimulationOrchestrator {
             return new RaceSnapshot(trackId, totalLaps, currentLap, currentSector,
                     weather, trackTemp, airTemp, safetyCar, cars, null);
         } catch (Exception e) {
-            System.err.println("SimulationOrchestrator: snapshot assembly failed: " + e.getMessage());
+            log.warn("SimulationOrchestrator: snapshot assembly failed: {}", e.getMessage());
             return null;
         }
     }
