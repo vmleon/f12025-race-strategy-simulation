@@ -8,6 +8,7 @@ import sys
 import threading
 
 from calibration import db
+from calibration.log_config import configure_logging
 from calibration.pipeline import run
 from calibration.worker import run_worker
 
@@ -39,8 +40,6 @@ def main() -> None:
         print(f"Calibration complete for track {track_id}")
 
     elif command == "service":
-        from calibration.log_config import configure_logging
-
         configure_logging()
         logger = logging.getLogger("calibration")
         logger.info("Starting calibration service")
