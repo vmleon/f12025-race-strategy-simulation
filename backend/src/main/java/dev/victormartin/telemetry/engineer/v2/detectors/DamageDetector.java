@@ -14,6 +14,14 @@ import dev.victormartin.telemetry.engineer.v2.PitState;
 import dev.victormartin.telemetry.engineer.v2.RadioDetector;
 import dev.victormartin.telemetry.engineer.v2.SessionKind;
 
+/**
+ * Announces impact damage to chassis/aero parts at two severity tiers.
+ * Parts watched (fixed order): front wing, rear wing, floor, diffuser, sidepod.
+ * Thresholds: >=3% light (HIGH), >=7% severe (IMMEDIATE).
+ *
+ * Gearbox and engine damage are excluded — they accumulate from normal wear
+ * and would fire spuriously under these aggressive thresholds.
+ */
 public class DamageDetector implements RadioDetector {
 
     private static final int LIGHT = 3;
