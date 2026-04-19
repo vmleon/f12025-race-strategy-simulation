@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <property name="UNIFIED_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%-5level] [telemetry   ] [sess=%-10.10X{sessionUid:--}] %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${UNIFIED_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="TELEMETRY_FILE" class="ch.qos.logback.core.FileAppender">
+        <file>../logs/telemetry.log</file>
+        <append>false</append>
+        <encoder>
+            <pattern>${UNIFIED_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="TELEMETRY_FILE"/>
+    </root>
+</configuration>
