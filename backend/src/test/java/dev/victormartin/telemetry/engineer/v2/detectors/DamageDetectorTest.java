@@ -210,4 +210,19 @@ class DamageDetectorTest {
         assertTrue(second.isPresent());
         assertEquals("Rear wing has light damage.", second.get().text());
     }
+
+    @Test
+    void onSessionEndedClearsStateAndAllowsReArm() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("fwDmg", 10);
+        assertTrue(detector.evaluate(tickWith(car)).isPresent()); // severe, armed at 7
+
+        detector.onSessionEnded(SESSION_UID);
+        detector.onSessionStarted(SESSION_UID, 0, 10);
+
+        // Same damage value in the new session — fires fresh.
+        var msg = detector.evaluate(tickWith(car));
+        assertTrue(msg.isPresent());
+        assertEquals("Front wing is heavily damaged.", msg.get().text());
+    }
 }

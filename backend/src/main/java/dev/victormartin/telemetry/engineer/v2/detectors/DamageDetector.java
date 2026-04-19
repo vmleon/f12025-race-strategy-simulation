@@ -87,4 +87,9 @@ public class DamageDetector implements RadioDetector {
         }
         return Optional.empty();
     }
+
+    @Override
+    public void onSessionEnded(String sessionUid) {
+        armedByUid.remove(sessionUid);
+    }
 }
