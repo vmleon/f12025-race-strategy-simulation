@@ -47,12 +47,16 @@ public class CarBehindDetector implements RadioDetector {
         JsonNode behind = EngineerMessageHelpers.findCarAtPosition(tick.cars(), tick.playerPos() + 1);
         if (behind == null) {
             s.previousGap = -1f;
+            s.previousBehindIdx = -1;
+            s.previousPlayerPos = tick.playerPos();
             return Optional.empty();
         }
 
         int behindLap = behind.has("lap") ? behind.get("lap").asInt() : 0;
         if (behindLap != tick.currentLap()) {
             s.previousGap = -1f;
+            s.previousBehindIdx = -1;
+            s.previousPlayerPos = tick.playerPos();
             return Optional.empty();
         }
 
@@ -71,13 +75,19 @@ public class CarBehindDetector implements RadioDetector {
             gapSec = gap / EngineerMessageHelpers.METRES_PER_SECOND;
         }
 
+        int behindIdx = behind.has("idx") ? behind.get("idx").asInt() : -1;
+        boolean identityChanged = behindIdx != s.previousBehindIdx
+                || tick.playerPos() != s.previousPlayerPos;
         float previous = s.previousGap;
         s.previousGap = gapSec;
+        s.previousBehindIdx = behindIdx;
+        s.previousPlayerPos = tick.playerPos();
+        if (identityChanged) return Optional.empty();
+
         boolean isClose = gapSec < CLOSE_THRESHOLD_SEC;
         boolean wasClose = previous > 0 && previous < CLOSE_THRESHOLD_SEC;
         if (!isClose || wasClose) return Optional.empty();
 
-        int behindIdx = behind.has("idx") ? behind.get("idx").asInt() : -1;
         long now = tick.wallClockMs();
         Long lastFired = s.cooldownByCar.get(behindIdx);
         if (lastFired != null && (now - lastFired) < COOLDOWN_MS) return Optional.empty();
@@ -103,6 +113,8 @@ public class CarBehindDetector implements RadioDetector {
 
     private static class State {
         float previousGap = -1f;
+        int previousBehindIdx = -1;
+        int previousPlayerPos = -1;
         final Map<Integer, Long> cooldownByCar = new HashMap<>();
     }
 }
