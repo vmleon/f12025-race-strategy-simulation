@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
+from pathlib import Path
 
 import oracledb
 
@@ -25,7 +27,14 @@ def _apply_session_context(payload: dict) -> object:
 
 def run_worker(pool: oracledb.ConnectionPool, shutdown_event: threading.Event):
     logger.info("Calibration worker started")
+    heartbeat_path = Path("/tmp/heartbeat")
+    heartbeat_path.write_text(str(int(time.time())))
+    last_heartbeat = time.monotonic()
     while not shutdown_event.is_set():
+        now = time.monotonic()
+        if now - last_heartbeat >= 30:
+            heartbeat_path.write_text(str(int(time.time())))
+            last_heartbeat = now
         try:
             with pool.acquire() as conn:
                 request = dequeue_calibration_request(conn, wait=5)

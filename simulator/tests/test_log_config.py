@@ -1,6 +1,5 @@
 import logging
 import re
-from pathlib import Path
 
 import pytest
 
@@ -16,36 +15,34 @@ LINE_PATTERN = re.compile(
 )
 
 
-@pytest.fixture
-def tmp_log(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "logs").mkdir()
-    yield tmp_path / "logs" / "simulator.log"
+@pytest.fixture(autouse=True)
+def reset_handlers():
+    yield
     for h in list(logging.getLogger().handlers):
         logging.getLogger().removeHandler(h)
 
 
-def test_configure_logging_writes_formatted_line_to_file(tmp_log):
+def test_configure_logging_writes_formatted_line_to_stderr(capsys):
     configure_logging()
     logging.getLogger("simulator").info("hello")
 
-    contents = tmp_log.read_text().strip().splitlines()
-    assert len(contents) == 1
-    assert LINE_PATTERN.match(contents[0]), f"line did not match: {contents[0]}"
+    err = capsys.readouterr().err.strip().splitlines()
+    assert len(err) == 1
+    assert LINE_PATTERN.match(err[0]), f"line did not match: {err[0]}"
 
 
-def test_session_uid_contextvar_appears_in_line(tmp_log):
+def test_session_uid_contextvar_appears_in_line(capsys):
     configure_logging()
     session_uid.set("42")
     logging.getLogger("simulator").info("event")
 
-    line = tmp_log.read_text().strip()
+    line = capsys.readouterr().err.strip()
     assert "[sess=42        ]" in line
 
 
-def test_default_sessionuid_is_dash(tmp_log):
+def test_default_sessionuid_is_dash(capsys):
     configure_logging()
     logging.getLogger("simulator").info("startup")
 
-    line = tmp_log.read_text().strip()
+    line = capsys.readouterr().err.strip()
     assert "[sess=-         ]" in line

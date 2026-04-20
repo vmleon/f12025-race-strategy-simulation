@@ -9,16 +9,7 @@
         </encoder>
     </appender>
 
-    <appender name="TELEMETRY_FILE" class="ch.qos.logback.core.FileAppender">
-        <file>../logs/telemetry.log</file>
-        <append>false</append>
-        <encoder>
-            <pattern>${UNIFIED_PATTERN}</pattern>
-        </encoder>
-    </appender>
-
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="TELEMETRY_FILE"/>
     </root>
 </configuration>

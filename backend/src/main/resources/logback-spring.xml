@@ -11,28 +11,17 @@
         </encoder>
     </appender>
 
-    <appender name="BACKEND_FILE" class="ch.qos.logback.core.FileAppender">
-        <file>../logs/backend.log</file>
-        <append>false</append>
+    <appender name="ENGINEER_TRACE_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>${UNIFIED_PATTERN}</pattern>
-        </encoder>
-    </appender>
-
-    <appender name="ENGINEER_TRACE" class="ch.qos.logback.core.FileAppender">
-        <file>../logs/backend.engineer.trace.log</file>
-        <append>false</append>
-        <encoder>
-            <pattern>%d{HH:mm:ss.SSS} %msg%n</pattern>
+            <pattern>%d{HH:mm:ss.SSS} [engineer.trace] %msg%n</pattern>
         </encoder>
     </appender>
 
     <logger name="engineer.trace" level="DEBUG" additivity="false">
-        <appender-ref ref="ENGINEER_TRACE"/>
+        <appender-ref ref="ENGINEER_TRACE_CONSOLE"/>
     </logger>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="BACKEND_FILE"/>
     </root>
 </configuration>

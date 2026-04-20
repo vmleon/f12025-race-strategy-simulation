@@ -332,33 +332,6 @@ public class RaceState {
     }
 
     /**
-     * One-line, parseable summary of the player car's pit-relevant fields.
-     * Throwaway diagnostic instrumentation: feeds telemetry.trace.log so the
-     * backend's engineer-trace can be cross-checked against raw telemetry.
-     */
-    public synchronized String toPlayerTraceSummary() {
-        if (!sessionActive) return null;
-        int playerIdx = -1;
-        for (int i = 0; i < NUM_CARS; i++) {
-            if (!cars[i].aiControlled) { playerIdx = i; break; }
-        }
-        if (playerIdx < 0) return null;
-        CarState c = cars[playerIdx];
-        return "ts=" + System.currentTimeMillis()
-                + " sessionType=" + sessionType
-                + " idx=" + playerIdx
-                + " lap=" + c.lap
-                + " sector=" + c.sector
-                + " lapDist=" + String.format("%.1f", c.lapDistance)
-                + " pitStatus=" + c.pitStatus
-                + " pitLaneActive=" + c.pitLaneTimerActive
-                + " pitLaneMs=" + c.pitLaneTimeInLaneInMS
-                + " pits=" + c.numPitStops
-                + " speed=" + c.speed
-                + " throttle=" + String.format("%.2f", c.throttle);
-    }
-
-    /**
      * Fill with fake data for end-to-end testing.
      */
     public synchronized void fillTestData() {
