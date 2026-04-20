@@ -24,10 +24,16 @@ def get_pool() -> oracledb.ConnectionPool:
     global _pool
     if _pool is None:
         cfg = _read_config()
+        dsn = cfg.get("database", "dsn", fallback="localhost:1521/FREEPDB1")
+        host = os.environ.get("ORACLE_HOST")
+        if host:
+            port = os.environ.get("ORACLE_PORT", "1521")
+            service = dsn.split("/", 1)[1] if "/" in dsn else "FREEPDB1"
+            dsn = f"{host}:{port}/{service}"
         _pool = oracledb.create_pool(
             user=cfg.get("database", "user", fallback="pdbadmin"),
             password=cfg.get("database", "password", fallback=""),
-            dsn=cfg.get("database", "dsn", fallback="localhost:1521/FREEPDB1"),
+            dsn=dsn,
             min=cfg.getint("database", "pool.min", fallback=1),
             max=cfg.getint("database", "pool.max", fallback=4),
         )

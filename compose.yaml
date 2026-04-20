@@ -2,6 +2,12 @@
 # Oracle is NOT in this compose — run `python manage.py local setup` first.
 # Telemetry uses host networking for UDP; the other services use the default bridge.
 
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
 
   telemetry:
@@ -9,14 +15,20 @@ services:
       context: ./telemetry
       dockerfile: Containerfile
     image: tfg-telemetry:dev
-    network_mode: host
-    volumes:
-      - ./logs:/app/logs
+    ports:
+      - "20777:20777/udp"
     environment:
-      - ORACLE_HOST=localhost
+      - ORACLE_HOST=host.containers.internal
       - ORACLE_PORT=1521
-      - TCP_BACKEND_HOST=localhost
+      - TCP_BACKEND_HOST=backend
       - TCP_BACKEND_PORT=9090
+    healthcheck:
+      test: ["CMD-SHELL", "test $(($(date +%s) - $(stat -c %Y /tmp/heartbeat))) -lt 60"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *default-logging
 
   backend:
     build:
@@ -26,12 +38,17 @@ services:
     ports:
       - "8080:8080"   # REST + WS
       - "9090:9090"   # TCP ingestion from telemetry
-    volumes:
-      - ./logs:/app/logs
     environment:
       - ORACLE_HOST=host.containers.internal
       - ORACLE_PORT=1521
       - SIMULATOR_URL=http://simulator:8081
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *default-logging
 
   simulator:
     build:
@@ -40,11 +57,16 @@ services:
     image: tfg-simulator:dev
     ports:
       - "8081:8081"
-    volumes:
-      - ./logs:/app/logs
     environment:
       - ORACLE_HOST=host.containers.internal
       - ORACLE_PORT=1521
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8081/health').read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *default-logging
 
   calibration:
     build:
@@ -52,11 +74,16 @@ services:
       dockerfile: Containerfile
     image: tfg-calibration:dev
     restart: unless-stopped
-    volumes:
-      - ./logs:/app/logs
     environment:
       - ORACLE_HOST=host.containers.internal
       - ORACLE_PORT=1521
+    healthcheck:
+      test: ["CMD-SHELL", "test $(($(date +%s) - $(stat -c %Y /tmp/heartbeat))) -lt 60"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *default-logging
 
   portal:
     build:
@@ -67,3 +94,10 @@ services:
       - "4200:4200"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:4200/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *default-logging

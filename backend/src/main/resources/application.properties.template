@@ -2,7 +2,7 @@ spring.application.name=backend
 server.port=8080
 
 spring.datasource.type=oracle.ucp.jdbc.PoolDataSourceImpl
-spring.datasource.url=jdbc:oracle:thin:@localhost:1521/FREEPDB1
+spring.datasource.url=jdbc:oracle:thin:@${ORACLE_HOST:localhost}:${ORACLE_PORT:1521}/FREEPDB1
 spring.datasource.username=pdbadmin
 spring.datasource.password={{DB_PASSWORD}}
 spring.datasource.driver-class-name=oracle.jdbc.OracleDriver

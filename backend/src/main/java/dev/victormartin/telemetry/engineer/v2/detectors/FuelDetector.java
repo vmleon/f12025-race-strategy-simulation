@@ -46,11 +46,13 @@ public class FuelDetector implements RadioDetector {
         if (s.initialFuel <= 0 || tick.currentLap() <= s.initialFuelLap || s.alertSent) return Optional.empty();
 
         float lapsElapsed = tick.currentLap() - s.initialFuelLap;
+        if (lapsElapsed < 5) return Optional.empty();
+
         float fuelPerLap = (s.initialFuel - fuel) / lapsElapsed;
         if (fuelPerLap <= 0) return Optional.empty();
 
         float fuelNeeded = fuelPerLap * remaining;
-        if (fuel >= fuelNeeded) return Optional.empty();
+        if (fuel >= fuelNeeded * 0.97f) return Optional.empty();
 
         s.alertSent = true;
         return Optional.of(new EngineerMessage(

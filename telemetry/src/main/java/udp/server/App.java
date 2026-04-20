@@ -1,10 +1,14 @@
 package udp.server;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -13,6 +17,9 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -27,6 +34,23 @@ public class App {
         Properties config = new Properties();
         try (InputStream is = App.class.getClassLoader().getResourceAsStream("config.properties")) {
             config.load(is);
+        }
+
+        String envOracleHost = System.getenv("ORACLE_HOST");
+        if (envOracleHost != null && !envOracleHost.isEmpty()) {
+            String envOraclePort = System.getenv().getOrDefault("ORACLE_PORT", "1521");
+            String dbUrl = config.getProperty("db.url", "jdbc:oracle:thin:@localhost:1521/FREEPDB1");
+            int slashIdx = dbUrl.lastIndexOf('/');
+            String service = slashIdx > 0 ? dbUrl.substring(slashIdx + 1) : "FREEPDB1";
+            config.setProperty("db.url", "jdbc:oracle:thin:@" + envOracleHost + ":" + envOraclePort + "/" + service);
+        }
+        String envTcpHost = System.getenv("TCP_BACKEND_HOST");
+        if (envTcpHost != null && !envTcpHost.isEmpty()) {
+            config.setProperty("tcp.backend.host", envTcpHost);
+        }
+        String envTcpPort = System.getenv("TCP_BACKEND_PORT");
+        if (envTcpPort != null && !envTcpPort.isEmpty()) {
+            config.setProperty("tcp.backend.port", envTcpPort);
         }
 
         String host = config.getProperty("host", "0.0.0.0");
@@ -52,6 +76,20 @@ public class App {
         Thread tcpSender = new Thread(new TcpSender(raceState, tcpHost, tcpPort), "tcp-sender");
         tcpSender.setDaemon(true);
         tcpSender.start();
+
+        Path heartbeatPath = Paths.get("/tmp/heartbeat");
+        ScheduledExecutorService heartbeat = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "heartbeat");
+            t.setDaemon(true);
+            return t;
+        });
+        heartbeat.scheduleAtFixedRate(() -> {
+            try {
+                Files.writeString(heartbeatPath, Long.toString(System.currentTimeMillis()));
+            } catch (IOException e) {
+                log.warn("heartbeat write failed: {}", e.getMessage());
+            }
+        }, 0, 30, TimeUnit.SECONDS);
 
         BlockingQueue<ReceivedPacket> queue = new ArrayBlockingQueue<>(10_000);
 
