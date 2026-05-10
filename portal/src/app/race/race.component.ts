@@ -540,9 +540,7 @@ export class RaceComponent implements OnInit, OnDestroy {
   bestS2Ms = signal<number | null>(null);
   bestS3Ms = signal<number | null>(null);
 
-  private carBestS1 = new Map<number, number>();
-  private carBestS2 = new Map<number, number>();
-  private carBestS3 = new Map<number, number>();
+  private carBestLapSectors = new Map<number, { s1: number; s2: number; s3: number }>();
   private prevCarSnapshot = new Map<number, { s1: number; s2: number; lap: number }>();
 
   bestTimesRows = signal<
@@ -705,9 +703,7 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.bestS1Ms.set(null);
     this.bestS2Ms.set(null);
     this.bestS3Ms.set(null);
-    this.carBestS1.clear();
-    this.carBestS2.clear();
-    this.carBestS3.clear();
+    this.carBestLapSectors.clear();
     this.prevCarSnapshot.clear();
     this.bestTimesRows.set([]);
   }
@@ -785,27 +781,16 @@ export class RaceComponent implements OnInit, OnDestroy {
       const s1 = car.lastSectorMs?.[0] ?? 0;
       const s2 = car.lastSectorMs?.[1] ?? 0;
 
-      if (s1 > 0) {
-        const prev = this.carBestS1.get(car.idx);
-        if (prev === undefined || s1 < prev) this.carBestS1.set(car.idx, s1);
-        if (overallS1 === null || s1 < overallS1) overallS1 = s1;
-      }
-      if (s2 > 0) {
-        const prev = this.carBestS2.get(car.idx);
-        if (prev === undefined || s2 < prev) this.carBestS2.set(car.idx, s2);
-        if (overallS2 === null || s2 < overallS2) overallS2 = s2;
-      }
+      // Track overall fastest sectors across the whole field for the "purple"
+      // highlight. These can come from any lap, including non-best ones.
+      if (s1 > 0 && (overallS1 === null || s1 < overallS1)) overallS1 = s1;
+      if (s2 > 0 && (overallS2 === null || s2 < overallS2)) overallS2 = s2;
 
+      // On lap rollover, fold the just-completed lap's sector triple into the
+      // best-lap record. The displayed sectors must come from the best lap as
+      // a whole — not from independent per-sector personal bests, which would
+      // produce a mismatched S1+S2+S3 ≠ best-lap total.
       if (car.lastLapTimeMs && car.lastLapTimeMs > 0) {
-        const prev = this.bestLapMap.get(car.idx);
-        if (prev === undefined || car.lastLapTimeMs < prev) {
-          this.bestLapMap.set(car.idx, car.lastLapTimeMs);
-        }
-        if (overallLap === null || car.lastLapTimeMs < overallLap) {
-          overallLap = car.lastLapTimeMs;
-        }
-
-        // Derive S3 from the lap that just ended, using the previous snapshot's S1/S2
         const prevSnap = this.prevCarSnapshot.get(car.idx);
         if (
           prevSnap &&
@@ -814,10 +799,20 @@ export class RaceComponent implements OnInit, OnDestroy {
           prevSnap.s2 > 0 &&
           car.lastLapTimeMs > prevSnap.s1 + prevSnap.s2
         ) {
-          const s3 = car.lastLapTimeMs - prevSnap.s1 - prevSnap.s2;
-          const prev = this.carBestS3.get(car.idx);
-          if (prev === undefined || s3 < prev) this.carBestS3.set(car.idx, s3);
-          if (overallS3 === null || s3 < overallS3) overallS3 = s3;
+          const lapS1 = prevSnap.s1;
+          const lapS2 = prevSnap.s2;
+          const lapS3 = car.lastLapTimeMs - lapS1 - lapS2;
+
+          if (overallS3 === null || lapS3 < overallS3) overallS3 = lapS3;
+
+          const prevBest = this.bestLapMap.get(car.idx);
+          if (prevBest === undefined || car.lastLapTimeMs < prevBest) {
+            this.bestLapMap.set(car.idx, car.lastLapTimeMs);
+            this.carBestLapSectors.set(car.idx, { s1: lapS1, s2: lapS2, s3: lapS3 });
+          }
+          if (overallLap === null || car.lastLapTimeMs < overallLap) {
+            overallLap = car.lastLapTimeMs;
+          }
         }
       }
 
@@ -839,9 +834,9 @@ export class RaceComponent implements OnInit, OnDestroy {
         name: c.name || `Car ${c.idx}`,
         ai: c.ai ?? true,
         out: (c.resultStatus ?? 2) >= 4,
-        bestS1: this.carBestS1.get(c.idx) ?? null,
-        bestS2: this.carBestS2.get(c.idx) ?? null,
-        bestS3: this.carBestS3.get(c.idx) ?? null,
+        bestS1: this.carBestLapSectors.get(c.idx)?.s1 ?? null,
+        bestS2: this.carBestLapSectors.get(c.idx)?.s2 ?? null,
+        bestS3: this.carBestLapSectors.get(c.idx)?.s3 ?? null,
         bestLap: this.bestLapMap.get(c.idx) ?? null,
         _posFallback: c.pos,
       }));
@@ -971,9 +966,7 @@ export class RaceComponent implements OnInit, OnDestroy {
         this.bestS1Ms.set(null);
         this.bestS2Ms.set(null);
         this.bestS3Ms.set(null);
-        this.carBestS1.clear();
-        this.carBestS2.clear();
-        this.carBestS3.clear();
+        this.carBestLapSectors.clear();
         this.prevCarSnapshot.clear();
         this.bestTimesRows.set([]);
         if (msg.trackId != null) this.trackId.set(msg.trackId);
