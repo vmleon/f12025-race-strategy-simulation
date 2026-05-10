@@ -72,6 +72,7 @@ public class RaceState {
         int pitLaneTimeInLaneInMS;
         long deltaToCarInFrontMs;
         float fuelInTank;
+        float fuelRemainingLaps;
         int numPitStops;
         int frontWingDamage;
         int floorDamage;
@@ -156,6 +157,7 @@ public class RaceState {
             cars[i].tyreCompound = mapTyreCompound(status[i].visualTyreCompound);
             cars[i].tyreAge = status[i].tyresAgeLaps;
             cars[i].fuelInTank = status[i].fuelInTank;
+            cars[i].fuelRemainingLaps = status[i].fuelRemainingLaps;
             cars[i].drsAllowed = status[i].drsAllowed;
             cars[i].ersDeployMode = status[i].ersDeployMode;
         }
@@ -274,6 +276,7 @@ public class RaceState {
               .append(",\"pitLaneTimerActive\":").append(c.pitLaneTimerActive)
               .append(",\"pitLaneTimeMs\":").append(c.pitLaneTimeInLaneInMS)
               .append(",\"fuel\":").append(String.format("%.1f", c.fuelInTank))
+              .append(",\"fuelLaps\":").append(String.format("%.1f", c.fuelRemainingLaps))
               .append(",\"pits\":").append(c.numPitStops)
               .append(",\"fwDmg\":").append(c.frontWingDamage)
               .append(",\"flDmg\":").append(c.floorDamage)
@@ -375,6 +378,7 @@ public class RaceState {
             cars[i].tyreAge = 7 + i;
             cars[i].pitStatus = 0;
             cars[i].fuelInTank = 50.0f - i * 1.5f;
+            cars[i].fuelRemainingLaps = 12.0f - i * 0.2f;
             cars[i].numPitStops = 0;
             cars[i].frontWingDamage = 0;
             cars[i].floorDamage = 0;

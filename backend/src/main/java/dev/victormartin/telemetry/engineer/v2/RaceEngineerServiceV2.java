@@ -31,12 +31,13 @@ import dev.victormartin.telemetry.engineer.v2.detectors.PeriodicSituationalAware
 import dev.victormartin.telemetry.engineer.v2.detectors.PitStopCompletedDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.PitWindowMessagesDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.PositionChangeDetector;
-import dev.victormartin.telemetry.engineer.v2.detectors.PracticeGripDetector;
+import dev.victormartin.telemetry.engineer.v2.detectors.PracticeLapCompleteDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.PracticeSectorComparisonDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.PracticeTyreFuelSummaryDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.QualifyingLapCompleteDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.QualifyingSectorDeltaDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.RaceFinishDetector;
+import dev.victormartin.telemetry.engineer.v2.detectors.SessionStartGreetingDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.SlowLapTrafficWarningDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.TyreConditionDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.TrackTrafficExitDetector;
@@ -84,6 +85,8 @@ public class RaceEngineerServiceV2 {
         this.pitWindow = new PitWindowMessagesDetector();
         this.raceFinish = new RaceFinishDetector();
         this.detectors = List.of(
+                // Greeting (fires once on first ON_TRACK tick of the session)
+                new SessionStartGreetingDetector(),
                 // Always-on
                 new FlagChangesDetector(),
                 new PenaltiesDetector(),
@@ -107,8 +110,8 @@ public class RaceEngineerServiceV2 {
                 new QualifyingSectorDeltaDetector(),
                 new QualifyingLapCompleteDetector(),
                 // Practice
-                new PracticeGripDetector(),
                 new PracticeTyreFuelSummaryDetector(),
+                new PracticeLapCompleteDetector(),
                 new PracticeSectorComparisonDetector(),
                 // Pit-state-bug fixes (Group A)
                 new TrackTrafficExitDetector(),
@@ -132,11 +135,9 @@ public class RaceEngineerServiceV2 {
         // keeps the previous sessionUid and silently drops every raceEngineer
         // message that carries the new uid.
         webSocketHandler.broadcast("{\"type\":\"sessionStarted\",\"sessionUid\":\"" + sessionUid + "\"}");
-        // Greeting message — also doubles as a delivery probe for the client.
-        session.queue.enqueue(new EngineerMessage(
-                Priority.NORMAL,
-                "Radio check. All systems nominal.",
-                System.currentTimeMillis(), 0, 5));
+        // The greeting is now fired by SessionStartGreetingDetector on the first
+        // ON_TRACK tick — enqueueing it here would expire (60s NORMAL TTL) while
+        // the car sits in the garage with no safe zone available.
         TRACE.debug("V2_SESSION_START sessionUid={} trackId={} sessionType={} kind={}",
                 sessionUid, trackId, sessionType, kind);
     }

@@ -69,9 +69,18 @@ def generate_candidates(
 
     candidates: list[StrategyCandidate] = []
 
-    # 0-stop: feasible if (two-compound rule already met OR wet conditions waive it)
-    # AND the fitted tyre can last the remaining distance.
-    if (has_used_multiple_compounds or is_wet) and remaining_laps <= fitted_usable_life:
+    # 0-stop: feasible if the fitted tyre can last the remaining distance AND any
+    # of: two-compound rule already met, wet conditions waive it, or there's no
+    # pit window left (sprint / very short race where no 1-stop slot fits between
+    # MIN_STINT_LAPS and MIN_FINAL_STINT_LAPS).
+    no_pit_window = (
+        snapshot.current_lap + MIN_STINT_LAPS
+        >= snapshot.total_laps - MIN_FINAL_STINT_LAPS + 1
+    )
+    if (
+        (has_used_multiple_compounds or is_wet or no_pit_window)
+        and remaining_laps <= fitted_usable_life
+    ):
         candidates.append(StrategyCandidate(label="No stop", stops=[]))
 
     available_compounds = _get_available_compounds(player.tyre_sets, snapshot.weather)

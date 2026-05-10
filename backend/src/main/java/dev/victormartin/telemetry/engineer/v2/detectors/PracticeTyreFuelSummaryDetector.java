@@ -15,7 +15,9 @@ import dev.victormartin.telemetry.engineer.v2.RadioDetector;
 import dev.victormartin.telemetry.engineer.v2.SessionKind;
 
 /**
- * "Fronts at X%, rears at Y%, fuel Z kilograms." Practice only, every 4 laps.
+ * "Fronts at X%, rears at Y%, fuel for Z laps." Practice only, every 4 laps.
+ * Falls back to "Z kilograms" if {@code fuelLaps} is not reported (some game
+ * modes set unlimited fuel and emit 0).
  *
  * Ports v1 detectPracticeTyreFuelSummary.
  */
@@ -46,14 +48,25 @@ public class PracticeTyreFuelSummaryDetector implements RadioDetector {
         int rearAvg = (int) Math.round((wear.get(0).asDouble() + wear.get(1).asDouble()) / 2.0);
         int frontAvg = (int) Math.round((wear.get(2).asDouble() + wear.get(3).asDouble()) / 2.0);
 
-        int fuel = tick.playerCar().has("fuel")
+        double fuelLaps = tick.playerCar().has("fuelLaps")
+                ? tick.playerCar().get("fuelLaps").asDouble() : 0.0;
+        int fuelKg = tick.playerCar().has("fuel")
                 ? (int) Math.round(tick.playerCar().get("fuel").asDouble()) : -1;
-        if (fuel < 0) return Optional.empty();
+
+        String fuelText;
+        if (fuelLaps > 0.0) {
+            int laps = (int) Math.round(fuelLaps);
+            fuelText = "fuel for " + laps + (laps == 1 ? " more lap" : " more laps");
+        } else if (fuelKg >= 0) {
+            fuelText = "fuel " + fuelKg + " kilograms";
+        } else {
+            return Optional.empty();
+        }
 
         lastLapByUid.put(tick.sessionUid(), lap);
         return Optional.of(new EngineerMessage(
                 Priority.NORMAL,
-                "Fronts at " + frontAvg + "% wear, rears at " + rearAvg + "%, fuel " + fuel + " kilograms.",
+                "Fronts at " + frontAvg + "% wear, rears at " + rearAvg + "%, " + fuelText + ".",
                 tick.wallClockMs(), lap, 3));
     }
 

@@ -25,14 +25,22 @@ import dev.victormartin.telemetry.engineer.v2.SessionKind;
  * by throttle alone and never gated on pit state, so it fired while the
  * player was parked in the box (zero throttle = "slow"). Phase C bug 3.2.
  *
- * v2 fix: declared {@code appliesToStates = {ON_TRACK}}. The orchestrator
- * never calls this detector outside ON_TRACK, so the throttle-only "slow lap"
- * heuristic can no longer mistake garage-park for an out-lap.
+ * v2 fixes:
+ * - declared {@code appliesToStates = {ON_TRACK}} so the throttle-only "slow
+ *   lap" heuristic can't mistake garage-park for an out-lap.
+ * - PRACTICE only. Qualifying flying laps dip below 40 % throttle on every
+ *   slow corner, so this detector consistently misfired on hot laps in any
+ *   Q format (one-shot Q is especially silly — only the player is on track).
+ * - "slow lap" now requires a sustained 12-sample window AND a low average
+ *   speed (a flying lap at any circuit averages well above 160 km/h).
+ * - the car behind must actually be moving on track (not a parked AI).
  */
 public class SlowLapTrafficWarningDetector implements RadioDetector {
 
-    private static final int THROTTLE_BUFFER_SIZE = 3;
-    private static final float SLOW_LAP_THROTTLE_THRESHOLD = 0.40f;
+    private static final int SAMPLE_BUFFER_SIZE = 12;
+    private static final float SLOW_LAP_THROTTLE_THRESHOLD = 0.30f;
+    private static final float SLOW_LAP_SPEED_THRESHOLD_KMH = 160f;
+    private static final int CAR_BEHIND_MIN_SPEED_KMH = 50;
     private static final float GAP_THRESHOLD_SEC = 4.0f;
     private static final long COOLDOWN_MS = 15_000L;
     private static final float METRES_PER_SECOND = 55f;
@@ -47,8 +55,7 @@ public class SlowLapTrafficWarningDetector implements RadioDetector {
 
     @Override
     public Set<SessionKind> appliesToSessions() {
-        return Set.of(SessionKind.PRACTICE, SessionKind.QUALIFYING,
-                SessionKind.SPRINT_QUALIFYING);
+        return Set.of(SessionKind.PRACTICE);
     }
 
     @Override
@@ -56,8 +63,12 @@ public class SlowLapTrafficWarningDetector implements RadioDetector {
         State s = stateByUid.computeIfAbsent(tick.sessionUid(), k -> new State());
 
         s.throttleBuffer.addLast(tick.playerThrottle());
-        while (s.throttleBuffer.size() > THROTTLE_BUFFER_SIZE) {
+        s.speedBuffer.addLast((float) tick.playerSpeedKmh());
+        while (s.throttleBuffer.size() > SAMPLE_BUFFER_SIZE) {
             s.throttleBuffer.removeFirst();
+        }
+        while (s.speedBuffer.size() > SAMPLE_BUFFER_SIZE) {
+            s.speedBuffer.removeFirst();
         }
 
         if (!isOnSlowLap(s)) {
@@ -71,6 +82,17 @@ public class SlowLapTrafficWarningDetector implements RadioDetector {
             if (pos == tick.playerPos() + 1) { carBehind = car; break; }
         }
         if (carBehind == null) {
+            s.previousGapBehind = -1f;
+            return Optional.empty();
+        }
+
+        // Sanity-check the car behind: must be on the same lap, moving at racing
+        // speed, and not in the pit lane. In one-shot quali (now blocked above)
+        // the "behind" slot is filled by a parked AI; that misfire stays blocked
+        // here for any other session where AIs sit out.
+        int behindPitStatus = carBehind.has("pitStatus") ? carBehind.get("pitStatus").asInt() : 0;
+        int behindSpeed = carBehind.has("speed") ? carBehind.get("speed").asInt() : 0;
+        if (behindPitStatus != 0 || behindSpeed < CAR_BEHIND_MIN_SPEED_KMH) {
             s.previousGapBehind = -1f;
             return Optional.empty();
         }
@@ -106,10 +128,16 @@ public class SlowLapTrafficWarningDetector implements RadioDetector {
     }
 
     private static boolean isOnSlowLap(State s) {
-        if (s.throttleBuffer.size() < THROTTLE_BUFFER_SIZE) return false;
-        float sum = 0f;
-        for (Float f : s.throttleBuffer) sum += f;
-        return (sum / s.throttleBuffer.size()) < SLOW_LAP_THROTTLE_THRESHOLD;
+        if (s.throttleBuffer.size() < SAMPLE_BUFFER_SIZE) return false;
+        float throttleSum = 0f;
+        for (Float f : s.throttleBuffer) throttleSum += f;
+        float avgThrottle = throttleSum / s.throttleBuffer.size();
+        if (avgThrottle >= SLOW_LAP_THROTTLE_THRESHOLD) return false;
+
+        float speedSum = 0f;
+        for (Float f : s.speedBuffer) speedSum += f;
+        float avgSpeed = speedSum / Math.max(1, s.speedBuffer.size());
+        return avgSpeed < SLOW_LAP_SPEED_THRESHOLD_KMH;
     }
 
     @Override
@@ -124,6 +152,7 @@ public class SlowLapTrafficWarningDetector implements RadioDetector {
 
     private static class State {
         final Deque<Float> throttleBuffer = new ArrayDeque<>();
+        final Deque<Float> speedBuffer = new ArrayDeque<>();
         final Map<Integer, Long> cooldownByCar = new HashMap<>();
         float previousGapBehind = -1f;
     }
