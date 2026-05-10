@@ -212,18 +212,28 @@ public class RaceEngineerService {
 
         StrategyEvaluation.RankedStrategy best = evaluation.strategies().getFirst();
         List<RaceSnapshot.PitStrategy.PitStop> stops = best.candidate().stops();
-        if (stops == null || stops.isEmpty()) return;
 
         // Stash the next recommended pit on every session. The throttled T-5/T-1/box
         // messages are emitted from detectPitWindowMessages during state updates.
+        // If the best strategy has no future pit (e.g. "No stop"), clear any prior
+        // recommendation so stale T-1/box messages don't fire from an obsolete plan.
         for (SessionEngineerState session : sessions.values()) {
             int currentLap = session.lastPlayerLap;
-            for (RaceSnapshot.PitStrategy.PitStop stop : stops) {
-                if (stop.onLap() > currentLap) {
-                    session.recommendedPitLap = stop.onLap();
-                    session.recommendedPitCompound = stop.newCompound();
-                    break;
+            RaceSnapshot.PitStrategy.PitStop nextStop = null;
+            if (stops != null) {
+                for (RaceSnapshot.PitStrategy.PitStop stop : stops) {
+                    if (stop.onLap() > currentLap) {
+                        nextStop = stop;
+                        break;
+                    }
                 }
+            }
+            if (nextStop != null) {
+                session.recommendedPitLap = nextStop.onLap();
+                session.recommendedPitCompound = nextStop.newCompound();
+            } else {
+                session.recommendedPitLap = -1;
+                session.recommendedPitCompound = 0;
             }
         }
     }

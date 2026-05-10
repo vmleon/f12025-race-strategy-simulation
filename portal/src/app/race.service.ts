@@ -1,4 +1,6 @@
 import { Injectable } from '@angular/core';
+import { Observable, defer, timer } from 'rxjs';
+import { retry, share } from 'rxjs/operators';
 import { webSocket } from 'rxjs/webSocket';
 
 export interface CarSnapshot {
@@ -138,7 +140,12 @@ export interface RaceMessage {
 
 @Injectable({ providedIn: 'root' })
 export class RaceService {
-  readonly race$ = webSocket<RaceMessage>(
-    `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/race`,
+  readonly race$: Observable<RaceMessage> = defer(() =>
+    webSocket<RaceMessage>(
+      `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/race`,
+    )
+  ).pipe(
+    retry({ delay: (_err, attempt) => timer(Math.min(1000 * 2 ** attempt, 30000)) }),
+    share()
   );
 }

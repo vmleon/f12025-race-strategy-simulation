@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, computed, signal } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { DecimalPipe, PercentPipe } from '@angular/common';
 import {
@@ -38,6 +38,13 @@ const COMPOUND_CLASSES: Record<number, string> = {
         </span>
       }
     </div>
+
+    @if (similarOutcomes()) {
+      <p class="similar-banner">
+        All strategies predict similar outcomes (within ±0.5 positions). Pit timing has limited
+        impact at this stage of the race.
+      </p>
+    }
 
     @if (strategies().length > 0) {
       <table class="results-table">
@@ -142,6 +149,15 @@ const COMPOUND_CLASSES: Record<number, string> = {
 
     .empty { color: #888; }
 
+    .similar-banner {
+      margin: 0 0 1rem;
+      padding: 0.6rem 0.8rem;
+      border-left: 3px solid #ffa726;
+      background: #2a230f;
+      color: #d8c79a;
+      font-size: 0.85rem;
+    }
+
     @media (max-width: 1200px) {
       .results-table { display: block; overflow-x: auto; }
     }
@@ -156,6 +172,13 @@ export class StrategyComponent implements OnInit, OnDestroy {
   evaluatedAtLap = signal(0);
   stale = signal(false);
   strategies = signal<RankedStrategy[]>([]);
+
+  similarOutcomes = computed(() => {
+    const s = this.strategies();
+    if (s.length < 2) return false;
+    const positions = s.map((x) => x.meanPosition);
+    return Math.max(...positions) - Math.min(...positions) < 0.5;
+  });
 
   private sub?: Subscription;
 

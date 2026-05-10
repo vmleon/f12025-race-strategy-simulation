@@ -30,6 +30,7 @@ export class App implements OnInit, OnDestroy {
   healthUp = signal(false);
 
   private heartbeatSub?: Subscription;
+  private heartbeatTimeout?: ReturnType<typeof setTimeout>;
 
   constructor(private healthService: HealthService) {}
 
@@ -40,12 +41,17 @@ export class App implements OnInit, OnDestroy {
     });
 
     this.heartbeatSub = this.healthService.heartbeat$.subscribe({
-      next: () => this.healthUp.set(true),
+      next: () => {
+        this.healthUp.set(true);
+        if (this.heartbeatTimeout) clearTimeout(this.heartbeatTimeout);
+        this.heartbeatTimeout = setTimeout(() => this.healthUp.set(false), 15000);
+      },
       error: () => this.healthUp.set(false),
     });
   }
 
   ngOnDestroy() {
     this.heartbeatSub?.unsubscribe();
+    if (this.heartbeatTimeout) clearTimeout(this.heartbeatTimeout);
   }
 }

@@ -185,9 +185,13 @@ class MonteCarloEngine:
         return max(sector_time, base_pace * 0.9)
 
     def _tyre_degradation(self, car: CarState, regime: str) -> float:
-        knob = {16: "tyre_deg_soft", 17: "tyre_deg_medium", 18: "tyre_deg_hard"}.get(
-            car.tyre_compound, "tyre_deg_medium"
-        )
+        knob = {
+            16: "tyre_deg_soft",
+            17: "tyre_deg_medium",
+            18: "tyre_deg_hard",
+            7: "tyre_deg_intermediate",
+            8: "tyre_deg_wet",
+        }.get(car.tyre_compound, "tyre_deg_medium")
         deg_per_lap = self.coefficients.get(knob, regime)
         return deg_per_lap * car.tyre_age_laps
 

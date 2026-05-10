@@ -17,14 +17,22 @@ logger = logging.getLogger("simulator")
 SOFT = 16
 MEDIUM = 17
 HARD = 18
+INTERMEDIATE = 7
+WET = 8
 
-COMPOUND_NAMES = {SOFT: "S", MEDIUM: "M", HARD: "H", 7: "I", 8: "W"}
+COMPOUND_NAMES = {SOFT: "S", MEDIUM: "M", HARD: "H", INTERMEDIATE: "I", WET: "W"}
+DRY_COMPOUNDS = {SOFT, MEDIUM, HARD}
+WET_COMPOUNDS = {INTERMEDIATE, WET}
+
+# F1 game weather codes: 0=clear, 1=light cloud, 2=overcast, 3=light rain, 4=heavy rain, 5=storm
+WET_WEATHER_THRESHOLD = 3
 
 # Pruning thresholds
 MAX_CANDIDATES = 50
 MIN_LAPS_FOR_TWO_STOP = 15
-MIN_STINT_LAPS = 5
-LAP_DELTA_THRESHOLD_MS = 5000  # Exclude compounds slower by >5s per lap
+MIN_STINT_LAPS = 3              # Minimum first/middle stint length
+MIN_FINAL_STINT_LAPS = 3        # Min racing laps after the last pit
+LAP_DELTA_THRESHOLD_MS = 5000   # Exclude compounds slower by >5s per lap
 
 
 def generate_candidates(
@@ -46,6 +54,7 @@ def generate_candidates(
 
     current_compound = player.tyre_compound
     has_used_multiple_compounds = player.num_pit_stops > 0
+    is_wet = snapshot.weather >= WET_WEATHER_THRESHOLD
 
     # Determine the fitted set's usable life for 0-stop feasibility
     fitted_sets = [ts for ts in player.tyre_sets if ts.fitted]
@@ -53,21 +62,22 @@ def generate_candidates(
 
     logger.info(
         "candidate_generator: player=%d remaining_laps=%d current_compound=%d pit_stops=%d "
-        "tyre_sets=%d fitted_usable_life=%d",
+        "tyre_sets=%d fitted_usable_life=%d weather=%d",
         player_car_index, remaining_laps, current_compound, player.num_pit_stops,
-        len(player.tyre_sets), fitted_usable_life,
+        len(player.tyre_sets), fitted_usable_life, snapshot.weather,
     )
 
     candidates: list[StrategyCandidate] = []
 
-    # 0-stop: only if two-compound rule is already met and tyres can last
-    if has_used_multiple_compounds and remaining_laps <= fitted_usable_life:
+    # 0-stop: feasible if (two-compound rule already met OR wet conditions waive it)
+    # AND the fitted tyre can last the remaining distance.
+    if (has_used_multiple_compounds or is_wet) and remaining_laps <= fitted_usable_life:
         candidates.append(StrategyCandidate(label="No stop", stops=[]))
 
-    available_compounds = _get_available_compounds(player.tyre_sets)
+    available_compounds = _get_available_compounds(player.tyre_sets, snapshot.weather)
     logger.info(
-        "candidate_generator: available_compounds=%s (from %d tyre_sets)",
-        available_compounds, len(player.tyre_sets),
+        "candidate_generator: available_compounds=%s (from %d tyre_sets, weather=%d)",
+        available_compounds, len(player.tyre_sets), snapshot.weather,
     )
     if not available_compounds:
         if player.tyre_sets:
@@ -83,13 +93,15 @@ def generate_candidates(
 
     # 1-stop strategies
     pit_lap_step = _compute_lap_step(remaining_laps)
+    last_pit_lap_exclusive = snapshot.total_laps - MIN_FINAL_STINT_LAPS + 1
     for compound, name in available_compounds.items():
-        if compound == current_compound and not has_used_multiple_compounds:
+        if compound == current_compound and not has_used_multiple_compounds and not is_wet:
             # Would violate two-compound rule unless we've already used another
+            # (rule is waived in wet conditions).
             continue
         for pit_lap in range(
             snapshot.current_lap + MIN_STINT_LAPS,
-            snapshot.total_laps - 1,
+            last_pit_lap_exclusive,
             pit_lap_step,
         ):
             label = f"1-stop L{pit_lap} {COMPOUND_NAMES.get(current_compound, '?')}->{name}"
@@ -106,9 +118,9 @@ def generate_candidates(
         compound_list = list(available_compounds.items())
         for c1_compound, c1_name in compound_list:
             for c2_compound, c2_name in compound_list:
-                # Ensure two-compound rule is met across all stints
+                # Ensure two-compound rule is met across all stints (waived in wet)
                 compounds_used = {current_compound, c1_compound, c2_compound}
-                if not has_used_multiple_compounds and len(compounds_used) < 2:
+                if not has_used_multiple_compounds and not is_wet and len(compounds_used) < 2:
                     continue
                 for lap1 in range(
                     snapshot.current_lap + MIN_STINT_LAPS,
@@ -117,7 +129,7 @@ def generate_candidates(
                 ):
                     for lap2 in range(
                         lap1 + MIN_STINT_LAPS,
-                        snapshot.total_laps - 1,
+                        last_pit_lap_exclusive,
                         two_stop_step,
                     ):
                         label = (
@@ -171,27 +183,35 @@ def _find_player(cars: list[CarSnapshot], index: int) -> CarSnapshot | None:
     return None
 
 
-def _get_available_compounds(tyre_sets: list[TyreSetInfo]) -> dict[int, str]:
+def _get_available_compounds(
+    tyre_sets: list[TyreSetInfo], weather: int
+) -> dict[int, str]:
     """Returns dict of compound code -> display name for available, non-fitted compounds
-    that pass the lap delta threshold. Falls back to standard dry compounds when
-    tyre set data is not yet available (early race laps)."""
+    that pass the lap delta threshold and match current weather conditions. Falls back
+    to standard dry/wet compounds when tyre set data is not yet available (early laps)."""
+    is_wet = weather >= WET_WEATHER_THRESHOLD
     if not tyre_sets:
-        return {16: "S", 17: "M", 18: "H"}
+        return {INTERMEDIATE: "I"} if is_wet else {SOFT: "S", MEDIUM: "M", HARD: "H"}
     compounds: dict[int, str] = {}
     for ts in tyre_sets:
         if not ts.available or ts.fitted:
             continue
         if abs(ts.lap_delta_time) > LAP_DELTA_THRESHOLD_MS:
             continue
-        if ts.visual_tyre_compound not in compounds:
-            compounds[ts.visual_tyre_compound] = COMPOUND_NAMES.get(
-                ts.visual_tyre_compound, f"C{ts.visual_tyre_compound}"
-            )
+        compound = ts.visual_tyre_compound
+        if is_wet and compound in DRY_COMPOUNDS:
+            continue
+        if not is_wet and compound in WET_COMPOUNDS:
+            continue
+        if compound not in compounds:
+            compounds[compound] = COMPOUND_NAMES.get(compound, f"C{compound}")
     return compounds
 
 
 def _compute_lap_step(remaining_laps: int) -> int:
     """Compute lap increment for pit windows to keep candidate count manageable."""
+    if remaining_laps <= 7:
+        return 1
     if remaining_laps <= 15:
         return 2
     if remaining_laps <= 30:

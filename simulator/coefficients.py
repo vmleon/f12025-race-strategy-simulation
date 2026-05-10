@@ -42,6 +42,10 @@ class Coefficients:
             c.put("tyre_deg_soft", regime, -1, 0.05)
             c.put("tyre_deg_medium", regime, -1, 0.03)
             c.put("tyre_deg_hard", regime, -1, 0.02)
+            # Wet-weather compounds — placeholder values pending calibration.
+            # In matched conditions they degrade roughly between soft and medium.
+            c.put("tyre_deg_intermediate", regime, -1, 0.04)
+            c.put("tyre_deg_wet", regime, -1, 0.04)
             c.put("fuel_effect", regime, -1, 0.01)
             c.put("front_wing_damage", regime, -1, 0.02)
             c.put("floor_damage", regime, -1, 0.04)

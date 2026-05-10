@@ -282,19 +282,28 @@ public class RaceEngineerServiceV2 {
 
     // -- strategy callback ----------------------------------------------------
 
-    /** Mirror of v1 onStrategyEvaluation — pushes the next recommended pit lap to PitWindowMessagesDetector. */
+    /** Mirror of v1 onStrategyEvaluation — pushes the next recommended pit lap to PitWindowMessagesDetector.
+     * If the best strategy has no future pit (e.g. "No stop"), clear any prior recommendation so stale
+     * T-1/box messages don't fire from an obsolete plan. */
     public void onStrategyEvaluation(int evaluatedAtLap, StrategyEvaluation evaluation) {
         if (evaluation == null || evaluation.strategies() == null || evaluation.strategies().isEmpty()) return;
         StrategyEvaluation.RankedStrategy best = evaluation.strategies().getFirst();
         List<RaceSnapshot.PitStrategy.PitStop> stops = best.candidate().stops();
-        if (stops == null || stops.isEmpty()) return;
         for (V2SessionState session : sessions.values()) {
             int lap = session.currentLap;
-            for (RaceSnapshot.PitStrategy.PitStop stop : stops) {
-                if (stop.onLap() > lap) {
-                    pitWindow.setRecommendation(session.sessionUid, stop.onLap(), stop.newCompound());
-                    break;
+            RaceSnapshot.PitStrategy.PitStop nextStop = null;
+            if (stops != null) {
+                for (RaceSnapshot.PitStrategy.PitStop stop : stops) {
+                    if (stop.onLap() > lap) {
+                        nextStop = stop;
+                        break;
+                    }
                 }
+            }
+            if (nextStop != null) {
+                pitWindow.setRecommendation(session.sessionUid, nextStop.onLap(), nextStop.newCompound());
+            } else {
+                pitWindow.setRecommendation(session.sessionUid, -1, 0);
             }
         }
     }
