@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from simulator.models import CarSnapshot, Penalty
 
+# Fallback lap pace (90 s) used when a car has no observed laps yet.
+DEFAULT_LAP_MS = 90_000.0
+
 
 class CarState:
     """Mutable state of a single car during a Monte Carlo iteration."""
@@ -13,6 +16,7 @@ class CarState:
         "front_wing_damage", "floor_damage", "engine_damage",
         "num_pit_stops", "retired", "total_time_ms", "current_lap",
         "pending_penalties", "penalty_time_ms",
+        "lap_pace_ms",
     )
 
     def __init__(
@@ -31,6 +35,7 @@ class CarState:
         num_pit_stops: int,
         total_time_ms: float,
         current_lap: int,
+        lap_pace_ms: float,
         pending_penalties: list[Penalty] | None = None,
         penalty_time_ms: float = 0.0,
     ) -> None:
@@ -49,6 +54,7 @@ class CarState:
         self.retired = False
         self.total_time_ms = total_time_ms
         self.current_lap = current_lap
+        self.lap_pace_ms = lap_pace_ms
         self.pending_penalties = list(pending_penalties) if pending_penalties else []
         self.penalty_time_ms = penalty_time_ms
 
@@ -79,6 +85,16 @@ class CarState:
             num_pit_stops=cs.num_pit_stops,
             total_time_ms=cs.total_time_ms,
             current_lap=current_lap,
+            lap_pace_ms=_pace_from_recent_laps(cs.recent_lap_times_ms),
             pending_penalties=active_penalties,
             penalty_time_ms=penalty_time_ms,
         )
+
+
+def _pace_from_recent_laps(recent_lap_times_ms: list[int]) -> float:
+    """Median of up to 3 most recent valid laps; fall back to default if empty."""
+    valid = [t for t in recent_lap_times_ms if t > 0]
+    if not valid:
+        return DEFAULT_LAP_MS
+    valid.sort()
+    return float(valid[len(valid) // 2])

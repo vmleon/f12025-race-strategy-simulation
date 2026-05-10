@@ -11,13 +11,9 @@ from calibration import db
 from calibration.fitting import linear_regression, mean, variance
 from calibration.outlier_detector import detect_outliers
 
-MIN_BASE_PACE_SAMPLES = 5
 MIN_TYRE_DEG_SAMPLES = 10
 MIN_FUEL_SAMPLES = 5
 MIN_PIT_STOP_SAMPLES = 3
-
-MAX_TYRE_AGE_CLEAN = 5
-MIN_GAP_CLEAN_AIR_MS = 2000
 
 COMPOUND_KNOB_NAMES = {
     16: "tyre_deg_soft",
@@ -53,46 +49,9 @@ def run(conn: oracledb.Connection, track_id: int) -> None:
         now = datetime.now()
         print(f"Regime {regime}: {len(data)} data points, {session_count} sessions")
 
-        _fit_base_pace(conn, data, track_id, regime, settings_hash, session_count, now)
         _fit_tyre_degradation(conn, data, track_id, regime, settings_hash, session_count, now)
         _fit_fuel_effect(conn, data, track_id, regime, settings_hash, session_count, now)
         _fit_pit_stop_duration(conn, track_id, regime, settings_hash, session_count, now)
-
-
-# ── base pace ────────────────────────────────────────────────────────
-
-
-def _fit_base_pace(
-    conn: oracledb.Connection, data: list[tuple], track_id: int, regime: str,
-    settings_hash: str, session_count: int, now: datetime,
-) -> None:
-    by_sector = _group_by_sector(data)
-
-    for sector, sector_data in by_sector.items():
-        clean = [r for r in sector_data
-                 if r[db._COL_TYRE_AGE] <= MAX_TYRE_AGE_CLEAN
-                 and (r[db._COL_GAP_AHEAD] > MIN_GAP_CLEAN_AIR_MS or r[db._COL_GAP_AHEAD] == 0)
-                 and _has_no_damage(r)]
-
-        source = clean if len(clean) >= MIN_BASE_PACE_SAMPLES else sector_data
-        if len(source) < MIN_BASE_PACE_SAMPLES:
-            print(f"  base_pace sector {sector}: insufficient data ({len(source)}), skipping")
-            continue
-
-        times = np.array([r[db._COL_SECTOR_TIME_MS] for r in source], dtype=float)
-        m = mean(times)
-        v = variance(times)
-        sd = sqrt(v)
-        std_error = sd / sqrt(len(times))
-
-        db.insert_calibration_coefficient(
-            conn, track_id, "base_pace_mean", regime, sector, "mean",
-            m, std_error, None, 0, session_count, len(times), settings_hash, now)
-        db.insert_calibration_coefficient(
-            conn, track_id, "base_pace_std_dev", regime, sector, "std_dev",
-            sd, None, None, 0, session_count, len(times), settings_hash, now)
-
-        print(f"  base_pace sector {sector}: mean={m:.1f}ms, sd={sd:.1f}ms, n={len(times)} (clean={len(clean)})")
 
 
 # ── tyre degradation ─────────────────────────────────────────────────
@@ -238,15 +197,3 @@ def _compute_settings_hash(row: tuple) -> str:
     return format(hash(key) & 0xFFFFFFFF, "x")
 
 
-def _group_by_sector(data: list[tuple]) -> dict[int, list[tuple]]:
-    groups: dict[int, list[tuple]] = defaultdict(list)
-    for r in data:
-        groups[r[db._COL_SECTOR_NUMBER]].append(r)
-    return dict(groups)
-
-
-def _has_no_damage(r: tuple) -> bool:
-    return (r[db._COL_FW_DMG_L] == 0 and r[db._COL_FW_DMG_R] == 0
-            and r[db._COL_RW_DMG] == 0 and r[db._COL_FLOOR_DMG] == 0
-            and r[db._COL_DIFF_DMG] == 0 and r[db._COL_SIDE_DMG] == 0
-            and r[db._COL_ENG_DMG] == 0 and r[db._COL_GEAR_DMG] == 0)

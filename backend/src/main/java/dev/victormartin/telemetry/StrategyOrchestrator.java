@@ -32,6 +32,7 @@ public class StrategyOrchestrator {
     private final JdbcTemplate jdbc;
     private final RaceWebSocketHandler raceWebSocketHandler;
     private final RaceEngineerServiceV2 raceEngineerService;
+    private final dev.victormartin.telemetry.simulation.LapHistoryTracker lapHistoryTracker;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -55,7 +56,9 @@ public class StrategyOrchestrator {
 
     public StrategyOrchestrator(QueueService queueService, JdbcTemplate jdbc,
                                  RaceWebSocketHandler raceWebSocketHandler,
-                                 RaceEngineerServiceV2 raceEngineerService) {
+                                 RaceEngineerServiceV2 raceEngineerService,
+                                 dev.victormartin.telemetry.simulation.LapHistoryTracker lapHistoryTracker) {
+        this.lapHistoryTracker = lapHistoryTracker;
         this.queueService = queueService;
         this.jdbc = jdbc;
         this.raceWebSocketHandler = raceWebSocketHandler;
@@ -295,7 +298,8 @@ public class StrategyOrchestrator {
                 cars.add(new RaceSnapshot.CarSnapshot(
                         idx, name, ai, pos, tyreCompound, tyreAge,
                         fuel, fuelBurnPerSector, fwDmg, flDmg, engDmg,
-                        pits, totalTimeMs, tyreSets));
+                        pits, totalTimeMs, tyreSets,
+                        lapHistoryTracker.recent(idx)));
             }
 
             if (cars.isEmpty()) return null;

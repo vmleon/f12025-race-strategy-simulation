@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import dev.victormartin.telemetry.simulation.LapHistoryTracker;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -18,7 +19,7 @@ class SimulationOrchestratorTest {
     @BeforeEach
     void setUp() {
         QueueService queueService = new QueueService(null);
-        orchestrator = new SimulationOrchestrator(queueService);
+        orchestrator = new SimulationOrchestrator(queueService, new LapHistoryTracker());
     }
 
     private String buildStateJson(int leaderLap, int safetyCarStatus, int car0PitStatus) {

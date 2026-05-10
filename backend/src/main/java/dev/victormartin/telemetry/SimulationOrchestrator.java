@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import dev.victormartin.telemetry.simulation.LapHistoryTracker;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 import dev.victormartin.telemetry.simulation.SimulationResult;
 
@@ -33,6 +34,7 @@ public class SimulationOrchestrator {
     private static final int MAX_STORED_RESULTS = 50;
 
     private final QueueService queueService;
+    private final LapHistoryTracker lapHistoryTracker;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -53,8 +55,9 @@ public class SimulationOrchestrator {
     private int previousSafetyCarStatus = 0;
     private final int[] previousPitStatus = new int[22];
 
-    public SimulationOrchestrator(QueueService queueService) {
+    public SimulationOrchestrator(QueueService queueService, LapHistoryTracker lapHistoryTracker) {
         this.queueService = queueService;
+        this.lapHistoryTracker = lapHistoryTracker;
     }
 
     /**
@@ -279,7 +282,8 @@ public class SimulationOrchestrator {
                 cars.add(new RaceSnapshot.CarSnapshot(
                         idx, name, ai, pos, tyreCompound, tyreAge,
                         fuel, fuelBurnPerSector, fwDmg, flDmg, engDmg,
-                        pits, totalTimeMs, List.of()));
+                        pits, totalTimeMs, List.of(),
+                        lapHistoryTracker.recent(idx)));
             }
 
             if (cars.isEmpty()) return null;

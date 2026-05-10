@@ -36,23 +36,19 @@ class Coefficients:
 
     @staticmethod
     def defaults() -> Coefficients:
-        """Creates a Coefficients instance with cold-start defaults for both regimes."""
+        """Cold-start defaults — only the three knob families currently calibrated:
+        tyre_deg_*, fuel_effect, pit_stop_time_loss. Damage / dirty-air / DRS /
+        overtake / safety-car effects were dropped from the engine in the
+        Option-C simplification; their defaults are no longer needed.
+        """
         c = Coefficients()
         for regime in ("PLAYER", "AI"):
             c.put("tyre_deg_soft", regime, -1, 0.05)
             c.put("tyre_deg_medium", regime, -1, 0.03)
             c.put("tyre_deg_hard", regime, -1, 0.02)
-            # Wet-weather compounds — placeholder values pending calibration.
-            # In matched conditions they degrade roughly between soft and medium.
+            # Wet-weather compounds — placeholder until we have wet-session data.
             c.put("tyre_deg_intermediate", regime, -1, 0.04)
             c.put("tyre_deg_wet", regime, -1, 0.04)
             c.put("fuel_effect", regime, -1, 0.01)
-            c.put("front_wing_damage", regime, -1, 0.02)
-            c.put("floor_damage", regime, -1, 0.04)
-            c.put("engine_damage", regime, -1, 0.01)
-            c.put("dirty_air", regime, -1, 0.30)
-            c.put("drs_advantage", regime, -1, -0.20)
-            c.put("overtake_probability", regime, -1, 0.15)
-            c.put("safety_car_rate", regime, -1, 0.01)
-            c.put("pit_stop_time_loss", regime, -1, 3_000.0)
+            c.put("pit_stop_time_loss", regime, -1, 22_000.0)
         return c

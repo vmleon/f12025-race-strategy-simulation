@@ -66,6 +66,9 @@ class CarSnapshot(BaseModel):
     total_time_ms: float = Field(alias="totalTimeMs")
     penalties: list[Penalty] = Field(default_factory=list)
     tyre_sets: list[TyreSetInfo] = Field(default_factory=list, alias="tyreSets")
+    # Up to 3 most recent valid lap times (newest first), populated by the
+    # backend's LapHistoryTracker. Empty until the car has completed a lap.
+    recent_lap_times_ms: list[int] = Field(default_factory=list, alias="recentLapTimesMs")
 
     model_config = {"populate_by_name": True}
 

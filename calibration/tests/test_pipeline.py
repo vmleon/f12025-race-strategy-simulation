@@ -1,8 +1,8 @@
 from calibration import db
 from calibration.pipeline import (
-    _compute_settings_hash, _group_by_sector, _group_pit_stops, _has_no_damage,
-    COMPOUND_KNOB_NAMES, MIN_BASE_PACE_SAMPLES, MIN_TYRE_DEG_SAMPLES, MIN_FUEL_SAMPLES,
-    MIN_PIT_STOP_SAMPLES, MAX_TYRE_AGE_CLEAN, MIN_GAP_CLEAN_AIR_MS,
+    _compute_settings_hash, _group_pit_stops,
+    COMPOUND_KNOB_NAMES, MIN_TYRE_DEG_SAMPLES, MIN_FUEL_SAMPLES,
+    MIN_PIT_STOP_SAMPLES,
 )
 
 
@@ -46,20 +46,6 @@ def _make_row(sector_number=0, sector_time_ms=30000, lap_number=2, tyre_age_laps
 
 class TestHelpers:
 
-    def test_has_no_damage_clean(self):
-        row = _make_row()
-        assert _has_no_damage(row) is True
-
-    def test_has_no_damage_with_floor_damage(self):
-        row = _make_row(floor_damage=15)
-        assert _has_no_damage(row) is False
-
-    def test_group_by_sector(self):
-        data = [_make_row(sector_number=0), _make_row(sector_number=1), _make_row(sector_number=0)]
-        groups = _group_by_sector(data)
-        assert len(groups[0]) == 2
-        assert len(groups[1]) == 1
-
     def test_settings_hash_deterministic(self):
         row1 = _make_row()
         row2 = _make_row(sector_number=1, sector_time_ms=31000)
@@ -69,27 +55,6 @@ class TestHelpers:
         row1 = _make_row()
         row2 = _make_row(ai_difficulty=99)
         assert _compute_settings_hash(row1) != _compute_settings_hash(row2)
-
-
-class TestCleanConditionsFiltering:
-
-    def test_clean_conditions_filter(self):
-        data = []
-        # 6 clean rows (tyre age 0..5, all <= MAX_TYRE_AGE_CLEAN=5)
-        for i in range(6):
-            data.append(_make_row(sector_number=0, sector_time_ms=30000 + i * 10, tyre_age_laps=i))
-        # 3 dirty rows (high tyre age)
-        for i in range(3):
-            data.append(_make_row(sector_number=0, sector_time_ms=32000, tyre_age_laps=20))
-
-        by_sector = _group_by_sector(data)
-        sector_data = by_sector[0]
-        clean = [r for r in sector_data
-                 if r[db._COL_TYRE_AGE] <= MAX_TYRE_AGE_CLEAN
-                 and (r[db._COL_GAP_AHEAD] > MIN_GAP_CLEAN_AIR_MS or r[db._COL_GAP_AHEAD] == 0)
-                 and _has_no_damage(r)]
-
-        assert len(clean) == 6
 
 
 class TestCompoundMapping:
@@ -104,7 +69,7 @@ class TestCompoundMapping:
 class TestConstants:
 
     def test_minimum_samples(self):
-        assert MIN_BASE_PACE_SAMPLES == 5
+        # base_pace is no longer fitted under Option C (see pipeline.py).
         assert MIN_TYRE_DEG_SAMPLES == 10
         assert MIN_FUEL_SAMPLES == 5
         assert MIN_PIT_STOP_SAMPLES == 3

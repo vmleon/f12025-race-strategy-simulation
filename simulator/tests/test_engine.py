@@ -264,6 +264,7 @@ def test_ai_pits_at_exactly_soft_lifespan_30():
         tyre_compound=16, tyre_age_laps=29, fuel_kg=50.0,
         fuel_burn_per_sector_kg=0.18, front_wing_damage=0, floor_damage=0,
         engine_damage=0, num_pit_stops=0, total_time_ms=0.0, current_lap=20,
+        lap_pace_ms=90_000.0,
     )
     engine._check_pit_stop(car_young, lap=20, snapshot=snapshot)
     assert car_young.num_pit_stops == 0, "AI should NOT pit at age 29 (under lifespan 30)"
@@ -274,6 +275,7 @@ def test_ai_pits_at_exactly_soft_lifespan_30():
         tyre_compound=16, tyre_age_laps=30, fuel_kg=50.0,
         fuel_burn_per_sector_kg=0.18, front_wing_damage=0, floor_damage=0,
         engine_damage=0, num_pit_stops=0, total_time_ms=0.0, current_lap=20,
+        lap_pace_ms=90_000.0,
     )
     engine._check_pit_stop(car_due, lap=20, snapshot=snapshot)
     assert car_due.num_pit_stops == 1, "AI should pit at age 30 (lifespan)"

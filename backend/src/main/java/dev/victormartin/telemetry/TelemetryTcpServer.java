@@ -20,6 +20,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import dev.victormartin.telemetry.engineer.v2.RaceEngineerServiceV2;
+import dev.victormartin.telemetry.simulation.LapHistoryTracker;
 
 @Component
 public class TelemetryTcpServer implements CommandLineRunner {
@@ -29,6 +30,7 @@ public class TelemetryTcpServer implements CommandLineRunner {
     private final SimulationOrchestrator simulationOrchestrator;
     private final StrategyOrchestrator strategyOrchestrator;
     private final RaceEngineerServiceV2 raceEngineerService;
+    private final LapHistoryTracker lapHistoryTracker;
     private final QueueService queueService;
     private final JdbcTemplate jdbc;
     private static final Logger log = LoggerFactory.getLogger(TelemetryTcpServer.class);
@@ -42,12 +44,14 @@ public class TelemetryTcpServer implements CommandLineRunner {
                               SimulationOrchestrator simulationOrchestrator,
                               StrategyOrchestrator strategyOrchestrator,
                               RaceEngineerServiceV2 raceEngineerService,
+                              LapHistoryTracker lapHistoryTracker,
                               QueueService queueService,
                               JdbcTemplate jdbc) {
         this.raceWebSocketHandler = raceWebSocketHandler;
         this.sessionStateHolder = sessionStateHolder;
         this.simulationOrchestrator = simulationOrchestrator;
         this.strategyOrchestrator = strategyOrchestrator;
+        this.lapHistoryTracker = lapHistoryTracker;
         this.raceEngineerService = raceEngineerService;
         this.queueService = queueService;
         this.jdbc = jdbc;
@@ -134,12 +138,14 @@ public class TelemetryTcpServer implements CommandLineRunner {
                     String endedUid = node.get("sessionUid").asText();
                     sessionStateHolder.onSessionEnded(endedUid);
                     raceEngineerService.onSessionEnded(endedUid);
+                    lapHistoryTracker.reset();
                     queueService.enqueue("PDBADMIN.SESSION_LIFECYCLE", line);
                 }
                 case "state" -> {
                     if (node.has("sessionUid")) {
                         sessionStateHolder.onStateReceived(node.get("sessionUid").asText());
                     }
+                    lapHistoryTracker.onStateUpdate(node);
                     raceWebSocketHandler.broadcast(line);
                     simulationOrchestrator.onStateUpdate(line);
                     strategyOrchestrator.onStateUpdate(line);

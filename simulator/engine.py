@@ -22,6 +22,10 @@ PIT_STOP_TIME_MS = 22_000.0
 PIT_LANE_TRANSIT_TIME_MS = 20_000.0  # drive-through cost (no tyre change)
 BASE_DNF_RATE_PER_SECTOR = 0.0001
 
+# Option-C constants: replace coefficients we no longer calibrate.
+NOISE_SIGMA_MS = 150.0          # per-sector pace noise (was: residual_variance)
+OVERTAKE_PROB_DEFAULT = 0.30    # was: overtake_probability per regime/sector
+
 
 class MonteCarloEngine:
     """Monte Carlo race strategy simulation engine.
@@ -135,54 +139,34 @@ class MonteCarloEngine:
         self._apply_time_penalties(cars)
         self._assign_final_positions(cars)
 
-    # ── sector time prediction (additive model) ─────────────────────────
+    # ── sector time prediction (Option-C additive model) ────────────────
+    # Terms: per-car pace + tyre_deg + fuel_effect + Gaussian noise.
+    # Damage / dirty air / DRS were dropped — no calibrated knobs feed them
+    # under Option C and the cold-start defaults were generating noise.
 
     def _predict_sector_time(
         self,
         car: CarState,
         sector: int,
         safety_car: bool,
-        cars: list[CarState],
+        cars: list[CarState],  # kept for signature stability; unused under Option C
     ) -> float:
         regime = car.regime
-        coeff = self.coefficients
 
-        # Base pace
-        base_pace = coeff.get("base_pace_mean", regime, sector)
-        if base_pace <= 0:
-            base_pace = 30_000.0
+        # Per-car base sector pace, derived from observed lap times (median of
+        # last 3) by car_state. Splits the lap evenly across 3 sectors —
+        # per-sector pace ratios are not yet calibrated.
+        base_sector_pace = car.lap_pace_ms / SECTORS_PER_LAP
 
-        # Safety car: everyone laps at ~40% slower pace
         if safety_car:
-            return base_pace * 1.4
+            return base_sector_pace * 1.4
 
-        # Residual noise (regression residual variance from calibration)
-        variance = coeff.get("residual_variance", regime, sector)
-        noise = (
-            self.rng.gauss(0, math.sqrt(variance))
-            if variance > 0
-            else self.rng.gauss(0, 200)
-        )
-
-        # Tyre degradation
+        noise = self.rng.gauss(0, NOISE_SIGMA_MS)
         tyre_deg = self._tyre_degradation(car, regime)
+        fuel_effect = self.coefficients.get("fuel_effect", regime, sector) * car.fuel_kg
 
-        # Fuel effect
-        fuel_effect = coeff.get("fuel_effect", regime, sector) * car.fuel_kg
-
-        # Damage effects
-        damage_effect = self._damage_effect(car, regime, sector)
-
-        # Dirty air effect
-        dirty_air = self._dirty_air_effect(car, cars, regime, sector)
-
-        # DRS effect
-        drs = self._drs_effect(car, cars, sector, regime)
-
-        sector_time = (
-            base_pace + tyre_deg + fuel_effect + damage_effect + dirty_air + drs + noise
-        )
-        return max(sector_time, base_pace * 0.9)
+        sector_time = base_sector_pace + tyre_deg + fuel_effect + noise
+        return max(sector_time, base_sector_pace * 0.9)
 
     def _tyre_degradation(self, car: CarState, regime: str) -> float:
         knob = {
@@ -194,41 +178,6 @@ class MonteCarloEngine:
         }.get(car.tyre_compound, "tyre_deg_medium")
         deg_per_lap = self.coefficients.get(knob, regime)
         return deg_per_lap * car.tyre_age_laps
-
-    def _damage_effect(self, car: CarState, regime: str, sector: int) -> float:
-        coeff = self.coefficients
-        front_wing = coeff.get("front_wing_damage", regime, sector) * car.front_wing_damage
-        floor = coeff.get("floor_damage", regime, sector) * car.floor_damage
-        engine = coeff.get("engine_damage", regime, sector) * car.engine_damage
-        return front_wing + floor + engine
-
-    def _dirty_air_effect(
-        self, car: CarState, cars: list[CarState], regime: str, sector: int
-    ) -> float:
-        car_ahead = self._find_car_at_position(cars, car.position - 1)
-        if car_ahead is None:
-            return 0.0
-
-        gap_ms = car.total_time_ms - car_ahead.total_time_ms
-        if gap_ms > 2000:
-            return 0.0
-
-        dirty_air_coeff = self.coefficients.get("dirty_air", regime, sector)
-        scale = 1.0 - (gap_ms / 2000.0)
-        return dirty_air_coeff * max(0.0, scale)
-
-    def _drs_effect(
-        self, car: CarState, cars: list[CarState], sector: int, regime: str
-    ) -> float:
-        car_ahead = self._find_car_at_position(cars, car.position - 1)
-        if car_ahead is None:
-            return 0.0
-
-        gap_ms = car.total_time_ms - car_ahead.total_time_ms
-        if gap_ms > 1000:
-            return 0.0
-
-        return self.coefficients.get("drs_advantage", regime, sector)
 
     # ── sub-models ───────────────────────────────────────────────────────
 
@@ -339,9 +288,11 @@ class MonteCarloEngine:
     def _overtake_probability(
         self, car: CarState, pace_delta_ms: float, sector: int
     ) -> float:
-        base_prob = self.coefficients.get("overtake_probability", car.regime, sector)
+        # Option C: flat default — calibration of overtake_probability requires
+        # data we don't currently fit. _sigmoid(pace_delta) keeps the shape so
+        # faster cars still pass more often than slower ones.
         x = pace_delta_ms / 500.0
-        return base_prob * _sigmoid(x)
+        return OVERTAKE_PROB_DEFAULT * _sigmoid(x)
 
     @staticmethod
     def _find_car_at_position(
@@ -357,15 +308,13 @@ class MonteCarloEngine:
     def _check_safety_car_event(
         self, current_safety_car: bool, cars: list[CarState]
     ) -> bool:
-        sc_rate = self.coefficients.get("safety_car_rate", "AI")
-        if not current_safety_car:
-            if self.rng.random() < sc_rate:
-                self._compress_field(cars)
-                return True
-            return False
-        else:
-            # Safety car lasts 3-5 laps on average; 30% chance of ending each lap
+        # Option C: don't randomly trigger safety cars. The simulator only
+        # respects the `safety_car` flag that came in with the snapshot; if
+        # that flag is true on entry we still resolve when it ends.
+        if current_safety_car:
+            # Safety car lasts 3-5 laps on average; 30% chance of ending each lap.
             return self.rng.random() > 0.30
+        return False
 
     @staticmethod
     def _compress_field(cars: list[CarState]) -> None:
@@ -390,14 +339,9 @@ class MonteCarloEngine:
     # ── DNF ──────────────────────────────────────────────────────────────
 
     def _check_dnf(self, car: CarState) -> bool:
-        damage_multiplier = (
-            1.0
-            + car.engine_damage * 0.05
-            + car.floor_damage * 0.01
-            + car.front_wing_damage * 0.005
-        )
-        dnf_rate = BASE_DNF_RATE_PER_SECTOR * damage_multiplier
-        return self.rng.random() < dnf_rate
+        # Option C: flat per-sector DNF rate. Damage→DNF coupling required
+        # calibrated multipliers we don't fit; revisit when we have data.
+        return self.rng.random() < BASE_DNF_RATE_PER_SECTOR
 
     # ── final positions ──────────────────────────────────────────────────
 
