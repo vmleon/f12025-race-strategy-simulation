@@ -6,9 +6,6 @@ struct LiveView: View {
 
     var onDisconnect: () -> Void
 
-    @State private var isPinnedToBottom: Bool = true
-    @State private var unseenCount: Int = 0
-
     var body: some View {
         VStack(spacing: 0) {
             statusBar
@@ -63,49 +60,12 @@ struct LiveView: View {
                 .padding()
             }
             .defaultScrollAnchor(.bottom)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                guard geometry.contentSize.height > 0 else { return true }
-                let distanceFromBottom = geometry.contentSize.height
-                    - (geometry.contentOffset.y + geometry.containerSize.height)
-                return distanceFromBottom <= 16
-            } action: { _, pinned in
-                isPinnedToBottom = pinned
-                if pinned { unseenCount = 0 }
-            }
             .onChange(of: webSocket.messages.count) {
                 guard let last = webSocket.messages.last else { return }
-                if isPinnedToBottom {
-                    withAnimation {
-                        proxy.scrollTo(last.id, anchor: .bottom)
-                    }
-                } else {
-                    unseenCount += 1
+                withAnimation {
+                    proxy.scrollTo(last.id, anchor: .bottom)
                 }
             }
-            .overlay(alignment: .bottom) {
-                if !isPinnedToBottom && unseenCount > 0 {
-                    Button {
-                        if let last = webSocket.messages.last {
-                            withAnimation {
-                                proxy.scrollTo(last.id, anchor: .bottom)
-                            }
-                        }
-                        unseenCount = 0
-                    } label: {
-                        Label("\(unseenCount) new", systemImage: "arrow.down")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(.blue, in: Capsule())
-                            .foregroundStyle(.white)
-                            .shadow(radius: 4)
-                    }
-                    .padding(.bottom, 8)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
-            .animation(.easeInOut(duration: 0.2), value: unseenCount > 0 && !isPinnedToBottom)
         }
     }
 
@@ -141,6 +101,13 @@ private struct MessageRow: View {
         .padding(12)
         .background(Color(.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .contextMenu {
+            Button {
+                UIPasteboard.general.string = message.text
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+        }
     }
 
     private var priorityBadge: some View {
