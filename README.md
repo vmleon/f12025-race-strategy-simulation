@@ -153,35 +153,16 @@ Portal is at http://localhost:4200. Logs from all services land in `logs/` at th
 
 ### Rebuild & redeploy after code changes
 
-The compose images bundle each service's build output, so editing a source file does **not** propagate to a running container — you have to rebuild the artifact (for Java services) and then recreate the container.
-
-**Java services** (`backend`, `telemetry`) — rebuild the jar/dist, then the image:
+The compose images bundle each service's build output, so source edits don't propagate to a running container — you have to rebuild and recreate. Build the Java artifacts first, then rebuild and recreate every service in one shot:
 
 ```bash
-cd backend && ./gradlew bootJar && cd ..
-cd telemetry && ./gradlew installDist && cd ..
-podman compose up -d --build --force-recreate backend
+(cd backend && ./gradlew bootJar) && (cd telemetry && ./gradlew installDist)
+podman compose up -d --build --force-recreate
 ```
 
-**Python services** (`simulator`, `calibration`) and the **portal** copy source at image build time, so no separate build step is needed:
+`backend` and `telemetry` pick up the freshly built jars; `simulator`, `calibration`, and `portal` copy their source at image build time so no separate build step is needed for them.
 
-```bash
-podman compose up -d --build --force-recreate simulator
-```
-
-**`portal` depends on `backend`,** so recreating the backend requires recreating the portal in the same command:
-
-```bash
-podman compose up -d --build --force-recreate backend portal
-```
-
-**After recreating `backend`, restart `telemetry`.** Telemetry holds an open TCP socket to `backend:9090`; recreating the backend container changes its network endpoint and telemetry's existing socket goes stale. Without this step the backend looks healthy but receives zero state updates from the UDP server:
-
-```bash
-podman compose restart telemetry
-```
-
-If a session was already live before the restart, the backend has no in-memory state for it. The telemetry only emits `sessionStarted` once per session UID, so the easiest way to re-arm the pipeline is to exit and re-enter the session in the F1 game.
+If a session was already live before the redeploy, the backend has no in-memory state for it. Telemetry only emits `sessionStarted` once per session UID, so the easiest way to re-arm the pipeline is to exit and re-enter the session in the F1 game.
 
 ### Clean up
 
