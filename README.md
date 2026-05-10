@@ -151,6 +151,38 @@ podman compose logs -f <service>     # follow one service's log (e.g. backend)
 
 Portal is at http://localhost:4200. Logs from all services land in `logs/` at the repo root.
 
+### Rebuild & redeploy after code changes
+
+The compose images bundle each service's build output, so editing a source file does **not** propagate to a running container — you have to rebuild the artifact (for Java services) and then recreate the container.
+
+**Java services** (`backend`, `telemetry`) — rebuild the jar/dist, then the image:
+
+```bash
+cd backend && ./gradlew bootJar && cd ..
+cd telemetry && ./gradlew installDist && cd ..
+podman compose up -d --build --force-recreate backend
+```
+
+**Python services** (`simulator`, `calibration`) and the **portal** copy source at image build time, so no separate build step is needed:
+
+```bash
+podman compose up -d --build --force-recreate simulator
+```
+
+**`portal` depends on `backend`,** so recreating the backend requires recreating the portal in the same command:
+
+```bash
+podman compose up -d --build --force-recreate backend portal
+```
+
+**After recreating `backend`, restart `telemetry`.** Telemetry holds an open TCP socket to `backend:9090`; recreating the backend container changes its network endpoint and telemetry's existing socket goes stale. Without this step the backend looks healthy but receives zero state updates from the UDP server:
+
+```bash
+podman compose restart telemetry
+```
+
+If a session was already live before the restart, the backend has no in-memory state for it. The telemetry only emits `sessionStarted` once per session UID, so the easiest way to re-arm the pipeline is to exit and re-enter the session in the F1 game.
+
 ### Clean up
 
 ```bash
@@ -186,6 +218,7 @@ The project includes a `.mcp.json` that configures the SQLcl MCP server. After r
 ### Troubleshooting
 
 - **Backend or telemetry container exits immediately after `podman compose up`.** The Java images bundle `application.properties` / `config.properties` at build time. If the jars were built before `manage.py local setup` generated those configs (or after a subsequent setup regenerated the password), the bundled configs are stale. Re-run the setup — it rebuilds the Java artifacts at the end — then compose up again with `--build`:
+
   ```bash
   podman compose down
   python manage.py local setup
@@ -193,11 +226,13 @@ The project includes a `.mcp.json` that configures the SQLcl MCP server. After r
   ```
 
 - **`ORA-28000: the account is locked`.** Too many failed logins. Unlock and reset the counter:
+
   ```bash
   python manage.py local unlock
   ```
 
 - **`podman machine is not running` (macOS).** Start the Podman VM:
+
   ```bash
   podman machine start
   ```
