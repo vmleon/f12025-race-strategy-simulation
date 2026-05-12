@@ -35,6 +35,7 @@ public class SimulationOrchestrator {
 
     private final QueueService queueService;
     private final LapHistoryTracker lapHistoryTracker;
+    private final dev.victormartin.telemetry.simulation.PaceBaselineLookup paceBaselineLookup;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -55,9 +56,12 @@ public class SimulationOrchestrator {
     private int previousSafetyCarStatus = 0;
     private final int[] previousPitStatus = new int[22];
 
-    public SimulationOrchestrator(QueueService queueService, LapHistoryTracker lapHistoryTracker) {
+    public SimulationOrchestrator(QueueService queueService,
+                                  LapHistoryTracker lapHistoryTracker,
+                                  dev.victormartin.telemetry.simulation.PaceBaselineLookup paceBaselineLookup) {
         this.queueService = queueService;
         this.lapHistoryTracker = lapHistoryTracker;
+        this.paceBaselineLookup = paceBaselineLookup;
     }
 
     /**
@@ -279,11 +283,15 @@ public class SimulationOrchestrator {
                 // Compute cumulative time estimate from position (simplified: leader=0, +1s per position)
                 double totalTimeMs = (pos - 1) * 1000.0;
 
+                long baselineLapMs = paceBaselineLookup.lookup(
+                        trackId, tyreCompound, ai, fuel, weather, trackTemp);
+
                 cars.add(new RaceSnapshot.CarSnapshot(
                         idx, name, ai, pos, tyreCompound, tyreAge,
                         fuel, fuelBurnPerSector, fwDmg, flDmg, engDmg,
                         pits, totalTimeMs, List.of(),
-                        lapHistoryTracker.recentForCompound(idx, tyreCompound)));
+                        lapHistoryTracker.recentForCompound(idx, tyreCompound),
+                        baselineLapMs));
             }
 
             if (cars.isEmpty()) return null;

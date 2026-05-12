@@ -69,6 +69,9 @@ class CarSnapshot(BaseModel):
     # Up to 3 most recent valid lap times (newest first), populated by the
     # backend's LapHistoryTracker. Empty until the car has completed a lap.
     recent_lap_times_ms: list[int] = Field(default_factory=list, alias="recentLapTimesMs")
+    # Calibrated pace baseline (ms) for this car's (track, compound, regime,
+    # fuel bucket, weather, temp bucket). 0 when no baseline exists yet.
+    baseline_lap_ms: int = Field(default=0, alias="baselineLapMs")
 
     model_config = {"populate_by_name": True}
 

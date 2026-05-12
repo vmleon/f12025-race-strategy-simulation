@@ -52,3 +52,25 @@ class TestPaceFromRecentLaps:
     def test_unknown_track_falls_back_to_legacy_90s(self):
         pace = _pace_from_recent_laps([], track_id=999)
         assert pace == DEFAULT_LAP_MS == 90_000.0
+
+
+class TestPaceFromBaseline:
+    def test_baseline_used_when_no_observed_laps(self):
+        # No observed laps but a calibrated baseline — use the baseline.
+        pace = _pace_from_recent_laps([], track_id=5, baseline_lap_ms=78_500)
+        assert pace == 78_500.0
+
+    def test_observed_overrides_baseline(self):
+        # Even when a baseline is set, an observed lap wins.
+        pace = _pace_from_recent_laps([80_000], track_id=5, baseline_lap_ms=78_500)
+        assert pace == 80_000.0
+
+    def test_circuit_default_when_neither_observed_nor_baseline(self):
+        # No observed laps and no baseline — fall through to circuit default.
+        pace = _pace_from_recent_laps([], track_id=5, baseline_lap_ms=0)
+        assert pace == circuit_default_ms(5)
+
+    def test_baseline_used_for_unknown_track(self):
+        # Unknown track + baseline ⇒ baseline still wins over the 90 s default.
+        pace = _pace_from_recent_laps([], track_id=999, baseline_lap_ms=82_000)
+        assert pace == 82_000.0

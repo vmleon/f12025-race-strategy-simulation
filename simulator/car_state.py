@@ -83,19 +83,26 @@ class CarState:
             num_pit_stops=cs.num_pit_stops,
             total_time_ms=cs.total_time_ms,
             current_lap=current_lap,
-            lap_pace_ms=_pace_from_recent_laps(cs.recent_lap_times_ms, track_id),
+            lap_pace_ms=_pace_from_recent_laps(
+                cs.recent_lap_times_ms, track_id, cs.baseline_lap_ms),
             pending_penalties=active_penalties,
             penalty_time_ms=penalty_time_ms,
         )
 
 
-def _pace_from_recent_laps(recent_lap_times_ms: list[int], track_id: int) -> float:
-    """Median of up to 3 most recent valid laps; fall back to the per-circuit
-    default when no laps are available. The circuit default is a real F1
-    fastest-lap record + ~2 %, so the fallback always reflects the track's
-    actual speed rather than a global 90 s assumption."""
+def _pace_from_recent_laps(
+    recent_lap_times_ms: list[int],
+    track_id: int,
+    baseline_lap_ms: int = 0,
+) -> float:
+    """Median of up to 3 most recent valid laps when available; calibrated
+    baseline next; per-circuit fastest-lap default last. The chain prefers
+    fresher signal but never falls below a track-aware floor.
+    """
     valid = [t for t in recent_lap_times_ms if t > 0]
-    if not valid:
-        return circuit_default_ms(track_id)
-    valid.sort()
-    return float(valid[len(valid) // 2])
+    if valid:
+        valid.sort()
+        return float(valid[len(valid) // 2])
+    if baseline_lap_ms > 0:
+        return float(baseline_lap_ms)
+    return circuit_default_ms(track_id)

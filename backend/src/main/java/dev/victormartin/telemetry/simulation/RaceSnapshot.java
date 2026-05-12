@@ -43,7 +43,8 @@ public record RaceSnapshot(
             int numPitStops,
             double totalTimeMs,
             List<TyreSet> tyreSets,
-            List<Long> recentLapTimesMs
+            List<Long> recentLapTimesMs,
+            long baselineLapMs
     ) {}
 
     public record PitStrategy(

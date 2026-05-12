@@ -48,24 +48,34 @@ class StrategyEvaluator:
         # One-line input summary. Full per-car detail is at DEBUG so it's
         # available when we need it without flooding INFO.
         observed = sum(1 for c in base_snapshot.cars if c.recent_lap_times_ms)
+        baseline_seeded = sum(1 for c in base_snapshot.cars if c.baseline_lap_ms > 0)
         player_cs = next(
             (c for c in base_snapshot.cars if c.car_index == player_car_index),
             None,
         )
         if player_cs is not None:
             player_pace = _pace_from_recent_laps(
-                player_cs.recent_lap_times_ms, base_snapshot.track_id)
-            player_pace_src = "observed" if player_cs.recent_lap_times_ms else "default"
+                player_cs.recent_lap_times_ms,
+                base_snapshot.track_id,
+                player_cs.baseline_lap_ms,
+            )
+            if player_cs.recent_lap_times_ms:
+                player_pace_src = "observed"
+            elif player_cs.baseline_lap_ms > 0:
+                player_pace_src = "baseline"
+            else:
+                player_pace_src = "circuit_default"
             logger.info(
-                "strategy.input: lap=%d/%d cars=%d observed_pace=%d candidates=%d "
-                "player_car=%d pos=%d pace=%.0fms (%s)",
+                "strategy.input: lap=%d/%d cars=%d observed_pace=%d baseline_seeded=%d "
+                "candidates=%d player_car=%d pos=%d pace=%.0fms (%s)",
                 base_snapshot.current_lap, base_snapshot.total_laps,
-                len(base_snapshot.cars), observed, len(candidates),
+                len(base_snapshot.cars), observed, baseline_seeded, len(candidates),
                 player_cs.car_index, player_cs.position, player_pace, player_pace_src,
             )
         if logger.isEnabledFor(logging.DEBUG):
             for cs in base_snapshot.cars:
-                pace = _pace_from_recent_laps(cs.recent_lap_times_ms, base_snapshot.track_id)
+                pace = _pace_from_recent_laps(
+                    cs.recent_lap_times_ms, base_snapshot.track_id, cs.baseline_lap_ms)
                 tag = "PLAYER" if not cs.ai_controlled else "AI"
                 logger.debug(
                     "strategy.input.car: car=%d pos=%d %s recent_laps_ms=%s "

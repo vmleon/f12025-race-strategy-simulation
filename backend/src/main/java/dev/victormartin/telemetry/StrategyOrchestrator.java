@@ -33,6 +33,7 @@ public class StrategyOrchestrator {
     private final RaceWebSocketHandler raceWebSocketHandler;
     private final RaceEngineerServiceV2 raceEngineerService;
     private final dev.victormartin.telemetry.simulation.LapHistoryTracker lapHistoryTracker;
+    private final dev.victormartin.telemetry.simulation.PaceBaselineLookup paceBaselineLookup;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -67,8 +68,10 @@ public class StrategyOrchestrator {
     public StrategyOrchestrator(QueueService queueService, JdbcTemplate jdbc,
                                  RaceWebSocketHandler raceWebSocketHandler,
                                  RaceEngineerServiceV2 raceEngineerService,
-                                 dev.victormartin.telemetry.simulation.LapHistoryTracker lapHistoryTracker) {
+                                 dev.victormartin.telemetry.simulation.LapHistoryTracker lapHistoryTracker,
+                                 dev.victormartin.telemetry.simulation.PaceBaselineLookup paceBaselineLookup) {
         this.lapHistoryTracker = lapHistoryTracker;
+        this.paceBaselineLookup = paceBaselineLookup;
         this.queueService = queueService;
         this.jdbc = jdbc;
         this.raceWebSocketHandler = raceWebSocketHandler;
@@ -87,14 +90,16 @@ public class StrategyOrchestrator {
             TriggerKind kind = detectTrigger(node);
             if (kind == TriggerKind.NONE) return;
 
-            // Gate: need at least 2 observed laps for the player before the
-            // simulator's pace estimate is meaningful. Lap 1 buffer contains
-            // only the formation/race-start lap which is an outlier; running
-            // strategy that early projected the player to mid-field even when
-            // leading. Skip until we have a second sample.
+            // Gate: need either ≥2 observed laps for the player OR a calibrated
+            // baseline for the player's current compound/conditions. With
+            // neither, the projection collapses to a generic per-circuit floor
+            // and the panel just shows noise. With a baseline, race lap 1
+            // strategy is already meaningful.
             int playerIdx = currentPlayerIdx(node);
-            if (playerIdx >= 0 && lapHistoryTracker.totalLapsRecorded(playerIdx) < 2) {
-                log.debug("StrategyOrchestrator: skipping run — player has <2 observed laps");
+            if (playerIdx >= 0
+                    && lapHistoryTracker.totalLapsRecorded(playerIdx) < 2
+                    && !playerHasBaseline(node, playerIdx)) {
+                log.debug("StrategyOrchestrator: skipping — player has <2 observed laps and no baseline");
                 return;
             }
 
@@ -139,6 +144,23 @@ public class StrategyOrchestrator {
             if (!ai) return car.has("idx") ? car.get("idx").asInt() : -1;
         }
         return -1;
+    }
+
+    private boolean playerHasBaseline(JsonNode state, int playerIdx) {
+        int trackId = state.has("trackId") ? state.get("trackId").asInt() : -1;
+        if (trackId < 0) return false;
+        int weather = state.has("weather") ? state.get("weather").asInt() : 0;
+        int trackTemp = state.has("trackTemp") ? state.get("trackTemp").asInt() : 30;
+        JsonNode cars = state.get("cars");
+        if (cars == null || !cars.isArray()) return false;
+        for (JsonNode car : cars) {
+            int idx = car.has("idx") ? car.get("idx").asInt() : -1;
+            if (idx != playerIdx) continue;
+            int compound = mapTyreCode(car.has("tyre") ? car.get("tyre").asText() : "M");
+            double fuel = car.has("fuel") ? car.get("fuel").asDouble() : 30.0;
+            return paceBaselineLookup.lookup(trackId, compound, false, fuel, weather, trackTemp) > 0;
+        }
+        return false;
     }
 
     public void onEvent(String json) {
@@ -357,11 +379,15 @@ public class StrategyOrchestrator {
                 double totalTimeMs = (pos - 1) * 1000.0;
                 List<RaceSnapshot.TyreSet> tyreSets = tyreSetsByCarIndex.getOrDefault(idx, List.of());
 
+                long baselineLapMs = paceBaselineLookup.lookup(
+                        trackId, tyreCompound, ai, fuel, weather, trackTemp);
+
                 cars.add(new RaceSnapshot.CarSnapshot(
                         idx, name, ai, pos, tyreCompound, tyreAge,
                         fuel, fuelBurnPerSector, fwDmg, flDmg, engDmg,
                         pits, totalTimeMs, tyreSets,
-                        lapHistoryTracker.recentForCompound(idx, tyreCompound)));
+                        lapHistoryTracker.recentForCompound(idx, tyreCompound),
+                        baselineLapMs));
             }
 
             if (cars.isEmpty()) return null;
