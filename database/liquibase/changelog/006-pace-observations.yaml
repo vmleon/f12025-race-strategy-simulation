@@ -1,0 +1,35 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-01-seq-lap-pace-obs
+      author: victormartin
+      changes:
+        - sql:
+            sql: CREATE SEQUENCE seq_lap_pace_obs START WITH 1 INCREMENT BY 1
+
+  - changeSet:
+      id: 006-02-lap-pace-observations
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE lap_pace_observations (
+                  id              NUMBER(12)    NOT NULL,
+                  track_id        NUMBER(3)     NOT NULL,
+                  car_index       NUMBER(2)     NOT NULL,
+                  compound        NUMBER(2)     NOT NULL,
+                  lap_time_ms     NUMBER(8)     NOT NULL,
+                  fuel_kg         NUMBER(5,1),
+                  weather         NUMBER(2),
+                  track_temp_c    NUMBER(3),
+                  recorded_at     TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+                  CONSTRAINT pk_lap_pace_obs PRIMARY KEY (id),
+                  CONSTRAINT chk_pace_obs_compound CHECK (compound IN (7, 8, 16, 17, 18)),
+                  CONSTRAINT chk_pace_obs_lap_ms CHECK (lap_time_ms > 0)
+              )
+
+  - changeSet:
+      id: 006-03-idx-pace-obs-lookup
+      author: victormartin
+      changes:
+        - sql:
+            sql: CREATE INDEX idx_pace_obs_lookup ON lap_pace_observations (track_id, car_index, compound, recorded_at)

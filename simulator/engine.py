@@ -88,7 +88,7 @@ class MonteCarloEngine:
 
     def _init_cars(self, snapshot: RaceSnapshot) -> list[CarState]:
         return [
-            CarState.from_snapshot(cs, snapshot.current_lap)
+            CarState.from_snapshot(cs, snapshot.current_lap, snapshot.track_id)
             for cs in snapshot.cars
         ]
 

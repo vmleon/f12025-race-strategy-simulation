@@ -3,12 +3,14 @@ package dev.victormartin.telemetry.simulation;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
@@ -20,6 +22,11 @@ import org.springframework.stereotype.Component;
  * Qualifying laps feed into Race projections. The buffer is wiped only when
  * the {@code trackId} changes (different circuit ⇒ different weekend).
  *
+ * Data also persists to {@code lap_pace_observations} so a backend container
+ * restart no longer wipes the cumulative pace history. On the first session
+ * of a given track, the in-memory buffer is rehydrated from the most-recent
+ * rows in the table.
+ *
  * Per-compound segmentation lets a Soft → Hard pit stop project a realistic
  * Hard-tyre pace instead of falling back to the Soft pace (or the 90 s
  * default). When the car's current compound has no observed laps yet, the
@@ -28,7 +35,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class LapHistoryTracker {
 
+    private static final Logger log = LoggerFactory.getLogger(LapHistoryTracker.class);
+
     private static final int WINDOW = 3;
+    /** Per (track, car, compound), keep at most this many rows in the DB. */
+    private static final int DB_KEEP_PER_SLOT = 20;
 
     /**
      * Asymmetric outlier filter. Any lap slower than the current buffer min by
@@ -45,7 +56,19 @@ public class LapHistoryTracker {
     private final Map<Integer, Deque<Long>> byCarCompound = new ConcurrentHashMap<>();
     private final Map<Integer, Long> lastSeenLapMsByCarIdx = new ConcurrentHashMap<>();
 
+    private final JdbcTemplate jdbc;
     private int currentTrackId = -1;
+    private boolean loadedForCurrentTrack = false;
+
+    /** Spring constructor; {@code jdbc} may be {@code null} for unit tests. */
+    public LapHistoryTracker(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    /** Test seam — no DB persistence in unit tests. */
+    public LapHistoryTracker() {
+        this(null);
+    }
 
     /**
      * Most recent valid laps for a car on the given compound (newest first).
@@ -76,6 +99,10 @@ public class LapHistoryTracker {
     public synchronized void onStateUpdate(JsonNode state) {
         JsonNode cars = state == null ? null : state.get("cars");
         if (cars == null || !cars.isArray()) return;
+
+        int weather = state.has("weather") ? state.get("weather").asInt() : -1;
+        int trackTemp = state.has("trackTemp") ? state.get("trackTemp").asInt() : -1;
+
         for (JsonNode car : cars) {
             int idx = car.has("idx") ? car.get("idx").asInt() : -1;
             if (idx < 0) continue;
@@ -102,6 +129,9 @@ public class LapHistoryTracker {
             // (e.g. an opening outlap that defined the initial min is now
             // dominated by a hot lap). Re-evaluate after each insert.
             pruneOutliers(buf);
+
+            double fuelKg = car.has("fuel") ? car.get("fuel").asDouble() : -1.0;
+            recordToDb(idx, compound, lastLap, fuelKg, weather, trackTemp);
         }
     }
 
@@ -110,15 +140,21 @@ public class LapHistoryTracker {
      * state only when the track has changed — otherwise carries over and
      * prunes any slow outliers that survived from the prior session before
      * race-day strategy starts consuming them.
+     *
+     * On the first session for a given track within a backend lifecycle,
+     * also rehydrates the in-memory buffer from {@code lap_pace_observations}
+     * so a restart doesn't lose the weekend's data.
      */
     public synchronized void onSessionStarted(int trackId) {
         if (currentTrackId >= 0 && currentTrackId != trackId) {
             byCarCompound.clear();
             lastSeenLapMsByCarIdx.clear();
+            loadedForCurrentTrack = false;
         } else if (currentTrackId == trackId) {
             for (Deque<Long> buf : byCarCompound.values()) pruneOutliers(buf);
         }
         currentTrackId = trackId;
+        loadFromDbIfNeeded();
     }
 
     /** Full reset — used by tests and by the cross-weekend boundary path. */
@@ -126,6 +162,67 @@ public class LapHistoryTracker {
         byCarCompound.clear();
         lastSeenLapMsByCarIdx.clear();
         currentTrackId = -1;
+        loadedForCurrentTrack = false;
+    }
+
+    private void loadFromDbIfNeeded() {
+        if (loadedForCurrentTrack || currentTrackId < 0 || jdbc == null) return;
+        loadedForCurrentTrack = true;
+        try {
+            jdbc.query(
+                    "SELECT car_index, compound, lap_time_ms FROM ("
+                            + " SELECT car_index, compound, lap_time_ms,"
+                            + "        ROW_NUMBER() OVER ("
+                            + "          PARTITION BY car_index, compound"
+                            + "          ORDER BY recorded_at DESC) AS rn"
+                            + " FROM lap_pace_observations"
+                            + " WHERE track_id = ?"
+                            + ") WHERE rn <= ? ORDER BY car_index, compound, rn",
+                    rs -> {
+                        int carIdx = rs.getInt(1);
+                        int compound = rs.getInt(2);
+                        long lapMs = rs.getLong(3);
+                        Deque<Long> buf = byCarCompound.computeIfAbsent(
+                                key(carIdx, compound), k -> new ArrayDeque<>());
+                        if (buf.size() < WINDOW) buf.addLast(lapMs);
+                    },
+                    currentTrackId, WINDOW);
+            int totalLoaded = byCarCompound.values().stream().mapToInt(Deque::size).sum();
+            log.info("LapHistoryTracker: rehydrated {} pace observations for track {}",
+                    totalLoaded, currentTrackId);
+        } catch (Exception e) {
+            log.warn("LapHistoryTracker: failed to rehydrate from DB: {}", e.getMessage());
+        }
+    }
+
+    private void recordToDb(int carIdx, int compound, long lapMs,
+                             double fuelKg, int weather, int trackTemp) {
+        if (jdbc == null || currentTrackId < 0) return;
+        try {
+            jdbc.update(
+                    "INSERT INTO lap_pace_observations "
+                            + "(id, track_id, car_index, compound, lap_time_ms, fuel_kg, weather, track_temp_c) "
+                            + "VALUES (seq_lap_pace_obs.NEXTVAL, ?, ?, ?, ?, ?, ?, ?)",
+                    currentTrackId, carIdx, compound, lapMs,
+                    fuelKg > 0 ? fuelKg : null,
+                    weather >= 0 ? weather : null,
+                    trackTemp >= -100 ? trackTemp : null);
+
+            // Prune to keep at most DB_KEEP_PER_SLOT rows per (track, car, compound).
+            jdbc.update(
+                    "DELETE FROM lap_pace_observations WHERE id IN ("
+                            + " SELECT id FROM ("
+                            + "  SELECT id, ROW_NUMBER() OVER ("
+                            + "    PARTITION BY track_id, car_index, compound"
+                            + "    ORDER BY recorded_at DESC) AS rn"
+                            + "  FROM lap_pace_observations"
+                            + "  WHERE track_id = ? AND car_index = ? AND compound = ?"
+                            + " ) WHERE rn > ?)",
+                    currentTrackId, carIdx, compound, DB_KEEP_PER_SLOT);
+        } catch (Exception e) {
+            log.warn("LapHistoryTracker: DB write failed for car={} compound={}: {}",
+                    carIdx, compound, e.getMessage());
+        }
     }
 
     private static boolean isOutlier(Deque<Long> buf, long lapMs) {

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from simulator.models import CarSnapshot, Penalty
-
-# Fallback lap pace (90 s) used when a car has no observed laps yet.
-DEFAULT_LAP_MS = 90_000.0
+from simulator.track_defaults import circuit_default_ms
 
 
 class CarState:
@@ -63,7 +61,7 @@ class CarState:
         return "AI" if self.ai_controlled else "PLAYER"
 
     @staticmethod
-    def from_snapshot(cs: CarSnapshot, current_lap: int) -> CarState:
+    def from_snapshot(cs: CarSnapshot, current_lap: int, track_id: int) -> CarState:
         penalties = list(cs.penalties) if cs.penalties else []
         penalty_time_ms = 0.0
         for p in penalties:
@@ -85,16 +83,19 @@ class CarState:
             num_pit_stops=cs.num_pit_stops,
             total_time_ms=cs.total_time_ms,
             current_lap=current_lap,
-            lap_pace_ms=_pace_from_recent_laps(cs.recent_lap_times_ms),
+            lap_pace_ms=_pace_from_recent_laps(cs.recent_lap_times_ms, track_id),
             pending_penalties=active_penalties,
             penalty_time_ms=penalty_time_ms,
         )
 
 
-def _pace_from_recent_laps(recent_lap_times_ms: list[int]) -> float:
-    """Median of up to 3 most recent valid laps; fall back to default if empty."""
+def _pace_from_recent_laps(recent_lap_times_ms: list[int], track_id: int) -> float:
+    """Median of up to 3 most recent valid laps; fall back to the per-circuit
+    default when no laps are available. The circuit default is a real F1
+    fastest-lap record + ~2 %, so the fallback always reflects the track's
+    actual speed rather than a global 90 s assumption."""
     valid = [t for t in recent_lap_times_ms if t > 0]
     if not valid:
-        return DEFAULT_LAP_MS
+        return circuit_default_ms(track_id)
     valid.sort()
     return float(valid[len(valid) // 2])

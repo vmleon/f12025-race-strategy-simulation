@@ -53,7 +53,8 @@ class StrategyEvaluator:
             None,
         )
         if player_cs is not None:
-            player_pace = _pace_from_recent_laps(player_cs.recent_lap_times_ms)
+            player_pace = _pace_from_recent_laps(
+                player_cs.recent_lap_times_ms, base_snapshot.track_id)
             player_pace_src = "observed" if player_cs.recent_lap_times_ms else "default"
             logger.info(
                 "strategy.input: lap=%d/%d cars=%d observed_pace=%d candidates=%d "
@@ -64,7 +65,7 @@ class StrategyEvaluator:
             )
         if logger.isEnabledFor(logging.DEBUG):
             for cs in base_snapshot.cars:
-                pace = _pace_from_recent_laps(cs.recent_lap_times_ms)
+                pace = _pace_from_recent_laps(cs.recent_lap_times_ms, base_snapshot.track_id)
                 tag = "PLAYER" if not cs.ai_controlled else "AI"
                 logger.debug(
                     "strategy.input.car: car=%d pos=%d %s recent_laps_ms=%s "
