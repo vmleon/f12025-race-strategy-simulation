@@ -1,0 +1,29 @@
+databaseChangeLog:
+  - changeSet:
+      id: 007-01-pace-obs-add-ai-flag
+      author: victormartin
+      changes:
+        - sql:
+            sql: ALTER TABLE lap_pace_observations ADD ai_controlled NUMBER(1)
+
+  - changeSet:
+      id: 007-02-lap-pace-baselines
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE lap_pace_baselines (
+                  track_id              NUMBER(3)     NOT NULL,
+                  compound              NUMBER(2)     NOT NULL,
+                  regime                VARCHAR2(8)   NOT NULL,
+                  fuel_bucket_kg        NUMBER(3)     NOT NULL,
+                  weather               NUMBER(2)     NOT NULL,
+                  track_temp_bucket_c   NUMBER(3)     NOT NULL,
+                  mean_lap_ms           NUMBER(8)     NOT NULL,
+                  stddev_lap_ms         NUMBER(8),
+                  sample_count          NUMBER(6)     NOT NULL,
+                  last_fitted_at        TIMESTAMP     NOT NULL,
+                  CONSTRAINT pk_pace_baselines PRIMARY KEY (track_id, compound, regime, fuel_bucket_kg, weather, track_temp_bucket_c),
+                  CONSTRAINT chk_baseline_regime CHECK (regime IN ('PLAYER', 'AI')),
+                  CONSTRAINT chk_baseline_compound CHECK (compound IN (7, 8, 16, 17, 18))
+              )

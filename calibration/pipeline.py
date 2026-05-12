@@ -53,6 +53,9 @@ def run(conn: oracledb.Connection, track_id: int) -> None:
         _fit_fuel_effect(conn, data, track_id, regime, settings_hash, session_count, now)
         _fit_pit_stop_duration(conn, track_id, regime, settings_hash, session_count, now)
 
+    # Pace baselines aggregate across regimes inside the function — single call.
+    _fit_pace_baselines(conn, track_id)
+
 
 # ── tyre degradation ─────────────────────────────────────────────────
 
@@ -158,6 +161,120 @@ def _fit_pit_stop_duration(
         sd, None, None, 0, session_count, len(time_losses), settings_hash, now)
 
     print(f"  pit_stop_time_loss: mean={m:.0f}ms, sd={sd:.0f}ms, n={len(time_losses)}")
+
+
+# ── pace baselines ──────────────────────────────────────────────────
+#
+# Aggregate raw lap times from `lap_pace_observations` into per-bucket means
+# keyed by (track, compound, regime, fuel bucket, weather, temp bucket).
+# Consumed by the simulator as the cold-start / post-pit-stop fallback below
+# observed laps, above the per-circuit default.
+
+MIN_PACE_BASELINE_SAMPLES = 5
+FUEL_BUCKET_KG = 20      # round to nearest 20 kg
+TEMP_BUCKET_C = 10       # round to nearest 10 °C
+MAD_OUTLIER_FACTOR = 2.5
+
+
+def _fit_pace_baselines(conn: oracledb.Connection, track_id: int) -> None:
+    rows: list[tuple] = []
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT compound, ai_controlled, fuel_kg, weather, track_temp_c, lap_time_ms
+            FROM lap_pace_observations
+            WHERE track_id = :1 AND lap_time_ms > 0
+            """,
+            [track_id],
+        )
+        rows = cur.fetchall()
+
+    groups = _bucket_pace_rows(rows)
+    now = datetime.now()
+    written = 0
+    for key, times in groups.items():
+        filtered = _mad_filter(times)
+        if len(filtered) < MIN_PACE_BASELINE_SAMPLES:
+            continue
+        m = mean(np.array(filtered, dtype=float))
+        sd = sqrt(variance(np.array(filtered, dtype=float)))
+        compound, regime, fuel_bucket, weather, temp_bucket = key
+        _upsert_pace_baseline(
+            conn, track_id, compound, regime, fuel_bucket, weather, temp_bucket,
+            m, sd, len(filtered), now,
+        )
+        written += 1
+        print(
+            f"  pace_baseline track={track_id} compound={compound} regime={regime} "
+            f"bucket=fuel{fuel_bucket}/w{weather}/t{temp_bucket} "
+            f"mean={m:.0f}ms sd={sd:.0f}ms n={len(filtered)}"
+        )
+
+    if written == 0:
+        print(f"  pace_baseline: no buckets with >= {MIN_PACE_BASELINE_SAMPLES} samples")
+
+
+def _bucket_pace_rows(rows: list[tuple]) -> dict[tuple, list[int]]:
+    """Group raw observations into buckets keyed by
+    (compound, regime, fuel_bucket, weather, temp_bucket). Rows missing any
+    bucketing field are skipped — we can't aggregate them meaningfully.
+    """
+    groups: dict[tuple, list[int]] = defaultdict(list)
+    for compound, ai_controlled, fuel_kg, weather, track_temp_c, lap_ms in rows:
+        if (ai_controlled is None or fuel_kg is None
+                or weather is None or track_temp_c is None):
+            continue
+        fuel_bucket = int(round(float(fuel_kg) / FUEL_BUCKET_KG) * FUEL_BUCKET_KG)
+        temp_bucket = int(round(float(track_temp_c) / TEMP_BUCKET_C) * TEMP_BUCKET_C)
+        regime = "AI" if int(ai_controlled) == 1 else "PLAYER"
+        key = (int(compound), regime, fuel_bucket, int(weather), temp_bucket)
+        groups[key].append(int(lap_ms))
+    return groups
+
+
+def _mad_filter(times: list[int]) -> list[int]:
+    """Drop laps whose deviation from the median exceeds MAD_OUTLIER_FACTOR × MAD.
+    Robust to a small number of off-track / pit-loss rows that slipped through.
+    """
+    if len(times) < 3:
+        return list(times)
+    arr = np.array(times, dtype=float)
+    median = float(np.median(arr))
+    mad = float(np.median(np.abs(arr - median)))
+    if mad == 0:
+        return list(times)
+    threshold = MAD_OUTLIER_FACTOR * mad
+    return [t for t in times if abs(t - median) <= threshold]
+
+
+def _upsert_pace_baseline(
+    conn: oracledb.Connection,
+    track_id: int, compound: int, regime: str,
+    fuel_bucket_kg: int, weather: int, track_temp_bucket_c: int,
+    mean_lap_ms: float, stddev_lap_ms: float, sample_count: int,
+    fitted_at: datetime,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            MERGE INTO lap_pace_baselines b
+            USING (SELECT :1 track_id, :2 compound, :3 regime, :4 fuel_bucket_kg,
+                          :5 weather, :6 track_temp_bucket_c FROM dual) s
+            ON (b.track_id = s.track_id AND b.compound = s.compound
+                AND b.regime = s.regime AND b.fuel_bucket_kg = s.fuel_bucket_kg
+                AND b.weather = s.weather AND b.track_temp_bucket_c = s.track_temp_bucket_c)
+            WHEN MATCHED THEN UPDATE SET
+                mean_lap_ms = :7, stddev_lap_ms = :8,
+                sample_count = :9, last_fitted_at = :10
+            WHEN NOT MATCHED THEN INSERT
+                (track_id, compound, regime, fuel_bucket_kg, weather, track_temp_bucket_c,
+                 mean_lap_ms, stddev_lap_ms, sample_count, last_fitted_at)
+                VALUES (:1, :2, :3, :4, :5, :6, :7, :8, :9, :10)
+            """,
+            [track_id, compound, regime, fuel_bucket_kg, weather, track_temp_bucket_c,
+             int(round(mean_lap_ms)), int(round(stddev_lap_ms)), sample_count, fitted_at],
+        )
+    conn.commit()
 
 
 def _group_pit_stops(pit_sectors: list[tuple]) -> list[list[tuple]]:

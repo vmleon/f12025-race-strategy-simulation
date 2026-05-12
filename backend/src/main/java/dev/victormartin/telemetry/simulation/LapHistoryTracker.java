@@ -131,7 +131,11 @@ public class LapHistoryTracker {
             pruneOutliers(buf);
 
             double fuelKg = car.has("fuel") ? car.get("fuel").asDouble() : -1.0;
-            recordToDb(idx, compound, lastLap, fuelKg, weather, trackTemp);
+            // Default to AI when the field is missing so we don't pollute the
+            // PLAYER regime with un-tagged rows. Empty/garage cars are skipped
+            // upstream by the lapMs > 0 check.
+            boolean aiControlled = !car.has("ai") || car.get("ai").asBoolean();
+            recordToDb(idx, compound, lastLap, fuelKg, weather, trackTemp, aiControlled);
         }
     }
 
@@ -196,17 +200,19 @@ public class LapHistoryTracker {
     }
 
     private void recordToDb(int carIdx, int compound, long lapMs,
-                             double fuelKg, int weather, int trackTemp) {
+                             double fuelKg, int weather, int trackTemp,
+                             boolean aiControlled) {
         if (jdbc == null || currentTrackId < 0) return;
         try {
             jdbc.update(
                     "INSERT INTO lap_pace_observations "
-                            + "(id, track_id, car_index, compound, lap_time_ms, fuel_kg, weather, track_temp_c) "
-                            + "VALUES (seq_lap_pace_obs.NEXTVAL, ?, ?, ?, ?, ?, ?, ?)",
+                            + "(id, track_id, car_index, compound, lap_time_ms, fuel_kg, weather, track_temp_c, ai_controlled) "
+                            + "VALUES (seq_lap_pace_obs.NEXTVAL, ?, ?, ?, ?, ?, ?, ?, ?)",
                     currentTrackId, carIdx, compound, lapMs,
                     fuelKg > 0 ? fuelKg : null,
                     weather >= 0 ? weather : null,
-                    trackTemp >= -100 ? trackTemp : null);
+                    trackTemp >= -100 ? trackTemp : null,
+                    aiControlled ? 1 : 0);
 
             // Prune to keep at most DB_KEEP_PER_SLOT rows per (track, car, compound).
             jdbc.update(
