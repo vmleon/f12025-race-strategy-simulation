@@ -22,6 +22,7 @@ import dev.victormartin.telemetry.engineer.v2.detectors.CarBehindDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.DamageDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.DrsDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.ErsModeDetector;
+import dev.victormartin.telemetry.engineer.v2.detectors.FastestLapByRivalDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.FlagChangesDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.FuelDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.LapCountdownDetector;
@@ -90,6 +91,7 @@ public class RaceEngineerServiceV2 {
                 new SessionStartGreetingDetector(),
                 // Always-on
                 new FlagChangesDetector(),
+                new FastestLapByRivalDetector(),
                 new PenaltiesDetector(),
                 new TyreConditionDetector(),
                 new PerCornerWearDetector(),
