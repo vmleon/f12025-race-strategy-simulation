@@ -56,31 +56,37 @@ class DamageDetectorTest {
     }
 
     @Test
-    void frontWingLightCrossingFiresHighPriority() {
+    void belowMinorThresholdReturnsEmpty() {
+        // A 5% scrape should NOT fire — minor threshold is 10%.
         ObjectNode car = emptyPlayerCar();
-        car.put("fwDmg", 4);
-        var msg = detector.evaluate(tickWith(car));
-        assertTrue(msg.isPresent());
-        assertEquals(EngineerMessage.Priority.HIGH, msg.get().priority());
-        assertEquals("Front wing has light damage.", msg.get().text());
-    }
-
-    @Test
-    void frontWingStaysArmedAndDoesNotReFire() {
-        ObjectNode car = emptyPlayerCar();
-        car.put("fwDmg", 4);
-        assertTrue(detector.evaluate(tickWith(car)).isPresent());
-        // Next tick, still 4%: no new message.
-        assertTrue(detector.evaluate(tickWith(car)).isEmpty());
-        // Bump to 5% — still within the same tier, no re-fire.
         car.put("fwDmg", 5);
         assertTrue(detector.evaluate(tickWith(car)).isEmpty());
     }
 
     @Test
-    void frontWingSevereCrossingFiresImmediate() {
+    void frontWingMinorCrossingFiresHigh() {
         ObjectNode car = emptyPlayerCar();
-        car.put("fwDmg", 8);
+        car.put("fwDmg", 12);
+        var msg = detector.evaluate(tickWith(car));
+        assertTrue(msg.isPresent());
+        assertEquals(EngineerMessage.Priority.HIGH, msg.get().priority());
+        assertEquals("Front wing has minor damage.", msg.get().text());
+    }
+
+    @Test
+    void frontWingDamagedCrossingFiresHigh() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("fwDmg", 35);
+        var msg = detector.evaluate(tickWith(car));
+        assertTrue(msg.isPresent());
+        assertEquals(EngineerMessage.Priority.HIGH, msg.get().priority());
+        assertEquals("Front wing is damaged.", msg.get().text());
+    }
+
+    @Test
+    void frontWingHeavyCrossingFiresImmediate() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("fwDmg", 65);
         var msg = detector.evaluate(tickWith(car));
         assertTrue(msg.isPresent());
         assertEquals(EngineerMessage.Priority.IMMEDIATE, msg.get().priority());
@@ -88,64 +94,90 @@ class DamageDetectorTest {
     }
 
     @Test
-    void jumpPastLightStraightToSevereFiresSevereOnly() {
+    void frontWingStaysArmedAndDoesNotReFire() {
         ObjectNode car = emptyPlayerCar();
         car.put("fwDmg", 12);
-        var first = detector.evaluate(tickWith(car));
-        assertTrue(first.isPresent());
-        assertEquals("Front wing is heavily damaged.", first.get().text());
-        // Same value next tick — no second "light" message.
+        assertTrue(detector.evaluate(tickWith(car)).isPresent()); // minor
+        // Next tick, still 12%: no new message.
+        assertTrue(detector.evaluate(tickWith(car)).isEmpty());
+        // Bump within the same tier (still under DAMAGED=30): no re-fire.
+        car.put("fwDmg", 20);
         assertTrue(detector.evaluate(tickWith(car)).isEmpty());
     }
 
     @Test
-    void upgradeFromLightToSevereFiresSevere() {
+    void jumpStraightToHeavyFiresHeavyOnly() {
         ObjectNode car = emptyPlayerCar();
-        car.put("fwDmg", 4);
-        assertTrue(detector.evaluate(tickWith(car)).isPresent()); // light
-        car.put("fwDmg", 9);
-        var msg = detector.evaluate(tickWith(car));
-        assertTrue(msg.isPresent());
-        assertEquals("Front wing is heavily damaged.", msg.get().text());
-        // And no re-fire while stuck severe.
+        car.put("fwDmg", 80);
+        var first = detector.evaluate(tickWith(car));
+        assertTrue(first.isPresent());
+        assertEquals("Front wing is heavily damaged.", first.get().text());
+        // Same value next tick — no extra message at lower tiers.
+        assertTrue(detector.evaluate(tickWith(car)).isEmpty());
+    }
+
+    @Test
+    void upgradeFromMinorToDamagedToHeavy() {
+        ObjectNode car = emptyPlayerCar();
+        car.put("fwDmg", 12);
+        var minor = detector.evaluate(tickWith(car));
+        assertTrue(minor.isPresent());
+        assertEquals("Front wing has minor damage.", minor.get().text());
+
+        car.put("fwDmg", 35);
+        var damaged = detector.evaluate(tickWith(car));
+        assertTrue(damaged.isPresent());
+        assertEquals("Front wing is damaged.", damaged.get().text());
+
+        car.put("fwDmg", 70);
+        var heavy = detector.evaluate(tickWith(car));
+        assertTrue(heavy.isPresent());
+        assertEquals("Front wing is heavily damaged.", heavy.get().text());
+
+        // No re-fire while stuck at heavy.
         assertTrue(detector.evaluate(tickWith(car)).isEmpty());
     }
 
     @Test
     void repairResetsArmedStateAndAllowsReFire() {
         ObjectNode car = emptyPlayerCar();
-        car.put("fwDmg", 12);
-        assertTrue(detector.evaluate(tickWith(car)).isPresent()); // severe
+        car.put("fwDmg", 70);
+        assertTrue(detector.evaluate(tickWith(car)).isPresent()); // heavy
 
         // Pit stop — damage returns to 0.
         car.put("fwDmg", 0);
         assertTrue(detector.evaluate(tickWith(car)).isEmpty());
 
-        // Later impact to 4% fires light again.
-        car.put("fwDmg", 4);
+        // Later impact to 15% fires minor again.
+        car.put("fwDmg", 15);
         var msg = detector.evaluate(tickWith(car));
         assertTrue(msg.isPresent());
-        assertEquals("Front wing has light damage.", msg.get().text());
+        assertEquals("Front wing has minor damage.", msg.get().text());
     }
 
     @Test
-    void rearWingFiresLightAndSevere() {
+    void rearWingFiresAllThreeTiers() {
         ObjectNode car = emptyPlayerCar();
-        car.put("rwDmg", 4);
-        var light = detector.evaluate(tickWith(car));
-        assertTrue(light.isPresent());
-        assertEquals("Rear wing has light damage.", light.get().text());
+        car.put("rwDmg", 12);
+        var minor = detector.evaluate(tickWith(car));
+        assertTrue(minor.isPresent());
+        assertEquals("Rear wing has minor damage.", minor.get().text());
 
-        car.put("rwDmg", 10);
-        var severe = detector.evaluate(tickWith(car));
-        assertTrue(severe.isPresent());
-        assertEquals("Rear wing is heavily damaged.", severe.get().text());
+        car.put("rwDmg", 35);
+        var damaged = detector.evaluate(tickWith(car));
+        assertTrue(damaged.isPresent());
+        assertEquals("Rear wing is damaged.", damaged.get().text());
+
+        car.put("rwDmg", 70);
+        var heavy = detector.evaluate(tickWith(car));
+        assertTrue(heavy.isPresent());
+        assertEquals("Rear wing is heavily damaged.", heavy.get().text());
     }
 
     @Test
-    void floorFiresSevere() {
+    void floorFiresHeavy() {
         ObjectNode car = emptyPlayerCar();
-        car.put("flDmg", 15);
+        car.put("flDmg", 65);
         var msg = detector.evaluate(tickWith(car));
         assertTrue(msg.isPresent());
         assertEquals("Floor is heavily damaged.", msg.get().text());
@@ -153,69 +185,69 @@ class DamageDetectorTest {
     }
 
     @Test
-    void diffuserFiresLight() {
+    void diffuserFiresMinor() {
         ObjectNode car = emptyPlayerCar();
-        car.put("diffDmg", 3);
+        car.put("diffDmg", 12);
         var msg = detector.evaluate(tickWith(car));
         assertTrue(msg.isPresent());
-        assertEquals("Diffuser has light damage.", msg.get().text());
+        assertEquals("Diffuser has minor damage.", msg.get().text());
     }
 
     @Test
-    void sidepodFiresLight() {
+    void sidepodFiresMinor() {
         ObjectNode car = emptyPlayerCar();
-        car.put("spDmg", 6);
+        car.put("spDmg", 15);
         var msg = detector.evaluate(tickWith(car));
         assertTrue(msg.isPresent());
-        assertEquals("Sidepod has light damage.", msg.get().text());
+        assertEquals("Sidepod has minor damage.", msg.get().text());
     }
 
     @Test
     void partsHaveIndependentArmedState() {
         ObjectNode car = emptyPlayerCar();
-        car.put("fwDmg", 10);
-        assertTrue(detector.evaluate(tickWith(car)).isPresent()); // FW severe
-        // FW armed at severe; RW fresh.
-        car.put("rwDmg", 4);
+        car.put("fwDmg", 65);
+        assertTrue(detector.evaluate(tickWith(car)).isPresent()); // FW heavy
+        // FW armed at heavy; RW fresh.
+        car.put("rwDmg", 12);
         var msg = detector.evaluate(tickWith(car));
         assertTrue(msg.isPresent());
-        assertEquals("Rear wing has light damage.", msg.get().text());
+        assertEquals("Rear wing has minor damage.", msg.get().text());
     }
 
     @Test
-    void severeCrossingWinsOverEarlierLightCrossing() {
-        // FW crosses light (4), floor crosses severe (15). Expect "Floor is heavily damaged."
+    void heavyCrossingWinsOverMinorAcrossParts() {
+        // FW crosses minor (12), floor crosses heavy (70). Expect floor heavy first.
         ObjectNode car = emptyPlayerCar();
-        car.put("fwDmg", 4);
-        car.put("flDmg", 15);
+        car.put("fwDmg", 12);
+        car.put("flDmg", 70);
         var first = detector.evaluate(tickWith(car));
         assertTrue(first.isPresent());
         assertEquals("Floor is heavily damaged.", first.get().text());
-        // Next tick, same values: FW light is still un-armed, fires now.
+        // Next tick, same values: FW minor is still un-armed, fires now.
         var second = detector.evaluate(tickWith(car));
         assertTrue(second.isPresent());
-        assertEquals("Front wing has light damage.", second.get().text());
+        assertEquals("Front wing has minor damage.", second.get().text());
     }
 
     @Test
     void sameSeverityTieBreaksByFixedPartOrder() {
-        // FW and RW both cross light in the same tick. FW comes first in the fixed order.
+        // FW and RW both cross minor in the same tick. FW comes first in the fixed order.
         ObjectNode car = emptyPlayerCar();
-        car.put("fwDmg", 4);
-        car.put("rwDmg", 4);
+        car.put("fwDmg", 12);
+        car.put("rwDmg", 12);
         var first = detector.evaluate(tickWith(car));
         assertTrue(first.isPresent());
-        assertEquals("Front wing has light damage.", first.get().text());
+        assertEquals("Front wing has minor damage.", first.get().text());
         var second = detector.evaluate(tickWith(car));
         assertTrue(second.isPresent());
-        assertEquals("Rear wing has light damage.", second.get().text());
+        assertEquals("Rear wing has minor damage.", second.get().text());
     }
 
     @Test
     void onSessionEndedClearsStateAndAllowsReArm() {
         ObjectNode car = emptyPlayerCar();
-        car.put("fwDmg", 10);
-        assertTrue(detector.evaluate(tickWith(car)).isPresent()); // severe, armed at 7
+        car.put("fwDmg", 70);
+        assertTrue(detector.evaluate(tickWith(car)).isPresent()); // heavy
 
         detector.onSessionEnded(SESSION_UID);
         detector.onSessionStarted(SESSION_UID, 0, 10);
