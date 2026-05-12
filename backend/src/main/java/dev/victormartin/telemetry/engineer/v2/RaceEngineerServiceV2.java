@@ -33,6 +33,7 @@ import dev.victormartin.telemetry.engineer.v2.detectors.PitWindowMessagesDetecto
 import dev.victormartin.telemetry.engineer.v2.detectors.PositionChangeDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.PracticeLapCompleteDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.PracticeSectorComparisonDetector;
+import dev.victormartin.telemetry.engineer.v2.detectors.PracticeSpeedTrapDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.PracticeTyreFuelSummaryDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.QualifyingLapCompleteDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.QualifyingSectorDeltaDetector;
@@ -113,6 +114,7 @@ public class RaceEngineerServiceV2 {
                 new PracticeTyreFuelSummaryDetector(),
                 new PracticeLapCompleteDetector(),
                 new PracticeSectorComparisonDetector(),
+                new PracticeSpeedTrapDetector(),
                 // Pit-state-bug fixes (Group A)
                 new TrackTrafficExitDetector(),
                 new SlowLapTrafficWarningDetector()

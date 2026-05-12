@@ -99,6 +99,7 @@ public class RaceState {
         int resultStatus;
         float lapDistance;
         int teamId;
+        float speedTrapKmh;
     }
 
     public synchronized void updateFromSession(long sessionUid, SessionData session) {
@@ -149,6 +150,7 @@ public class RaceState {
             cars[i].numUnservedStopGoPens = lap.numUnservedStopGoPens;
             cars[i].totalWarnings = lap.totalWarnings;
             cars[i].cornerCuttingWarnings = lap.cornerCuttingWarnings;
+            cars[i].speedTrapKmh = lap.speedTrapFastestSpeed;
         }
     }
 
@@ -309,6 +311,7 @@ public class RaceState {
               .append(",\"resultStatus\":").append(c.resultStatus)
               .append(",\"lapDist\":").append(String.format("%.1f", c.lapDistance))
               .append(",\"teamId\":").append(c.teamId)
+              .append(",\"speedTrap\":").append(String.format("%.1f", c.speedTrapKmh))
               .append('}');
         }
 
