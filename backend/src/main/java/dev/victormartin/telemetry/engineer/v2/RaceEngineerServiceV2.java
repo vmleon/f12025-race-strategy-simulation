@@ -39,6 +39,7 @@ import dev.victormartin.telemetry.engineer.v2.detectors.PracticeTyreFuelSummaryD
 import dev.victormartin.telemetry.engineer.v2.detectors.QualifyingLapCompleteDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.QualifyingSectorDeltaDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.RaceFinishDetector;
+import dev.victormartin.telemetry.engineer.v2.detectors.RaceLapCompleteDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.SessionStartGreetingDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.SlowLapTrafficWarningDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.TyreConditionDetector;
@@ -108,6 +109,7 @@ public class RaceEngineerServiceV2 {
                 pitWindow,
                 new FuelDetector(),
                 new PeriodicSituationalAwarenessDetector(),
+                new RaceLapCompleteDetector(),
                 raceFinish,
                 // Qualifying / Sprint Quali
                 new QualifyingSectorDeltaDetector(),

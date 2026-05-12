@@ -83,6 +83,12 @@ public class PracticeLapCompleteDetector implements RadioDetector {
         if (positionInfo != null) {
             text.append(' ').append(positionInfo);
         }
+        int timeLeft = tick.state().has("sessionTimeLeft")
+                ? tick.state().get("sessionTimeLeft").asInt() : 0;
+        String timeLeftStr = EngineerMessageHelpers.formatSessionTimeLeft(timeLeft);
+        if (!timeLeftStr.isEmpty()) {
+            text.append(' ').append(EngineerMessageHelpers.capitalize(timeLeftStr)).append('.');
+        }
 
         return Optional.of(new EngineerMessage(
                 Priority.NORMAL, text.toString(),

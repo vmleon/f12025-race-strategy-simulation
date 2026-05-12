@@ -56,6 +56,12 @@ public class QualifyingLapCompleteDetector implements RadioDetector {
             text = "P" + tick.playerPos() + ", " + EngineerMessageHelpers.formatTenths(delta / 1000.0)
                     + " seconds off pole. " + EngineerMessageHelpers.formatLapTime(playerLapMs) + ".";
         }
+        int timeLeft = tick.state().has("sessionTimeLeft")
+                ? tick.state().get("sessionTimeLeft").asInt() : 0;
+        String timeLeftStr = EngineerMessageHelpers.formatSessionTimeLeft(timeLeft);
+        if (!timeLeftStr.isEmpty()) {
+            text += " " + EngineerMessageHelpers.capitalize(timeLeftStr) + ".";
+        }
         return Optional.of(new EngineerMessage(
                 Priority.NORMAL, text,
                 tick.wallClockMs(), tick.currentLap(), 2));

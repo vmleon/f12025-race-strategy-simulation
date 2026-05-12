@@ -28,6 +28,15 @@ public final class EngineerMessageHelpers {
         return secStr;
     }
 
+    /** Coarse "X minutes left" / "less than a minute left" for radio chatter. */
+    public static String formatSessionTimeLeft(int secondsLeft) {
+        if (secondsLeft <= 0) return "";
+        if (secondsLeft < 60) return "less than a minute left";
+        int minutes = secondsLeft / 60;
+        if (minutes == 1) return "about a minute left";
+        return minutes + " minutes left";
+    }
+
     public static String capitalize(String s) {
         if (s == null || s.isEmpty()) return s;
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
