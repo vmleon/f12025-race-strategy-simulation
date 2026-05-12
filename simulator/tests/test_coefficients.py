@@ -22,9 +22,9 @@ def test_ai_returns_zero_when_missing():
 
 def test_sector_fallback_still_works():
     c = Coefficients()
-    c.put("dirty_air", "PLAYER", -1, 0.30)
+    c.put("tyre_deg_soft", "PLAYER", -1, 0.05)
     # Sector-specific lookup falls back to sector -1
-    assert c.get("dirty_air", "PLAYER", 2) == 0.30
+    assert c.get("tyre_deg_soft", "PLAYER", 2) == 0.05
 
 
 def test_player_sector_fallback_then_ai():

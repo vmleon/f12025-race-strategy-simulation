@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008-01-delete-orphan-coefficient-rows
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              DELETE FROM calibration_coefficients
+              WHERE knob_name IN (
+                'base_pace_mean',
+                'base_pace_std_dev',
+                'front_wing_damage',
+                'floor_damage',
+                'engine_damage',
+                'dirty_air',
+                'drs_advantage',
+                'overtake_probability',
+                'safety_car_rate'
+              )

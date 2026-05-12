@@ -20,3 +20,6 @@ databaseChangeLog:
   - include:
       file: 007-pace-baselines.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 008-drop-dead-coefficients.yaml
+      relativeToChangelogFile: true
