@@ -76,11 +76,15 @@ _EXPORT_TABLES = [
     ("final_classifications", ["session_uid", "car_index"]),
     ("calibration_coefficients", ["coefficient_id"]),
     ("driver_ratings", ["driver_name", "track_id"]),
+    ("lap_pace_observations", ["id"]),
+    ("lap_pace_baselines",
+     ["track_id", "compound", "regime", "fuel_bucket_kg", "weather", "track_temp_bucket_c"]),
 ]
 
 _SEQUENCES = [
     ("seq_session_events", "session_events", "event_id"),
     ("seq_calibration_coefficients", "calibration_coefficients", "coefficient_id"),
+    ("seq_lap_pace_obs", "lap_pace_observations", "id"),
 ]
 
 
@@ -273,6 +277,30 @@ def setup():
         "podman", "exec", "-i", CONTAINER_NAME,
         "sqlplus", "-s", "sys/{}@FREEPDB1 as sysdba".format(password),
     ], input=grant_sql)
+
+    # Fix A from the GP postmortem: "DATABASE IS READY TO USE" only means SYS
+    # is reachable. The PDB and the pdbadmin account take a few more seconds
+    # to be ready for application logins; services racing in during that gap
+    # used to pile up enough failed logins to lock the account. Block here
+    # until pdbadmin can actually authenticate.
+    console.print("[bold]Waiting for pdbadmin login to succeed...[/bold]")
+    pdbadmin_ready = False
+    pdbadmin_start = time.time()
+    while time.time() - pdbadmin_start < 60:
+        result = subprocess.run(
+            ["podman", "exec", "-i", CONTAINER_NAME,
+             "sqlplus", "-s", "-l", f"pdbadmin/{password}@FREEPDB1"],
+            input="SELECT 1 FROM dual;\nEXIT;\n",
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0 and "ORA-" not in result.stdout:
+            pdbadmin_ready = True
+            break
+        time.sleep(2)
+    if not pdbadmin_ready:
+        console.print("[red]Error:[/red] pdbadmin login did not succeed within 60s.")
+        sys.exit(1)
+    console.print("[green]pdbadmin login confirmed.[/green]")
 
     # Run Liquibase
     console.print("[bold]Running Liquibase migrations...[/bold]")

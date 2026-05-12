@@ -7,8 +7,14 @@ spring.datasource.username=pdbadmin
 spring.datasource.password={{DB_PASSWORD}}
 spring.datasource.driver-class-name=oracle.jdbc.OracleDriver
 spring.datasource.oracleucp.connection-factory-class-name=oracle.jdbc.pool.OracleDataSource
-spring.datasource.oracleucp.initial-pool-size=2
-spring.datasource.oracleucp.min-pool-size=2
+# Fix C from the GP postmortem: lazy init so the backend doesn't burn through
+# failed-login attempts when started before the PDB is fully open. The pool
+# was previously eager (initial=2, min=2) — every retry counted toward the
+# default profile's FAILED_LOGIN_ATTEMPTS=10 and locked pdbadmin in seconds.
+spring.datasource.oracleucp.initial-pool-size=0
+spring.datasource.oracleucp.min-pool-size=0
 spring.datasource.oracleucp.max-pool-size=10
+spring.datasource.oracleucp.connection-wait-duration=30s
+spring.datasource.oracleucp.validate-connection-on-borrow=true
 
 telemetry.tcp.port=9090

@@ -34,7 +34,9 @@ def get_pool() -> oracledb.ConnectionPool:
             user=cfg.get("database", "user", fallback="pdbadmin"),
             password=cfg.get("database", "password", fallback=""),
             dsn=dsn,
-            min=cfg.getint("database", "pool.min", fallback=1),
+            # min=0: don't eagerly open connections before the PDB is mounted.
+            # See Fix A/B/C in the GP postmortem (cold-start race that locked pdbadmin).
+            min=cfg.getint("database", "pool.min", fallback=0),
             max=cfg.getint("database", "pool.max", fallback=4),
         )
     return _pool
