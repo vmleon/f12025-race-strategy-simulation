@@ -135,16 +135,18 @@ class StrategyEvaluator:
             for i, r in enumerate(results)
         ]
 
-        # Anomaly: every candidate projects roughly the same outcome → the
-        # engine is producing degenerate output (e.g. the P19 attribution bug).
-        # Flag it loudly so future occurrences can't hide.
-        if len(ranked) >= 2:
+        # Anomaly: candidates all collapse to roughly the same outcome AND that
+        # outcome doesn't match the player's actual current standing. A dominant
+        # leader legitimately sees every strategy converge to P1 — only warn
+        # when the convergence is also wildly off from the snapshot's truth.
+        if len(ranked) >= 2 and player_cs is not None:
             spread = ranked[-1].mean_position - ranked[0].mean_position
-            if spread < 0.5:
+            deviation = abs(ranked[0].mean_position - player_cs.position)
+            if spread < 0.5 and deviation > 5.0:
                 logger.warning(
                     "strategy.degenerate: %d candidates all within %.2f positions "
-                    "(mean ~%.2f) — engine output is suspicious",
-                    len(ranked), spread, ranked[0].mean_position,
+                    "(mean ~%.2f) but player is currently P%d — engine output is suspicious",
+                    len(ranked), spread, ranked[0].mean_position, player_cs.position,
                 )
 
         # Final winner ranking — what the portal will actually show.

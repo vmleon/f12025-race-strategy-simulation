@@ -87,6 +87,17 @@ public class StrategyOrchestrator {
             TriggerKind kind = detectTrigger(node);
             if (kind == TriggerKind.NONE) return;
 
+            // Gate: need at least 2 observed laps for the player before the
+            // simulator's pace estimate is meaningful. Lap 1 buffer contains
+            // only the formation/race-start lap which is an outlier; running
+            // strategy that early projected the player to mid-field even when
+            // leading. Skip until we have a second sample.
+            int playerIdx = currentPlayerIdx(node);
+            if (playerIdx >= 0 && lapHistoryTracker.recent(playerIdx).size() < 2) {
+                log.debug("StrategyOrchestrator: skipping run — player has <2 observed laps");
+                return;
+            }
+
             int playerLap = currentPlayerLap(node);
             if (playerLap != throttleLap) {
                 throttleLap = playerLap;
@@ -116,6 +127,16 @@ public class StrategyOrchestrator {
         for (JsonNode car : cars) {
             boolean ai = !car.has("ai") || car.get("ai").asBoolean();
             if (!ai) return car.has("lap") ? car.get("lap").asInt() : -1;
+        }
+        return -1;
+    }
+
+    private static int currentPlayerIdx(JsonNode state) {
+        JsonNode cars = state.get("cars");
+        if (cars == null || !cars.isArray()) return -1;
+        for (JsonNode car : cars) {
+            boolean ai = !car.has("ai") || car.get("ai").asBoolean();
+            if (!ai) return car.has("idx") ? car.get("idx").asInt() : -1;
         }
         return -1;
     }
