@@ -172,6 +172,48 @@ class TestDamageEffect:
         assert len(r_damaged.cars) == 1
 
 
+class TestResultsAttribution:
+    """Regression tests for the position-attribution bug where _record_results
+    indexed by enumeration of a sorted cars list rather than by car_index. The
+    bug routed every car's outcome into the wrong row, pinning the player
+    (last in snapshot order) to P19 regardless of pace."""
+
+    def test_fast_player_at_back_projects_better_than_last(self):
+        # Field of 20 with player as the LAST snapshot entry (car_index=19).
+        # Player given the fastest observed lap (75 s) while AIs default to 90 s.
+        # If results are attributed correctly the player must finish near the
+        # front; with the bug they were pinned to P19/P20.
+        cars = []
+        for i in range(19):
+            cars.append(_make_car(
+                car_index=i, driver_name=f"AI{i}", ai_controlled=True,
+                position=i + 1, total_time_ms=(i) * 1000.0,
+            ))
+        # Player at the back of the field, but with much faster observed pace.
+        from simulator.models import CarSnapshot
+        player_snapshot = CarSnapshot(
+            car_index=19, driver_name="Player", ai_controlled=False,
+            position=20, tyre_compound=17, tyre_age_laps=0,
+            fuel_kg=80.0, fuel_burn_per_sector_kg=0.18,
+            front_wing_damage=0, floor_damage=0, engine_damage=0,
+            num_pit_stops=0, total_time_ms=19_000.0,
+            recent_lap_times_ms=[75_000, 75_500, 75_200],  # ~15 s/lap faster
+        )
+        cars.append(player_snapshot)
+        snapshot = _make_snapshot(cars=cars, total_laps=10, current_lap=1)
+
+        engine = MonteCarloEngine(Coefficients.defaults(), seed=42)
+        result = engine.simulate(snapshot, max_iterations=200)
+
+        player_result = next(c for c in result.cars if c.car_index == 19)
+        # With ~15 s/lap pace advantage over 9 remaining laps (~135 s), the
+        # player should comfortably climb the field, not be pinned at the back.
+        assert player_result.mean_position < 5.0, (
+            f"Expected player to project near the front; got mean_position="
+            f"{player_result.mean_position}"
+        )
+
+
 class TestPenalties:
     def test_time_penalty_worsens_position(self):
         """A time penalty added to final result should hurt the penalised car."""

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
 from collections import Counter
 
+from simulator.car_state import _pace_from_recent_laps
 from simulator.engine import MonteCarloEngine
 from simulator.models import (
     CarResult,
@@ -11,6 +13,8 @@ from simulator.models import (
     StrategyCandidate,
     StrategyEvaluation,
 )
+
+logger = logging.getLogger("simulator")
 
 # F1 points system (positions 1-10)
 POINTS = [25.0, 18.0, 15.0, 12.0, 10.0, 8.0, 6.0, 4.0, 2.0, 1.0]
@@ -41,6 +45,35 @@ class StrategyEvaluator:
     ) -> StrategyEvaluation:
         results: list[RankedStrategy] = []
 
+        # One-line input summary. Full per-car detail is at DEBUG so it's
+        # available when we need it without flooding INFO.
+        observed = sum(1 for c in base_snapshot.cars if c.recent_lap_times_ms)
+        player_cs = next(
+            (c for c in base_snapshot.cars if c.car_index == player_car_index),
+            None,
+        )
+        if player_cs is not None:
+            player_pace = _pace_from_recent_laps(player_cs.recent_lap_times_ms)
+            player_pace_src = "observed" if player_cs.recent_lap_times_ms else "default"
+            logger.info(
+                "strategy.input: lap=%d/%d cars=%d observed_pace=%d candidates=%d "
+                "player_car=%d pos=%d pace=%.0fms (%s)",
+                base_snapshot.current_lap, base_snapshot.total_laps,
+                len(base_snapshot.cars), observed, len(candidates),
+                player_cs.car_index, player_cs.position, player_pace, player_pace_src,
+            )
+        if logger.isEnabledFor(logging.DEBUG):
+            for cs in base_snapshot.cars:
+                pace = _pace_from_recent_laps(cs.recent_lap_times_ms)
+                tag = "PLAYER" if not cs.ai_controlled else "AI"
+                logger.debug(
+                    "strategy.input.car: car=%d pos=%d %s recent_laps_ms=%s "
+                    "pace_ms=%.0f compound=%d age=%d",
+                    cs.car_index, cs.position, tag,
+                    list(cs.recent_lap_times_ms), pace,
+                    cs.tyre_compound, cs.tyre_age_laps,
+                )
+
         for candidate in candidates:
             pit_strategy = PitStrategy(
                 target_car_index=player_car_index,
@@ -61,6 +94,13 @@ class StrategyEvaluator:
 
             sim_result = self.engine.simulate(snapshot)
             player_result = self._find_player_result(sim_result.cars, player_car_index)
+
+            logger.debug(
+                "strategy.candidate: %s player_mean_pos=%.2f ci=[%.1f, %.1f] dnf=%.2f iterations=%d",
+                candidate.label, player_result.mean_position,
+                player_result.ci95_low, player_result.ci95_high,
+                player_result.dnf_probability, sim_result.iterations,
+            )
 
             results.append(
                 RankedStrategy(
@@ -94,6 +134,26 @@ class StrategyEvaluator:
             )
             for i, r in enumerate(results)
         ]
+
+        # Anomaly: every candidate projects roughly the same outcome → the
+        # engine is producing degenerate output (e.g. the P19 attribution bug).
+        # Flag it loudly so future occurrences can't hide.
+        if len(ranked) >= 2:
+            spread = ranked[-1].mean_position - ranked[0].mean_position
+            if spread < 0.5:
+                logger.warning(
+                    "strategy.degenerate: %d candidates all within %.2f positions "
+                    "(mean ~%.2f) — engine output is suspicious",
+                    len(ranked), spread, ranked[0].mean_position,
+                )
+
+        # Final winner ranking — what the portal will actually show.
+        top = ranked[:3]
+        summary = " | ".join(
+            f"{i+1}) {r.candidate.label} P{r.mean_position:.1f}"
+            for i, r in enumerate(top)
+        )
+        logger.info("strategy.ranked: %s", summary or "(no candidates)")
 
         return StrategyEvaluation(
             player_car_index=player_car_index,

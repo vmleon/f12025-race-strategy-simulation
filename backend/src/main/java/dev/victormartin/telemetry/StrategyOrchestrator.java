@@ -51,6 +51,16 @@ public class StrategyOrchestrator {
     private int previousWeather = -1;
     private final int[] previousPitCounts = new int[22];
 
+    // Per-lap throttle. NORMAL triggers (AI pit cascades) are capped per player
+    // lap so a single race can't spam the simulator with 10+ evaluations per
+    // lap. CRITICAL triggers (player lap change, safety car, weather, player
+    // pit) always bypass the cap because the strategy answer genuinely changes.
+    private static final int MAX_NORMAL_RUNS_PER_LAP = 2;
+    private int throttleLap = -1;
+    private int normalRunsThisLap = 0;
+
+    enum TriggerKind { NONE, NORMAL, CRITICAL }
+
     // Leaderboard
     private volatile StrategyLeaderboard leaderboard;
 
@@ -74,17 +84,40 @@ public class StrategyOrchestrator {
                 sessionUid = node.get("sessionUid").asText();
             }
 
-            if (detectTrigger(node)) {
-                if (leaderboard != null) {
-                    leaderboard = new StrategyLeaderboard(
-                            leaderboard.evaluatedAtLap(), true, leaderboard.evaluation());
-                    broadcastLeaderboard();
-                }
-                scheduleDebouncedRun();
+            TriggerKind kind = detectTrigger(node);
+            if (kind == TriggerKind.NONE) return;
+
+            int playerLap = currentPlayerLap(node);
+            if (playerLap != throttleLap) {
+                throttleLap = playerLap;
+                normalRunsThisLap = 0;
             }
+            if (kind == TriggerKind.NORMAL && normalRunsThisLap >= MAX_NORMAL_RUNS_PER_LAP) {
+                log.debug("StrategyOrchestrator: throttled NORMAL trigger at lap {} (runs={}, cap={})",
+                        playerLap, normalRunsThisLap, MAX_NORMAL_RUNS_PER_LAP);
+                return;
+            }
+            if (kind == TriggerKind.NORMAL) normalRunsThisLap++;
+
+            if (leaderboard != null) {
+                leaderboard = new StrategyLeaderboard(
+                        leaderboard.evaluatedAtLap(), true, leaderboard.evaluation());
+                broadcastLeaderboard();
+            }
+            scheduleDebouncedRun();
         } catch (Exception e) {
             log.warn("StrategyOrchestrator: failed to parse state: {}", e.getMessage());
         }
+    }
+
+    private static int currentPlayerLap(JsonNode state) {
+        JsonNode cars = state.get("cars");
+        if (cars == null || !cars.isArray()) return -1;
+        for (JsonNode car : cars) {
+            boolean ai = !car.has("ai") || car.get("ai").asBoolean();
+            if (!ai) return car.has("lap") ? car.get("lap").asInt() : -1;
+        }
+        return -1;
     }
 
     public void onEvent(String json) {
@@ -104,6 +137,8 @@ public class StrategyOrchestrator {
         previousSafetyCarStatus = 0;
         previousWeather = -1;
         for (int i = 0; i < previousPitCounts.length; i++) previousPitCounts[i] = 0;
+        throttleLap = -1;
+        normalRunsThisLap = 0;
         latestState = null;
         sessionUid = null;
         leaderboard = null;
@@ -122,52 +157,58 @@ public class StrategyOrchestrator {
 
     // ── trigger detection ─────────────────────────────────────────────
 
-    boolean detectTrigger(JsonNode state) {
-        boolean triggered = false;
+    TriggerKind detectTrigger(JsonNode state) {
+        boolean critical = false;
+        boolean normal = false;
         JsonNode cars = state.get("cars");
+        int playerIdx = -1;
 
         if (cars != null && cars.isArray()) {
-            // Find player car (ai=false)
+            // Find player car (ai=false) and check for lap completion
             for (JsonNode car : cars) {
                 boolean ai = !car.has("ai") || car.get("ai").asBoolean();
                 if (!ai) {
+                    playerIdx = car.has("idx") ? car.get("idx").asInt() : -1;
                     int lap = car.has("lap") ? car.get("lap").asInt() : 0;
                     if (lap > previousPlayerLap && previousPlayerLap > 0) {
-                        triggered = true;
+                        critical = true; // player completed a lap
                     }
                     previousPlayerLap = lap;
                     break;
                 }
             }
 
-            // Pit stop detected for any car
+            // Pit-count change: critical for the player, normal for any AI
             for (JsonNode car : cars) {
                 int idx = car.has("idx") ? car.get("idx").asInt() : -1;
                 int pits = car.has("pits") ? car.get("pits").asInt() : 0;
                 if (idx >= 0 && idx < previousPitCounts.length) {
                     if (pits > previousPitCounts[idx]) {
-                        triggered = true;
+                        if (idx == playerIdx) critical = true;
+                        else normal = true;
                     }
                     previousPitCounts[idx] = pits;
                 }
             }
         }
 
-        // Safety car change
+        // Safety car change — critical (strategy must respond)
         int scStatus = state.has("safetyCarStatus") ? state.get("safetyCarStatus").asInt() : 0;
         if (scStatus != previousSafetyCarStatus && previousSafetyCarStatus >= 0) {
-            triggered = true;
+            critical = true;
         }
         previousSafetyCarStatus = scStatus;
 
-        // Weather change
+        // Weather change — critical
         int weather = state.has("weather") ? state.get("weather").asInt() : 0;
         if (weather != previousWeather && previousWeather >= 0) {
-            triggered = true;
+            critical = true;
         }
         previousWeather = weather;
 
-        return triggered;
+        if (critical) return TriggerKind.CRITICAL;
+        if (normal) return TriggerKind.NORMAL;
+        return TriggerKind.NONE;
     }
 
     // ── debounce & execution ──────────────────────────────────────────

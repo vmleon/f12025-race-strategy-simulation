@@ -44,7 +44,11 @@ class MonteCarloEngine:
         num_cars = len(snapshot.cars)
         start = time.monotonic()
 
-        # position_counts[car_idx][position] where position is 0-based
+        # position_counts row i is attributed to snapshot.cars[i] in _build_results.
+        # Must lookup via car_index because _run_iteration sorts the cars list in
+        # place at every sector — `enumerate(cars)` no longer matches snapshot order.
+        # The bug behind the persistent P19 projection lived here.
+        car_index_to_row = {cs.car_index: i for i, cs in enumerate(snapshot.cars)}
         position_counts = np.zeros((num_cars, num_cars), dtype=np.int32)
         dnf_counts = np.zeros(num_cars, dtype=np.int32)
 
@@ -56,7 +60,7 @@ class MonteCarloEngine:
             iterations += 1
             cars = self._init_cars(snapshot)
             self._run_iteration(cars, snapshot)
-            self._record_results(cars, position_counts, dnf_counts)
+            self._record_results(cars, position_counts, dnf_counts, car_index_to_row)
 
             # Convergence check
             if (
@@ -368,13 +372,17 @@ class MonteCarloEngine:
         cars: list[CarState],
         position_counts: np.ndarray,
         dnf_counts: np.ndarray,
+        car_index_to_row: dict[int, int],
     ) -> None:
-        for i, car in enumerate(cars):
+        for car in cars:
+            row = car_index_to_row.get(car.car_index)
+            if row is None:
+                continue
             pos = car.position - 1  # 0-based
             if 0 <= pos < position_counts.shape[1]:
-                position_counts[i, pos] += 1
+                position_counts[row, pos] += 1
             if car.retired:
-                dnf_counts[i] += 1
+                dnf_counts[row] += 1
 
     @staticmethod
     def _compute_means(position_counts: np.ndarray, iterations: int) -> np.ndarray:
