@@ -93,7 +93,7 @@ public class StrategyOrchestrator {
             // strategy that early projected the player to mid-field even when
             // leading. Skip until we have a second sample.
             int playerIdx = currentPlayerIdx(node);
-            if (playerIdx >= 0 && lapHistoryTracker.recent(playerIdx).size() < 2) {
+            if (playerIdx >= 0 && lapHistoryTracker.totalLapsRecorded(playerIdx) < 2) {
                 log.debug("StrategyOrchestrator: skipping run — player has <2 observed laps");
                 return;
             }
@@ -361,7 +361,7 @@ public class StrategyOrchestrator {
                         idx, name, ai, pos, tyreCompound, tyreAge,
                         fuel, fuelBurnPerSector, fwDmg, flDmg, engDmg,
                         pits, totalTimeMs, tyreSets,
-                        lapHistoryTracker.recent(idx)));
+                        lapHistoryTracker.recentForCompound(idx, tyreCompound)));
             }
 
             if (cars.isEmpty()) return null;

@@ -17,15 +17,15 @@ import dev.victormartin.telemetry.engineer.v2.RadioDetector;
 import dev.victormartin.telemetry.engineer.v2.SessionKind;
 
 /**
- * Announces when a rival sets a new session-fastest lap, with the gap to the
- * player's own best. Helps the driver benchmark their pace against the field
- * without having to scan the timing screen.
+ * Announces when the session-fastest lap is set. Two variants:
+ *   - Player owns the new best:   "Fastest lap of the session, 1:23.4. Nice one."
+ *   - Rival owns the new best:    "VERSTAPPEN sets the fastest lap, 1:23.4. You're 0.4 seconds off the pace."
  *
- * Fires when the session-best lap improves AND the new setter is not the
- * player. The very first session-best is recorded silently to avoid an
- * opening "fastest lap" message on every car's first lap. A 20 s cooldown
- * caps repetition when several cars improve in quick succession (typical
- * early in qualifying).
+ * Fires when the session-best lap improves over the previously announced one.
+ * The very first session-best is recorded silently to avoid an opening
+ * "fastest lap" message on every car's first lap. A 20 s cooldown caps
+ * repetition when several cars improve in quick succession (typical early
+ * in qualifying).
  */
 public class FastestLapByRivalDetector implements RadioDetector {
 
@@ -49,13 +49,19 @@ public class FastestLapByRivalDetector implements RadioDetector {
     public Optional<EngineerMessage> evaluate(EngineerTick tick) {
         State s = stateByUid.computeIfAbsent(tick.sessionUid(), k -> new State());
 
-        int playerIdx = -1;
+        // Player identity comes from the orchestrator (single source of truth).
+        // Iterating tick.cars() looking for ai=false used to mis-identify
+        // when the participants packet hadn't fully populated, falling through
+        // with playerIdx=-1 and announcing the player's own fastest lap as if
+        // it were a rival's.
+        JsonNode playerCar = tick.playerCar();
+        int playerIdx = playerCar != null && playerCar.has("idx")
+                ? playerCar.get("idx").asInt() : -1;
+
         for (JsonNode car : tick.cars()) {
             int idx = car.has("idx") ? car.get("idx").asInt() : -1;
             if (idx < 0) continue;
             long lapMs = car.has("lastLapTimeMs") ? car.get("lastLapTimeMs").asLong() : 0;
-            boolean isAi = !car.has("ai") || car.get("ai").asBoolean();
-            if (!isAi) playerIdx = idx;
             if (lapMs <= 0) continue;
             Long prev = s.bestByCarIdx.get(idx);
             if (prev == null || lapMs < prev) s.bestByCarIdx.put(idx, lapMs);
@@ -80,35 +86,31 @@ public class FastestLapByRivalDetector implements RadioDetector {
             return Optional.empty();
         }
 
-        // If the player owns the new best, update baseline silently. Player's
-        // own personal best is handled by PracticeLapCompleteDetector etc.
-        if (sessionBestIdx == playerIdx) {
-            s.lastAnnouncedBest = sessionBest;
-            return Optional.empty();
-        }
-
         long now = tick.wallClockMs();
         if (s.lastFiredAtMs > 0 && now - s.lastFiredAtMs < COOLDOWN_MS) return Optional.empty();
 
-        String setterName = "Car " + sessionBestIdx;
-        for (JsonNode car : tick.cars()) {
-            int idx = car.has("idx") ? car.get("idx").asInt() : -1;
-            if (idx == sessionBestIdx && car.has("name")) {
-                setterName = car.get("name").asText();
-                break;
-            }
-        }
-
-        Long playerBest = s.bestByCarIdx.get(playerIdx);
         String lapTime = EngineerMessageHelpers.formatLapTime(sessionBest);
         String text;
-        if (playerBest != null && playerBest > 0) {
-            long deltaMs = playerBest - sessionBest;
-            String gap = EngineerMessageHelpers.formatTenths(deltaMs / 1000.0);
-            text = setterName + " sets the fastest lap, " + lapTime + ". "
-                    + "You're " + gap + " seconds off the pace.";
+        if (sessionBestIdx == playerIdx) {
+            text = "Fastest lap of the session, " + lapTime + ". Nice one.";
         } else {
-            text = setterName + " sets the fastest lap, " + lapTime + ".";
+            String setterName = "Car " + sessionBestIdx;
+            for (JsonNode car : tick.cars()) {
+                int idx = car.has("idx") ? car.get("idx").asInt() : -1;
+                if (idx == sessionBestIdx && car.has("name")) {
+                    setterName = car.get("name").asText();
+                    break;
+                }
+            }
+            Long playerBest = s.bestByCarIdx.get(playerIdx);
+            if (playerBest != null && playerBest > 0) {
+                long deltaMs = playerBest - sessionBest;
+                String gap = EngineerMessageHelpers.formatTenths(deltaMs / 1000.0);
+                text = setterName + " sets the fastest lap, " + lapTime + ". "
+                        + "You're " + gap + " seconds off the pace.";
+            } else {
+                text = setterName + " sets the fastest lap, " + lapTime + ".";
+            }
         }
 
         s.lastAnnouncedBest = sessionBest;

@@ -120,6 +120,7 @@ public class TelemetryTcpServer implements CommandLineRunner {
                     int sessionType = node.has("sessionType") ? node.get("sessionType").asInt() : 0;
                     sessionStateHolder.onSessionStarted(sessionUid, trackId);
                     raceEngineerService.onSessionStarted(sessionUid, trackId, sessionType, ersAssist, drsAssist);
+                    lapHistoryTracker.onSessionStarted(trackId);
                     queueService.enqueue("PDBADMIN.SESSION_LIFECYCLE", line);
                     try {
                         var drivers = jdbc.query(
@@ -138,7 +139,9 @@ public class TelemetryTcpServer implements CommandLineRunner {
                     String endedUid = node.get("sessionUid").asText();
                     sessionStateHolder.onSessionEnded(endedUid);
                     raceEngineerService.onSessionEnded(endedUid);
-                    lapHistoryTracker.reset();
+                    // Do NOT reset lapHistoryTracker here — practice/quali pace
+                    // carries into the race within the same weekend. The tracker
+                    // clears itself on a trackId change via onSessionStarted.
                     queueService.enqueue("PDBADMIN.SESSION_LIFECYCLE", line);
                 }
                 case "state" -> {

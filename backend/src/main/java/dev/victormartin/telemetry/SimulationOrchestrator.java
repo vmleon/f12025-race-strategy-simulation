@@ -283,7 +283,7 @@ public class SimulationOrchestrator {
                         idx, name, ai, pos, tyreCompound, tyreAge,
                         fuel, fuelBurnPerSector, fwDmg, flDmg, engDmg,
                         pits, totalTimeMs, List.of(),
-                        lapHistoryTracker.recent(idx)));
+                        lapHistoryTracker.recentForCompound(idx, tyreCompound)));
             }
 
             if (cars.isEmpty()) return null;
