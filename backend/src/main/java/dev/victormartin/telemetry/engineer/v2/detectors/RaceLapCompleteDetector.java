@@ -112,19 +112,19 @@ public class RaceLapCompleteDetector implements RadioDetector {
                 if (p2Delta > 0) {
                     String name = p2.has("name") ? p2.get("name").asText() : "the chasing car";
                     text.append(" ")
-                        .append(EngineerMessageHelpers.formatTenths(p2Delta / 1000.0))
-                        .append(" seconds clear of ").append(name).append(".");
+                        .append(EngineerMessageHelpers.formatSecondsPhrase(p2Delta / 1000.0))
+                        .append(" clear of ").append(name).append(".");
                 }
             }
         } else {
             if (gapAheadMs > 0 && aheadName != null) {
                 text.append(" ")
-                    .append(EngineerMessageHelpers.formatTenths(gapAheadMs / 1000.0))
+                    .append(EngineerMessageHelpers.formatSecondsPhrase(gapAheadMs / 1000.0))
                     .append(" back on ").append(aheadName).append(".");
             }
             if (playerPos > 2 && leaderGapKnown && gapToLeaderMs > 0) {
                 text.append(" ")
-                    .append(EngineerMessageHelpers.formatTenths(gapToLeaderMs / 1000.0))
+                    .append(EngineerMessageHelpers.formatSecondsPhrase(gapToLeaderMs / 1000.0))
                     .append(" from the lead.");
             }
         }

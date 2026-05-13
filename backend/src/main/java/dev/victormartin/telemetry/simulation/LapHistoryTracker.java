@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -60,7 +61,15 @@ public class LapHistoryTracker {
     private int currentTrackId = -1;
     private boolean loadedForCurrentTrack = false;
 
-    /** Spring constructor; {@code jdbc} may be {@code null} for unit tests. */
+    /**
+     * Spring constructor; {@code jdbc} may be {@code null} for unit tests.
+     * Explicit {@code @Autowired} because the class has a second no-arg
+     * constructor (test seam) and Spring would otherwise pick the wrong one,
+     * silently disabling DB persistence — exactly the bug found in the
+     * post-race log review (no rows in {@code lap_pace_observations} despite
+     * a full race of laps).
+     */
+    @Autowired
     public LapHistoryTracker(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }

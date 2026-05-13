@@ -18,6 +18,14 @@ public final class EngineerMessageHelpers {
         return String.format("%.1f", rounded);
     }
 
+    /** "1.4 seconds" / "1 second" / "0.5 seconds" with correct singular/plural. */
+    public static String formatSecondsPhrase(double seconds) {
+        double rounded = Math.round(seconds * 10) / 10.0;
+        String number = formatTenths(seconds);
+        boolean singular = rounded == 1.0;
+        return number + (singular ? " second" : " seconds");
+    }
+
     public static String formatLapTime(long ms) {
         long minutes = ms / 60000;
         double seconds = (ms % 60000) / 1000.0;
