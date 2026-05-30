@@ -28,14 +28,13 @@ Each iteration simulates the remainder of the race from the current state, secto
 For each remaining lap:
   For each sector (0, 1, 2):
     For each car:
-      sector_time = base_pace + tyre_deg + fuel_effect + damage_effect
-                  + dirty_air + drs + residual_noise
-      where residual_noise = gauss(0, sqrt(residual_variance))  # ([Rubinstein & Kroese, 2017](10-REFERENCES.md#rubinstein2017))
+      sector_time = base_pace + tyre_deg + fuel_effect + residual_noise
+      where residual_noise = gauss(0, 150ms)  # ([Rubinstein & Kroese, 2017](10-REFERENCES.md#rubinstein2017))
     Resolve interactions (overtakes, position changes)
     Update car states (tyre_age++, fuel--, DRS eligibility, gaps)
 ```
 
-Every sector step draws a fresh residual noise value per car. This noise represents the unexplained variance from calibration — the gap between the model's prediction and observed sector times. Stochastic events (safety car deployment, mechanical DNF, overtake success/failure) are also sampled independently each iteration.
+Every sector step draws a fresh residual noise value per car. This noise represents the unexplained variance from calibration — the gap between the model's prediction and observed sector times. Stochastic events (mechanical DNF, overtake success/failure, red flags, and the end of an in-progress safety-car period) are also sampled independently each iteration. The engine does not randomly _deploy_ safety cars — it honours the safety-car flag from the current race snapshot.
 
 At the end of one iteration, all remaining laps have been simulated and a complete predicted finishing order and race times exist for all cars.
 
@@ -319,6 +318,8 @@ Captured once at session start and re-captured whenever `pitStatus` changes for 
 ## Inter-Car Interactions
 
 The simulation cannot treat each car independently. Key interactions that affect lap times:
+
+> **Implementation status (PoC).** Of the interactions below, the engine currently models **overtake resolution** (a flat 30% × sigmoid(pace delta) default — overtake probability is not yet calibrated) and **penalties**. **Dirty air**, **DRS advantage**, and **car-damage pace effects** are **design roadmap**: the telemetry captures the underlying fields, but the simulator has no calibrated term for them yet (see `05-CALIBRATION.md` → Implementation Status). The subsections below describe the intended modelling, not the current engine.
 
 ### Dirty Air
 

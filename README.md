@@ -32,7 +32,7 @@ The system operates as five connected pipelines:
 
 **1. Ingestion** — The telemetry server listens for UDP packets from the F1 2025 game (~80–100 packets/sec). It maintains an in-memory snapshot of all 20 cars and writes to the database only on **sector transitions** (3 per lap × 20 cars ≈ 60 rows/lap). Discrete events (safety car, penalties, retirements, collisions) are captured immediately. Live race state is pushed to the backend via **TCP (port 9090)** at ~1 Hz.
 
-**2. Calibration** — The backend enqueues calibration requests via **Oracle TxEventQ**. A Python service worker (`calibration/`) reads all accumulated sector snapshots for the track and fits 11 model knobs (tyre degradation per compound, fuel effect, dirty air, DRS advantage, damage penalties, overtake probability, safety car rate). Coefficients are fitted **separately for Player and AI cars** because the game uses different physics models for each.
+**2. Calibration** — The backend enqueues calibration requests via **Oracle TxEventQ**. A Python service worker (`calibration/`) reads all accumulated sector snapshots for the track and fits a per-car pace baseline plus 3 model knobs (tyre degradation per compound, fuel effect, pit stop time loss). Coefficients are fitted **separately for Player and AI cars** because the game uses different physics models for each.
 
 **3. Simulation** — During a race the backend enqueues simulation requests via **TxEventQ**. The simulator service (`simulator/`, FastAPI on port 8081) runs a Monte Carlo engine (1,000–10,000 iterations with early stopping) that loads the fitted coefficients and current race state, then simulates at per-sector granularity. Each iteration samples from the calibrated distributions to project sector times, overtakes, and pit stop outcomes. The output is a probability distribution of finishing positions for each car. Simulations auto-trigger on lap completions, pit stops, safety car deployments, and disruptive events (with 3-second debounce).
 
@@ -61,7 +61,7 @@ graph TD
     end
 
     subgraph Calibration
-        Fit["Fit 11 Knobs<br/><i>Python service worker<br/>per track, per regime<br/>(PLAYER / AI)</i>"]
+        Fit["Pace Baseline + 3 Knobs<br/><i>Python service worker<br/>per track, per regime<br/>(PLAYER / AI)</i>"]
     end
 
     subgraph Simulation

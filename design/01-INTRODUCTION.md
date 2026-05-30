@@ -14,15 +14,15 @@ This is a proof-of-concept (PoC) built as a final-year thesis project (TFG) for 
 
 Six components work together:
 
-| Component | Tech | Role |
-|-----------|------|------|
-| **Telemetry** | Plain Java 23 | Receives F1 25 UDP packets, writes per-sector snapshots to Oracle, pushes live state to Backend via TCP |
-| **Database** | Oracle AI 26ai | Stores sessions, sector snapshots, events, calibration coefficients. TxEventQ queues decouple components |
-| **Backend** | Spring Boot 3.5.3 | REST + WebSocket API, orchestrates calibration and simulation triggers via TxEventQ |
-| **Calibration** | Python 3.12+ | Batch CLI that fits 11 model knobs (tyre degradation, fuel effect, dirty air, etc.) from accumulated data |
-| **Simulator** | Python / FastAPI | Monte Carlo engine: 1K-10K iterations at per-sector granularity, produces position probability distributions |
-| **Portal** | Angular 21 | Live race dashboard, strategy comparison, calibration status, session browser |
-| **iOS Client** | SwiftUI | Receives race engineer messages via WebSocket, speaks them aloud with priority-based TTS |
+| Component       | Tech              | Role                                                                                                                                          |
+| --------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Telemetry**   | Plain Java 23     | Receives F1 25 UDP packets, writes per-sector snapshots to Oracle, pushes live state to Backend via TCP                                       |
+| **Database**    | Oracle AI 26ai    | Stores sessions, sector snapshots, events, calibration coefficients. TxEventQ queues decouple components                                      |
+| **Backend**     | Spring Boot 3.5.3 | REST + WebSocket API, orchestrates calibration and simulation triggers via TxEventQ                                                           |
+| **Calibration** | Python 3.12+      | Service worker that fits a per-car pace baseline plus 3 model knobs (tyre degradation, fuel effect, pit stop time loss) from accumulated data |
+| **Simulator**   | Python / FastAPI  | Monte Carlo engine: 1K-10K iterations at per-sector granularity, produces position probability distributions                                  |
+| **Portal**      | Angular 21        | Live race dashboard, strategy comparison, calibration status, session browser                                                                 |
+| **iOS Client**  | SwiftUI           | Receives race engineer messages via WebSocket, speaks them aloud with priority-based TTS                                                      |
 
 ```mermaid
 graph LR
@@ -50,15 +50,15 @@ graph LR
 
 The chapters are ordered to build understanding progressively:
 
-| Chapter | File | What it covers |
-|---------|------|---------------|
-| 2 | `02-F1.md` | The data source: F1 25 UDP packet format, event codes, byte layouts |
-| 3 | `03-MONTECARLO.md` | The simulation model: what data is needed, how iterations work, strategy evaluation |
-| 4 | `04-DATABASE_DESIGN.md` | Schema design: 9 tables, denormalization rationale, indexes, query patterns |
-| 5 | `05-CALIBRATION.md` | Model fitting: lap time model, 11 knobs, outlier detection, fitting methodology |
-| 6 | `06-INTEGRATION.md` | System architecture: how components connect, protocols, portal and iOS client |
-| 7 | `07-ARCHITECTURE_ANALYSIS.md` | Technical decisions: Spring Boot vs plain Java, JDBC vs ORM, Gradle structure |
-| 8 | `08-RACE_ENGINEER_VOICE.md` | Voice design: tone, message catalogue, priority levels, safe zone delivery |
-| 9 | `09-CHALLENGES.md` | Open research questions that need data or testing to resolve |
+| Chapter | File                          | What it covers                                                                      |
+| ------- | ----------------------------- | ----------------------------------------------------------------------------------- |
+| 2       | `02-F1.md`                    | The data source: F1 25 UDP packet format, event codes, byte layouts                 |
+| 3       | `03-MONTECARLO.md`            | The simulation model: what data is needed, how iterations work, strategy evaluation |
+| 4       | `04-DATABASE_DESIGN.md`       | Schema design: 9 tables, denormalization rationale, indexes, query patterns         |
+| 5       | `05-CALIBRATION.md`           | Model fitting: lap time model, fitted knobs, outlier detection, fitting methodology |
+| 6       | `06-INTEGRATION.md`           | System architecture: how components connect, protocols, portal and iOS client       |
+| 7       | `07-ARCHITECTURE_ANALYSIS.md` | Technical decisions: Spring Boot vs plain Java, JDBC vs ORM, Gradle structure       |
+| 8       | `08-RACE_ENGINEER_VOICE.md`   | Voice design: tone, message catalogue, priority levels, safe zone delivery          |
+| 9       | `09-CHALLENGES.md`            | Open research questions that need data or testing to resolve                        |
 
 Chapters 2-5 describe the data pipeline from input to output. Chapter 6 ties the components together. Chapters 7-9 are supporting material — technical rationale, the human interface, and unresolved problems.
