@@ -195,3 +195,40 @@ class TestGenerateCandidates:
         assert len(one_stop) > 0, (
             f"Expected at least one valid 1-stop candidate, got: {[c.label for c in candidates]}"
         )
+
+
+class TestRepairCandidates:
+    def _snapshot(self, front_wing_damage):
+        tyre_sets = [
+            _make_tyre_set(16, fitted=True),
+            _make_tyre_set(17, available=True),
+            _make_tyre_set(18, available=True),
+        ]
+        player = CarSnapshot(
+            car_index=0, driver_name="Player", ai_controlled=False,
+            position=1, tyre_compound=16, tyre_age_laps=5,
+            fuel_kg=80.0, fuel_burn_per_sector_kg=0.18,
+            front_wing_damage=front_wing_damage, floor_damage=0, engine_damage=0,
+            num_pit_stops=1,  # two-compound rule already met -> stops generated freely
+            total_time_ms=0.0, tyre_sets=tyre_sets,
+        )
+        return RaceSnapshot(
+            track_id=0, total_laps=50, current_lap=10, current_sector=0,
+            weather=0, track_temp=35, air_temp=25, safety_car=False,
+            cars=[player, _make_car(1), _make_car(2)],
+        )
+
+    def test_damaged_wing_marks_first_stop_repair(self):
+        candidates = generate_candidates(self._snapshot(60), player_car_index=0)
+        with_stops = [c for c in candidates if c.stops]
+        assert with_stops, "expected at least one stopping candidate"
+        for c in with_stops:
+            assert c.stops[0].repair_front_wing is True
+            assert "+FW" in c.label
+
+    def test_healthy_wing_no_repair(self):
+        candidates = generate_candidates(self._snapshot(0), player_car_index=0)
+        for c in candidates:
+            for stop in c.stops:
+                assert stop.repair_front_wing is False
+            assert "+FW" not in c.label

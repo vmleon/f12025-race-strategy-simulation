@@ -1,3 +1,6 @@
+import pytest
+
+from simulator.car_state import CarState
 from simulator.coefficients import Coefficients
 from simulator.engine import MonteCarloEngine
 from simulator.models import CarSnapshot, Penalty, PitStop, PitStrategy, RaceSnapshot
@@ -152,24 +155,27 @@ class TestConvergence:
 
 class TestDamageEffect:
     def test_damage_increases_sector_time(self):
-        healthy = _make_car(0, "Healthy", position=1)
-        damaged = _make_car(
-            0, "Damaged", position=1,
-            front_wing_damage=50, floor_damage=30, engine_damage=20,
-        )
-        snapshot_healthy = _make_snapshot(cars=[healthy], total_laps=3)
-        snapshot_damaged = _make_snapshot(cars=[damaged], total_laps=3)
+        # Player (index 5) at the back; compare healthy vs heavily damaged.
+        def field(player_damage):
+            cars = [_make_car(i, f"AI{i}", position=i + 1) for i in range(5)]
+            player = _make_car(
+                5, "Player", ai_controlled=False, position=6,
+                **player_damage,
+            )
+            return _make_snapshot(cars=cars + [player], total_laps=12)
 
-        # With damage, mean position should be worse (higher number)
-        # Since there's only 1 car, position is always 1, but we can at least
-        # verify the simulation runs without error
         engine = MonteCarloEngine(Coefficients.defaults(), seed=42)
-        r_healthy = engine.simulate(snapshot_healthy, max_iterations=50)
+        healthy = engine.simulate(field({}), max_iterations=300)
         engine2 = MonteCarloEngine(Coefficients.defaults(), seed=42)
-        r_damaged = engine2.simulate(snapshot_damaged, max_iterations=50)
+        damaged = engine2.simulate(
+            field({"front_wing_damage": 60, "floor_damage": 40}), max_iterations=300
+        )
 
-        assert len(r_healthy.cars) == 1
-        assert len(r_damaged.cars) == 1
+        def mean_pos(result, car_index):
+            return next(c.mean_position for c in result.cars if c.car_index == car_index)
+
+        # Heavy damage should worsen (increase) the player's mean finishing position.
+        assert mean_pos(damaged, 5) > mean_pos(healthy, 5)
 
 
 class TestResultsAttribution:
@@ -322,3 +328,77 @@ def test_ai_pits_at_exactly_soft_lifespan_30():
     engine._check_pit_stop(car_due, lap=20, snapshot=snapshot)
     assert car_due.num_pit_stops == 1, "AI should pit at age 30 (lifespan)"
     assert car_due.tyre_age_laps == 0, "Tyre age should reset after pit"
+
+
+class TestDamagePenalty:
+    def _car(self, **damage):
+        snap = _make_car(0, **damage)
+        return CarState.from_snapshot(snap, current_lap=1, track_id=1)
+
+    def test_zero_damage_is_zero(self):
+        engine = MonteCarloEngine(Coefficients.defaults())
+        assert engine._damage_penalty(self._car()) == 0.0
+
+    def test_front_wing_anchors(self):
+        engine = MonteCarloEngine(Coefficients.defaults())
+        # 2%  -> per lap 100.4ms -> /3
+        assert engine._damage_penalty(self._car(front_wing_damage=2)) == pytest.approx(33.4667, abs=0.01)
+        # 100% -> 6000ms/lap -> 2000ms/sector
+        assert engine._damage_penalty(self._car(front_wing_damage=100)) == pytest.approx(2000.0)
+
+    def test_floor_and_engine_scales(self):
+        engine = MonteCarloEngine(Coefficients.defaults())
+        # floor 100% -> 4800/lap -> 1600/sector
+        assert engine._damage_penalty(self._car(floor_damage=100)) == pytest.approx(1600.0)
+        # engine 100% -> 3000/lap -> 1000/sector
+        assert engine._damage_penalty(self._car(engine_damage=100)) == pytest.approx(1000.0)
+
+    def test_components_stack(self):
+        engine = MonteCarloEngine(Coefficients.defaults())
+        # front 100 + floor 100 -> (6000+4800)/3
+        assert engine._damage_penalty(
+            self._car(front_wing_damage=100, floor_damage=100)
+        ) == pytest.approx(3600.0)
+
+
+class TestFrontWingRepair:
+    def _car(self, **damage):
+        snap = _make_car(0, ai_controlled=False, **damage)
+        return CarState.from_snapshot(snap, current_lap=1, track_id=1)
+
+    def test_repair_resets_front_wing_and_adds_time(self):
+        # Deterministic pit time: defaults have no stddev knob -> pit_time == mean.
+        engine = MonteCarloEngine(Coefficients.defaults(), seed=1)
+        car = self._car(front_wing_damage=70)
+        engine._execute_pit_stop(car, new_compound=17, repair_front_wing=True)
+        assert car.front_wing_damage == 0
+        # 22_000 (pit) + 10_000 (repair)
+        assert car.total_time_ms == pytest.approx(32_000.0)
+
+    def test_no_repair_leaves_damage(self):
+        engine = MonteCarloEngine(Coefficients.defaults(), seed=1)
+        car = self._car(front_wing_damage=70)
+        engine._execute_pit_stop(car, new_compound=17)
+        assert car.front_wing_damage == 70
+        assert car.total_time_ms == pytest.approx(22_000.0)
+
+
+class TestEngineDamageDnf:
+    def _car(self, engine_damage):
+        snap = _make_car(0, ai_controlled=False, engine_damage=engine_damage)
+        return CarState.from_snapshot(snap, current_lap=1, track_id=1)
+
+    def test_engine_damage_increases_dnf_rate(self):
+        from simulator.engine import BASE_DNF_RATE_PER_SECTOR
+
+        # rng.random() returns a value just above the base rate but below the
+        # damage-scaled rate -> healthy car survives, damaged car retires.
+        class FixedRng:
+            def __init__(self, value): self.value = value
+            def random(self): return self.value
+
+        engine = MonteCarloEngine(Coefficients.defaults())
+        engine.rng = FixedRng(BASE_DNF_RATE_PER_SECTOR * 2)  # 2x base
+
+        assert engine._check_dnf(self._car(engine_damage=0)) is False   # rate = base
+        assert engine._check_dnf(self._car(engine_damage=100)) is True  # rate = 4x base

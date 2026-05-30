@@ -33,6 +33,7 @@ MIN_LAPS_FOR_TWO_STOP = 15
 MIN_STINT_LAPS = 3              # Minimum first/middle stint length
 MIN_FINAL_STINT_LAPS = 3        # Min racing laps after the last pit
 LAP_DELTA_THRESHOLD_MS = 5000   # Exclude compounds slower by >5s per lap
+REPAIR_DAMAGE_THRESHOLD = 20    # Front-wing damage % at which repair stops are proposed
 
 
 def generate_candidates(
@@ -182,6 +183,17 @@ def generate_candidates(
         "candidate_generator: generated %d candidates (pre-truncate=%d, after cap=%d)",
         len(final), pre_truncate, len(final),
     )
+
+    # When the front wing is damaged, repair it at the first stop of each
+    # candidate (you fix the wing while already stopped). The existing candidates
+    # span early->late first-pit laps, so this yields repair-early through
+    # repair-late; the 0-stop option is the never-repair baseline.
+    if player.front_wing_damage >= REPAIR_DAMAGE_THRESHOLD:
+        for candidate in final:
+            if candidate.stops:
+                candidate.stops[0].repair_front_wing = True
+                candidate.label = f"{candidate.label} +FW"
+
     return final
 
 

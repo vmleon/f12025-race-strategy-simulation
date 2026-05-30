@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_serializer
 class PitStop(BaseModel):
     on_lap: int = Field(alias="onLap")
     new_compound: int = Field(alias="newCompound")
+    repair_front_wing: bool = Field(default=False, alias="repairFrontWing")
 
     model_config = {"populate_by_name": True}
 

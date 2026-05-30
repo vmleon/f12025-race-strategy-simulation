@@ -20,11 +20,21 @@ SECTORS_PER_LAP = 3
 
 PIT_STOP_TIME_MS = 22_000.0
 PIT_LANE_TRANSIT_TIME_MS = 20_000.0  # drive-through cost (no tyre change)
+REPAIR_TIME_MS = 10_000.0  # extra pit time for a front-wing change
 BASE_DNF_RATE_PER_SECTOR = 0.0001
+ENGINE_DNF_RATE_AT_100 = 4.0  # 100% engine damage -> 4x base per-sector DNF rate
 
 # Option-C constants: replace coefficients we no longer calibrate.
 NOISE_SIGMA_MS = 150.0          # per-sector pace noise (was: residual_variance)
 OVERTAKE_PROB_DEFAULT = 0.30    # was: overtake_probability per regime/sector
+
+# Car-damage pace model (hardcoded — calibration does not fit damage).
+# loss_per_lap = scale * (DAMAGE_LINEAR_MS * d + DAMAGE_QUAD_MS * d**2), d in [0,100].
+DAMAGE_LINEAR_MS = 50.0          # ms/lap per damage-%
+DAMAGE_QUAD_MS = 0.1             # ms/lap per damage-%²
+FRONT_WING_DAMAGE_SCALE = 1.0    # 100% -> 6.0 s/lap
+FLOOR_DAMAGE_SCALE = 0.8         # 100% -> 4.8 s/lap
+ENGINE_DAMAGE_SCALE = 0.5        # 100% -> 3.0 s/lap
 
 
 class MonteCarloEngine:
@@ -144,9 +154,9 @@ class MonteCarloEngine:
         self._assign_final_positions(cars)
 
     # ── sector time prediction (Option-C additive model) ────────────────
-    # Terms: per-car pace + tyre_deg + fuel_effect + Gaussian noise.
-    # Damage / dirty air / DRS were dropped — no calibrated knobs feed them
-    # under Option C and the cold-start defaults were generating noise.
+    # Terms: per-car pace + tyre_deg + fuel_effect + damage + Gaussian noise.
+    # Damage is a hardcoded penalty (calibration does not fit it); dirty air /
+    # DRS remain dropped — no calibrated knobs feed them under Option C.
 
     def _predict_sector_time(
         self,
@@ -168,9 +178,27 @@ class MonteCarloEngine:
         noise = self.rng.gauss(0, NOISE_SIGMA_MS)
         tyre_deg = self._tyre_degradation(car, regime)
         fuel_effect = self.coefficients.get("fuel_effect", regime, sector) * car.fuel_kg
+        damage = self._damage_penalty(car)
 
-        sector_time = base_sector_pace + tyre_deg + fuel_effect + noise
+        sector_time = base_sector_pace + tyre_deg + fuel_effect + damage + noise
         return max(sector_time, base_sector_pace * 0.9)
+
+    def _damage_penalty(self, car: CarState) -> float:
+        """Per-sector ms lost to car damage (hardcoded, not calibrated).
+
+        Each component: loss_per_lap = scale * (50*d + 0.1*d^2), d in [0,100].
+        Components stack; split evenly across the 3 sectors.
+        """
+        def _per_lap(damage: int, scale: float) -> float:
+            d = float(damage)
+            return scale * (DAMAGE_LINEAR_MS * d + DAMAGE_QUAD_MS * d * d)
+
+        total_per_lap = (
+            _per_lap(car.front_wing_damage, FRONT_WING_DAMAGE_SCALE)
+            + _per_lap(car.floor_damage, FLOOR_DAMAGE_SCALE)
+            + _per_lap(car.engine_damage, ENGINE_DAMAGE_SCALE)
+        )
+        return total_per_lap / SECTORS_PER_LAP
 
     def _tyre_degradation(self, car: CarState, regime: str) -> float:
         knob = {
@@ -206,7 +234,9 @@ class MonteCarloEngine:
         ):
             for stop in snapshot.pit_strategy.stops:
                 if stop.on_lap == lap:
-                    self._execute_pit_stop(car, stop.new_compound)
+                    self._execute_pit_stop(
+                        car, stop.new_compound, stop.repair_front_wing
+                    )
                     return
 
         # AI heuristic: pit at the game-imposed compound lifespan (the cliff).
@@ -215,7 +245,9 @@ class MonteCarloEngine:
                 new_compound = 18 if car.tyre_compound == 16 else 17
                 self._execute_pit_stop(car, new_compound)
 
-    def _execute_pit_stop(self, car: CarState, new_compound: int) -> None:
+    def _execute_pit_stop(
+        self, car: CarState, new_compound: int, repair_front_wing: bool = False
+    ) -> None:
         pit_mean = self.coefficients.get("pit_stop_time_loss", car.regime)
         if pit_mean <= 0:
             pit_mean = PIT_STOP_TIME_MS
@@ -225,6 +257,9 @@ class MonteCarloEngine:
             pit_time = max(pit_time, pit_mean * 0.5)
         else:
             pit_time = pit_mean
+        if repair_front_wing:
+            pit_time += REPAIR_TIME_MS
+            car.front_wing_damage = 0
         car.total_time_ms += pit_time
         car.tyre_compound = new_compound
         car.tyre_age_laps = 0
@@ -343,9 +378,10 @@ class MonteCarloEngine:
     # ── DNF ──────────────────────────────────────────────────────────────
 
     def _check_dnf(self, car: CarState) -> bool:
-        # Option C: flat per-sector DNF rate. Damage→DNF coupling required
-        # calibrated multipliers we don't fit; revisit when we have data.
-        return self.rng.random() < BASE_DNF_RATE_PER_SECTOR
+        # Flat per-sector base rate, scaled up by engine damage (reliability risk).
+        # The damage multiplier is hardcoded — calibration does not fit it.
+        mult = 1.0 + (ENGINE_DNF_RATE_AT_100 - 1.0) * (car.engine_damage / 100.0)
+        return self.rng.random() < BASE_DNF_RATE_PER_SECTOR * mult
 
     # ── final positions ──────────────────────────────────────────────────
 
