@@ -14,7 +14,7 @@ graph LR
     D --> E["Monte Carlo Simulation"]
 ```
 
-> **Implementation status (PoC).** The pipeline fits a reduced subset of the full lap-time model described in this chapter: a per-car **pace baseline**, **tyre degradation** (per compound, per sector), **fuel effect**, and **pit stop duration** — each fitted separately for PLAYER and AI. The remaining knobs catalogued below (car damage, dirty air, DRS, weather and temperature, tyre temperature, overtake probability, event probabilities) are the **design roadmap**, not yet fitted. The additive model and full knob catalogue describe where the system is headed; the [implemented fitting steps](#implementation-standalone-python-service) are at the end of this chapter.
+> **Implementation status (PoC).** The pipeline fits a reduced subset of the full lap-time model described in this chapter: a per-car **pace baseline**, **tyre degradation** (per compound, per sector), **fuel effect**, and **pit stop duration** — each fitted separately for PLAYER and AI. The remaining knobs catalogued below are **not fitted by calibration**: **car damage** is now applied by the simulator as a **hardcoded** penalty (with front-wing repair stops — see Knob 4), while dirty air, DRS, weather and temperature, tyre temperature, overtake probability, and event probabilities remain **design roadmap**. The additive model and full knob catalogue describe where the system is headed; the [implemented fitting steps](#implementation-standalone-python-service) are at the end of this chapter.
 
 ### Use Case: Calibration Pipeline
 
@@ -112,7 +112,7 @@ sector_time = base_pace
 
 Each term is a function with coefficients — those coefficients are the **knobs**. Calibration fits these knobs from historical data. The `residual_noise` term captures variance the model can't explain — this is what Monte Carlo actually samples from.
 
-> **What the PoC actually fits.** Of the terms above, only base pace, tyre degradation, and fuel effect are fitted today. The simulator evaluates `sector_time = pace_baseline / 3 + tyre_degradation + fuel_effect + residual_noise`, where `residual_noise ~ Gaussian(0, 150 ms)`. The damage, dirty-air, DRS, weather, and tyre-temperature terms are part of the designed model but are not yet calibrated or used by the engine.
+> **What the PoC actually fits.** Of the terms above, only base pace, tyre degradation, and fuel effect are fitted today. The simulator evaluates `sector_time = pace_baseline / 3 + tyre_degradation + fuel_effect + damage + residual_noise`, where `residual_noise ~ Gaussian(0, 150 ms)` and `damage` is a **hardcoded** per-component penalty (not calibrated — see Knob 4). The dirty-air, DRS, weather, and tyre-temperature terms remain part of the designed model but are neither calibrated nor used by the engine.
 
 **Additive vs multiplicative model:** The additive form is a simplification. In real physics (and likely in the game), aero effects like damage and dirty air apply as percentage-based downforce reductions, which would be better modeled multiplicatively. The additive model is the starting point — if residual analysis shows systematic patterns (e.g., damage effects scaling with base pace), switch to a log-linear or multiplicative form. See `09-CHALLENGES.md` (Challenge 1) for details.
 
@@ -126,12 +126,11 @@ The game's physics engine must run in real-time on consumer hardware, feel fun a
 
 ### What Must Be Fitted Empirically
 
-| Effect               | Real F1 Knowledge                                               | Game Reality                                                                       | Fitting Approach                                                                                                                            |
-| -------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Dirty air**        | ~35-50% downforce loss within 1 car length, reduced post-2022   | Unknown thresholds, magnitude, and track variation                                 | Compare sector times at different `deltaToCarInFront` vs clean-air baseline. Start with piecewise model: linear below threshold, zero above |
-| **DRS advantage**    | Near zero (Monaco) to ~0.8s (Monza), depends on straight length | Exists but exact gain per sector per track unknown                                 | Compare `drsAllowed=1` vs `drsAllowed=0` for same driver/conditions. Clean binary comparison                                                |
-| **Damage effects**   | Floor damage costs 1-2s/lap; front wing depends on element lost | Reported as 0-100% but mapping to time loss unknown, may not be linear             | Correlate sector times with damage percentages. Challenge: data scarcity                                                                    |
-| **Tyre temperature** | Narrow optimal window (~10-15°C), grip drops outside            | Temperature reported but unclear if game models grip as f(temp) or just decorative | Fit quadratic model (optimal window with drop-off). Drop knob if no sensitivity found                                                       |
+| Effect | Real F1 Knowledge | Game Reality | Fitting Approach |
+| --- | --- | --- | --- |
+| **Dirty air** | ~35-50% downforce loss within 1 car length, reduced post-2022 | Unknown thresholds, magnitude, and track variation | Compare sector times at different `deltaToCarInFront` vs clean-air baseline. Start with piecewise model: linear below threshold, zero above |
+| **DRS advantage** | Near zero (Monaco) to ~0.8s (Monza), depends on straight length | Exists but exact gain per sector per track unknown | Compare `drsAllowed=1` vs `drsAllowed=0` for same driver/conditions. Clean binary comparison |
+| **Tyre temperature** | Narrow optimal window (~10-15°C), grip drops outside | Temperature reported but unclear if game models grip as f(temp) or just decorative | Fit quadratic model (optimal window with drop-off). Drop knob if no sensitivity found |
 
 Assumptions from real F1 knowledge are starting hypotheses to test, not facts to encode. If residual analysis shows the game behaves differently from expectations, trust the data.
 
@@ -206,7 +205,9 @@ How carrying more fuel slows the car.
 - **Form:** Linear. Real F1 is ~0.03–0.04s/kg/lap ([Wright, 2001](10-REFERENCES.md#wright2001)); the game may use a similar constant per track, but this must be verified empirically
 - **Output:** `fuel_penalty_per_kg` per sector per track
 
-### 4. Car Damage Effects _(design roadmap — not yet fitted)_
+### 4. Car Damage Effects _(hardcoded in the simulator — not calibrated)_
+
+> **As built:** calibration does **not** fit damage (the data is too sparse). Instead the simulator (`simulator/engine.py`) applies a **hardcoded** per-component penalty: `loss_per_lap = scale × (50·d + 0.1·d²)` for `d` = damage %, with `scale` 1.0 / 0.8 / 0.5 for front wing / floor / engine (≈ 6.0 / 4.8 / 3.0 s/lap at 100%), split evenly across the three sectors and stacked. A pit stop can **repair the front wing** (resets it, +10 s), the strategy generator proposes repair stops once front-wing damage ≥ 20%, and engine damage raises the per-sector DNF rate (up to 4× at 100%). Calibrating damage from telemetry is **not pursued** — damage events are too sparse to fit reliably, and the hardcoded model is sufficient for the PoC. The table below records that considered-but-rejected fitting approach for reference.
 
 How each damage type affects pace. Multiple sub-knobs:
 
@@ -316,7 +317,6 @@ Adjusts knob values during a live race based on observed sector times from the c
   - **Base pace** — a driver may be faster/slower than historical average due to setup or AI difficulty changes. A few laps of current data can shift the estimate significantly
   - **Tyre degradation** — the current stint's actual deg rate may differ from historical average. Observable after ~5 laps of a stint
   - **Fuel effect** — less useful dynamically (fuel burn rate is near-constant)
-  - **Damage effects** — too sparse to update in-session (a car is either damaged or not)
 
 - **Risk:** Overfitting to noise in a small sample. A car might have a slow sector 1 due to traffic, not because their base pace changed. Dynamic adjustment must be conservative
 - **Implementation:** Not recommended for the initial POC. Add only if Tier 1 validation (predicted vs actual results from FinalClassification) shows systematic errors that a static model can't capture
@@ -354,15 +354,15 @@ Two sets of defaults are maintained — one for player, one for AI. Initially id
 | Tyre deg (hard)      | +0.02s/lap/sector          | Low        | Highly track-dependent; AI likely lower |
 | Fuel effect          | +0.01s/kg/sector           | Medium     | May be similar for player and AI        |
 | Pit stop time loss   | 22 000 ms                  | Low        | Mean pit-lane time loss per stop        |
-| Front wing damage    | +0.02s/percent/sector      | Low        | _Design only — not yet fitted_          |
-| Floor damage         | +0.04s/percent/sector      | Low        | _Design only — not yet fitted_          |
-| Engine damage        | +0.01s/percent/sector      | Low        | _Design only — not yet fitted_          |
+| Front wing damage    | +0.02s/percent/sector      | Low        | _Superseded — hardcoded in `engine.py`_ |
+| Floor damage         | +0.04s/percent/sector      | Low        | _Superseded — hardcoded in `engine.py`_ |
+| Engine damage        | +0.01s/percent/sector      | Low        | _Superseded — hardcoded in `engine.py`_ |
 | Dirty air (< 1s gap) | +0.3s/sector               | Low        | _Design only — not yet fitted_          |
 | DRS advantage        | -0.2s/sector (DRS sectors) | Medium     | _Design only — not yet fitted_          |
 | Overtake probability | 0.15 per sector boundary   | Low        | _Design only — not yet fitted_          |
 | Safety car rate      | 0.01 per lap               | Low        | _Design only — not yet fitted_          |
 
-The implemented cold-start defaults (`calibration/cold_start.py`) cover only the first five rows — the three tyre-degradation compounds, fuel effect, and pit stop time loss. The remaining rows are placeholders for design-roadmap knobs that have no cold-start value yet.
+The implemented cold-start defaults (`calibration/cold_start.py`) cover only the first five rows — the three tyre-degradation compounds, fuel effect, and pit stop time loss. The three **damage** rows are superseded by the simulator's hardcoded damage model (`simulator/engine.py`), not produced by calibration. The remaining rows are placeholders for design-roadmap knobs that have no value yet.
 
 These defaults should be stored alongside fitted values, with a flag indicating whether the knob is using the default or a fitted value. The simulation can weight its confidence accordingly — wider variance when using defaults, tighter when using fitted values with sufficient data.
 
@@ -370,20 +370,19 @@ These defaults should be stored alongside fitted values, with a flag indicating 
 
 The parameter space is large (10+ knobs, 20+ tracks, 3 compounds, player/AI split). Rough estimates for when fitted values become trustworthy:
 
-| Knob                  | Sessions per track needed  | Notes                                                          |
-| --------------------- | -------------------------- | -------------------------------------------------------------- |
-| Base pace             | ~3-5                       | Many data points per session (3 sectors × ~50 laps)            |
-| Tyre deg per compound | ~5-10 per compound         | Need enough stints on each compound                            |
-| Fuel effect           | ~5                         | Can use cross-stint data                                       |
-| Damage effects        | ~20+ with damage incidents | Sparse — most sessions have zero damage                        |
-| Dirty air             | ~5-10                      | Many data points per session from AI cars following each other |
-| DRS                   | ~3-5                       | Straightforward matched comparison                             |
-| Weather               | ~50+                       | Weather variation is rare unless configured                    |
-| Overtake probability  | ~10-20                     | Need enough position changes                                   |
+| Knob | Sessions per track needed | Notes |
+| --- | --- | --- |
+| Base pace | ~3-5 | Many data points per session (3 sectors × ~50 laps) |
+| Tyre deg per compound | ~5-10 per compound | Need enough stints on each compound |
+| Fuel effect | ~5 | Can use cross-stint data |
+| Dirty air | ~5-10 | Many data points per session from AI cars following each other |
+| DRS | ~3-5 | Straightforward matched comparison |
+| Weather | ~50+ | Weather variation is rare unless configured |
+| Overtake probability | ~10-20 | Need enough position changes |
 
 **Player coefficients are the bottleneck** — only 1 car per session contributes data. AI coefficients accumulate 19× faster.
 
-**For the POC:** Start with the most data-rich knobs (base pace, AI tyre deg, fuel effect) and leave sparse knobs (damage, weather) on defaults. Track data accumulation per knob and surface a "calibration readiness" indicator per knob.
+**For the POC:** Start with the most data-rich knobs (base pace, AI tyre deg, fuel effect) and leave sparse knobs (weather) on defaults. Track data accumulation per knob and surface a "calibration readiness" indicator per knob.
 
 ## Fitting Methodology
 

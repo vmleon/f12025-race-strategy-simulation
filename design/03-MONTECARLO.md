@@ -28,13 +28,14 @@ Each iteration simulates the remainder of the race from the current state, secto
 For each remaining lap:
   For each sector (0, 1, 2):
     For each car:
-      sector_time = base_pace + tyre_deg + fuel_effect + residual_noise
-      where residual_noise = gauss(0, 150ms)  # ([Rubinstein & Kroese, 2017](10-REFERENCES.md#rubinstein2017))
+      sector_time = base_pace + tyre_deg + fuel_effect + damage + residual_noise
+      where damage = hardcoded per-component penalty (front wing / floor / engine)
+            residual_noise = gauss(0, 150ms)  # ([Rubinstein & Kroese, 2017](10-REFERENCES.md#rubinstein2017))
     Resolve interactions (overtakes, position changes)
     Update car states (tyre_age++, fuel--, DRS eligibility, gaps)
 ```
 
-Every sector step draws a fresh residual noise value per car. This noise represents the unexplained variance from calibration — the gap between the model's prediction and observed sector times. Stochastic events (mechanical DNF, overtake success/failure, red flags, and the end of an in-progress safety-car period) are also sampled independently each iteration. The engine does not randomly _deploy_ safety cars — it honours the safety-car flag from the current race snapshot.
+Every sector step draws a fresh residual noise value per car. This noise represents the unexplained variance from calibration — the gap between the model's prediction and observed sector times. Stochastic events (mechanical DNF, overtake success/failure, red flags, and the end of an in-progress safety-car period) are also sampled independently each iteration; the mechanical-DNF rate is raised by engine damage (up to 4× at 100%). The engine does not randomly _deploy_ safety cars — it honours the safety-car flag from the current race snapshot.
 
 At the end of one iteration, all remaining laps have been simulated and a complete predicted finishing order and race times exist for all cars.
 
@@ -319,7 +320,7 @@ Captured once at session start and re-captured whenever `pitStatus` changes for 
 
 The simulation cannot treat each car independently. Key interactions that affect lap times:
 
-> **Implementation status (PoC).** Of the interactions below, the engine currently models **overtake resolution** (a flat 30% × sigmoid(pace delta) default — overtake probability is not yet calibrated) and **penalties**. **Dirty air**, **DRS advantage**, and **car-damage pace effects** are **design roadmap**: the telemetry captures the underlying fields, but the simulator has no calibrated term for them yet (see `05-CALIBRATION.md` → Implementation Status). The subsections below describe the intended modelling, not the current engine.
+> **Implementation status (PoC).** Of the interactions below, the engine currently models **overtake resolution** (a flat 30% × sigmoid(pace delta) default — overtake probability is not yet calibrated), **penalties**, and a **hardcoded car-damage penalty** (per-component pace loss, front-wing repair stops, engine-damage DNF risk — see `05-CALIBRATION.md` → Knob 4). **Dirty air** and **DRS advantage** remain **design roadmap**: the telemetry captures the underlying fields, but the simulator has no term for them yet. The dirty-air and DRS subsections below describe intended modelling, not the current engine.
 
 ### Dirty Air
 
@@ -350,7 +351,9 @@ A car defending position uses more fuel, takes sub-optimal lines, and wears tyre
 
 Car damage from collisions, kerb strikes, or component wear directly affects pace and can trigger strategic decisions (pit for repairs, retire, or continue with reduced performance). We capture damage levels for all aero surfaces (front wings, rear wing, floor, diffuser, sidepod) and mechanical components (engine, gearbox).
 
-**Pace impact:** Aero damage (especially floor and front wing) reduces downforce, increasing sector times primarily in high-speed corners. Engine damage reduces straight-line speed. The simulation derives damage-to-pace relationships from historical data: comparing sector times at different damage levels for the same driver/compound/tyre age. Floor damage is particularly significant with 2022+ ground-effect cars — even small floor damage can cost substantial lap time.
+> **As built:** the engine models front-wing, floor, and engine damage with a **hardcoded** per-component pace penalty (`loss_per_lap = scale × (50·d + 0.1·d²)`, stacked, split across the 3 sectors — see `05-CALIBRATION.md` → Knob 4). The **Pit for repairs** and **Retirement probability** items below are implemented; **Compound effect with tyres** is not. Damage-to-pace is currently a fixed model, not derived from historical data.
+
+**Pace impact:** Aero damage (especially floor and front wing) reduces downforce, increasing sector times primarily in high-speed corners. Engine damage reduces straight-line speed. The hardcoded model scales pace loss with damage percentage per component (front wing and floor weighted most heavily). Floor damage is particularly significant with 2022+ ground-effect cars — even small floor damage can cost substantial lap time. (Deriving damage-to-pace from historical data was considered but not pursued — damage events are too sparse to calibrate.)
 
 **Strategy decisions the simulation must model:**
 
