@@ -1,0 +1,54 @@
+flowchart LR
+%% Modelo de datos del sistema. Once tablas principales agrupadas por
+%% papel funcional. La presentación usa `flowchart` para que los grupos
+%% se rendericen como cajas etiquetadas (lo que `erDiagram` no permite);
+%% las claves primarias se anotan con [PK] y las foráneas con [FK].
+%% Renderizado:
+%%   npx -y @mermaid-js/mermaid-cli -i data_model.mmd -o data_model.png \
+%%     -b transparent -w 1800 --scale 2
+    classDef group fill:#f7f7f7,stroke:#999,color:#222
+    classDef tbl fill:#ffffff,stroke:#333,color:#111
+    classDef newtbl fill:#fff5e6,stroke:#cc7a00,color:#111
+
+    subgraph S1["Sesiones y participantes"]
+        direction TB
+        sessions["<b>sessions</b><br/>session_uid [PK]<br/>track_id, session_type<br/>total_laps, ai_difficulty"]
+        participants["<b>participants</b><br/>(session_uid, car_index) [PK]<br/>driver_name, team_id<br/>ai_controlled"]
+        drivers["<b>drivers</b><br/>driver_id [PK]<br/>name, email"]
+        driver_sessions["<b>driver_sessions</b><br/>(driver_id, session_uid) [PK]<br/>car_index [FK]"]
+    end
+
+    subgraph S2["Telemetría capturada"]
+        direction TB
+        sector_snapshots["<b>sector_snapshots</b><br/>(session_uid, car_index,<br/>lap_number, sector_number) [PK]<br/>sector_time_ms, lap_time_ms<br/>tyre_compound_actual, tyre_age_laps<br/>fuel_in_tank_kg, weather, track_temp<br/>damage·temp·brake·ERS·DRS<br/>safety_car_status, outlier"]
+        session_events["<b>session_events</b><br/>event_id [PK]<br/>session_uid [FK]<br/>frame_identifier, event_code<br/>car_index, lap_number"]
+        tyre_sets["<b>tyre_sets</b><br/>(session_uid, car_index,<br/>set_index) [PK]<br/>tyre_compound_actual<br/>wear, life_span, fitted"]
+        final_classifications["<b>final_classifications</b><br/>(session_uid, car_index) [PK]<br/>position, points<br/>best_lap_time_ms<br/>num_tyre_stints, stints 1..8"]
+    end
+
+    subgraph S3["Calibración"]
+        direction TB
+        calibration_coefficients["<b>calibration_coefficients</b><br/>coefficient_id [PK]<br/>track_id, knob_name<br/>calibration_regime (PLAYER/AI)<br/>sector_number, value, score<br/>trained_at"]
+    end
+
+    subgraph S4["Histórico de vueltas (nuevo)"]
+        direction TB
+        lap_pace_observations["<b>lap_pace_observations</b><br/>id [PK]<br/>track_id, car_index, compound<br/>lap_time_ms, fuel_kg<br/>weather, track_temp_c<br/>recorded_at"]
+        lap_pace_baselines["<b>lap_pace_baselines</b><br/>(track_id, compound, regime,<br/>fuel_bucket_kg, weather,<br/>track_temp_bucket_c) [PK]<br/>mean_lap_ms, stddev_lap_ms<br/>sample_count, last_fitted_at"]
+    end
+
+    sessions ---|"1..N"| participants
+    sessions ---|"1..N"| sector_snapshots
+    sessions ---|"1..N"| session_events
+    sessions ---|"1..N"| tyre_sets
+    sessions ---|"1..N"| final_classifications
+    participants ---|"1..N"| sector_snapshots
+    participants ---|"1..N"| tyre_sets
+    participants ---|"1..1"| final_classifications
+    participants ---|"1..N"| driver_sessions
+    drivers ---|"1..N"| driver_sessions
+    lap_pace_observations -.->|"agrega"| lap_pace_baselines
+
+    class S1,S2,S3,S4 group
+    class sessions,participants,drivers,driver_sessions,sector_snapshots,session_events,tyre_sets,final_classifications,calibration_coefficients tbl
+    class lap_pace_observations,lap_pace_baselines newtbl
