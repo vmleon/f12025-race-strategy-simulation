@@ -21,7 +21,7 @@ Six components work together:
 | **Backend**     | Spring Boot 3.5.3 | REST + WebSocket API, orchestrates calibration and simulation triggers via TxEventQ                                                           |
 | **Calibration** | Python 3.12+      | Service worker that fits a per-car pace baseline plus 3 model knobs (tyre degradation, fuel effect, pit stop time loss) from accumulated data |
 | **Simulator**   | Python / FastAPI  | Monte Carlo engine: 1K-10K iterations at per-sector granularity, produces position probability distributions                                  |
-| **Portal**      | Angular 21        | Live race dashboard, strategy comparison, calibration status, session browser                                                                 |
+| **Portal**      | Angular 21        | Live Race dashboard, plus a System (WIP) placeholder for future observability                                                                 |
 | **iOS Client**  | SwiftUI           | Receives race engineer messages via WebSocket, speaks them aloud with priority-based TTS                                                      |
 
 ```mermaid

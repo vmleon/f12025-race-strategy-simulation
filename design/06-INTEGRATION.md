@@ -71,7 +71,6 @@ sequenceDiagram
         Telemetry->>Backend: TCP {"type":"sessionStarted", sessionUid, trackId, ersAssist, drsAssist}
         Backend->>Portal: WebSocket /ws/race (type: "sessionStarted")
         Backend->>iOS: WebSocket /ws/race-engineer (type: "sessionStarted")
-        Note over Backend: Auto-assign driver<br/>if only one exists in DB
     else Disruptive event
         Telemetry->>Backend: TCP {"type":"event", event:"SCAR"|"RTMT"|...}
         Backend->>Portal: WebSocket (type: "event")
@@ -97,7 +96,7 @@ Live race state and session lifecycle events flow from telemetry to backend over
 - **Direction:** Telemetry → Backend (telemetry connects to backend's TCP server port)
 - **Data carried:**
   - **Race state** (~1Hz): current lap, positions, gaps, tyre compound/age, fuel, pit status, damage levels, weather, `lastLapTimeMs` (last lap time per car, used by the portal for gap calculations) — enough for the portal to render a live dashboard without querying the DB
-  - **Session lifecycle events:** `sessionStarted`, `sessionEnded`, `safetyCarDeployed`, `retiredCar`, etc. — backend uses these to update its in-memory session state and notify the portal via WebSocket. `sessionStarted` includes session assist settings (`ersAssist`, `drsAssist`) parsed from the UDP session packet, used by the race engineer to suppress messages for game-managed assists. On `sessionStarted`, the backend auto-assigns the session to a driver if only one driver exists in the `drivers` table (idempotent via duplicate key check)
+  - **Session lifecycle events:** `sessionStarted`, `sessionEnded`, `safetyCarDeployed`, `retiredCar`, etc. — backend uses these to update its in-memory session state and notify the portal via WebSocket. `sessionStarted` includes session assist settings (`ersAssist`, `drsAssist`) parsed from the UDP session packet, used by the race engineer to suppress messages for game-managed assists
 - **Format:** Each message is a single JSON object on one line. A `type` field discriminates message kinds (e.g. `{"type":"raceState","data":{...}}`)
 - **Reconnection:** Exponential backoff 3s → 6s → 12s → 24s → cap 30s, resets on success
 - **Backend recovery on restart:** Queries DB for active session state (catch-up), then resumes from TCP stream
@@ -150,42 +149,26 @@ Two separate WebSocket endpoints serve different clients:
 - **Protocol:** HTTP REST (JSON)
 - **Direction:** Portal → Backend → Portal (request/response)
 - **Endpoints (planned):**
-  - `GET /api/sessions` — list sessions (includes assigned driver name if linked via `driver_sessions`)
-  - `GET /api/sessions/{uid}` — session detail with participants (includes assigned driver id and name)
-  - `GET /api/sessions/{uid}/sectors` — sector snapshot data for charts
-  - `GET /api/calibration/{trackId}` — calibration coefficient status
+  - `GET /api/sessions/active` — currently live session(s) from in-memory state
+  - `GET /api/sessions/active/state` — latest race state for the active session
   - `POST /api/simulation/run` — trigger a simulation run
   - `GET /api/simulation/{id}/results` — fetch simulation results
-  - `GET /api/driver-ratings` — driver skill ratings (for outlier detection cold start)
-  - `PUT /api/driver-ratings/{name}` — update a driver's skill rating
+  - `GET /api/health` — backend liveness check
 
-### Use Case: Session History & REST API
+### Use Case: Live State & REST API
 
 ```mermaid
 sequenceDiagram
     participant Portal as Portal (Angular)
     participant Backend as Backend (Spring Boot)
-    participant DB as Oracle DB
 
-    Portal->>Backend: GET /api/sessions?trackId=X&limit=20
-    Backend->>DB: SELECT sessions<br/>JOIN driver_sessions, drivers
-    DB-->>Backend: Session list + driver names
-    Backend-->>Portal: JSON [{sessionUid, trackId, driverName, ...}]
+    Portal->>Backend: GET /api/sessions/active
+    Backend->>Backend: SessionStateHolder (in-memory)
+    Backend-->>Portal: JSON [{sessionUid, trackId, live, ...}]
 
-    Portal->>Backend: GET /api/sessions/{uid}
-    Backend->>DB: SELECT session + participants<br/>JOIN driver_sessions
-    DB-->>Backend: Session detail + driver info
-    Backend-->>Portal: JSON {session, participants, driverId, driverName}
-
-    Portal->>Backend: GET /api/sessions/{uid}/sectors?carIndex=0
-    Backend->>DB: SELECT sector_snapshots<br/>WHERE session_uid=? AND car_index=?
-    DB-->>Backend: Sector-level telemetry rows
-    Backend-->>Portal: JSON [{lap, sector, sectorTimeMs, tyre, fuel, ...}]
-
-    Portal->>Backend: GET /api/calibration/status?trackId=X
-    Backend->>DB: SELECT calibration_coefficients<br/>WHERE track_id=?
-    DB-->>Backend: Fitted coefficients per knob/regime
-    Backend-->>Portal: JSON [{knobName, regime, value, confidence, ...}]
+    Portal->>Backend: GET /api/sessions/active/state
+    Backend->>Backend: Latest race state for active session
+    Backend-->>Portal: JSON {cars, weather, lap, ...}
 
     Portal->>Backend: POST /api/simulation/trigger
     Backend->>Backend: SimulationOrchestrator.triggerNow()
@@ -198,7 +181,6 @@ Calibration is a batch process that refits model coefficients from accumulated h
 
 - **Trigger:** Automatic, fired when a session ends. `SessionStateHolder` enqueues to `CALIBRATION_REQUEST` via `QueueService`
 - **Flow:** `sessionEnded` → `CALIBRATION_REQUEST` enqueued → standalone Calibration Service (`python -m calibration service`) dequeues → runs calibration pipeline in-process → reads `sector_snapshots` from Oracle → fits coefficients → writes to `calibration_coefficients` table → WebSocket broadcast
-- **Manual fallback:** `POST /api/calibration/run?trackId={id}` → enqueues to `CALIBRATION_REQUEST` → returns `202 Accepted`
 - **Session lifecycle:** `TelemetryTcpServer` also enqueues session start/end events to `SESSION_LIFECYCLE` (multi-consumer queue) for future consumers
 - **Scope:** Recalibrates all knobs for the track of the just-completed session, both PLAYER and AI regimes
 - **Duration:** Seconds for early data volumes; the async task prevents blocking the main thread
@@ -317,7 +299,6 @@ The portal's Race view is a modular Angular component tree that renders live rac
 ```mermaid
 graph TD
     Race["RaceComponent"]
-    Race --> Selector["Session Selector"]
     Race --> Circuit["CircuitMapComponent"]
     Race --> Gap["GapIndicatorComponent"]
     Race --> Penalties["PenaltiesPanelComponent"]
@@ -325,15 +306,12 @@ graph TD
     Race --> Tyres["TyresPanelComponent"]
     Race --> Weather["WeatherPanelComponent"]
     Race --> Strategy["StrategyWidgetComponent"]
-    Strategy -.-> StrategyView["StrategyComponent (full leaderboard)"]
 ```
 
 - **Reactivity:** Angular signals ([Google, 2025](10-REFERENCES.md#angular-signals)) (`signal()`, `computed()`) for granular state tracking. The race service exposes signals that child components bind to directly — no manual subscription management.
-- **Session selector:** Queries `GET /api/sessions` for active sessions. Selecting a session switches the WebSocket subscription and reloads all child components with new state.
 - **Circuit map:** SVG-based rendering with a fixed viewBox. Car positions are mapped to track coordinates using sector progress. Renders DRS zones, yellow flag sectors, pit entry/exit. Team colours from a static lookup table.
 - **Gap indicator:** Displays sector-by-sector time deltas (in milliseconds) between the player car and the car immediately ahead and behind. Sector 3 time is derived from `lastLapTimeMs` on lap transitions.
-- **Strategy widget:** Compact sidebar card showing the top 3 ranked strategies from the latest strategy evaluation — expected finishing position and podium probability for each. Shows the evaluation lap and a stale indicator while a new evaluation is in progress. Links to the full Strategy view.
-- **Strategy view (full leaderboard):** Separate routed component (`StrategyComponent`) displaying all evaluated strategies in a ranked table with comprehensive metrics: mean position, 95% CI, DNF probability, points-finish probability, and expected championship points.
+- **Strategy widget:** Compact sidebar card showing the top 3 ranked strategies from the latest strategy evaluation — expected finishing position and podium probability for each. Shows the evaluation lap and a stale indicator while a new evaluation is in progress.
 - **Info panels:** Each panel subscribes to a slice of the race state (penalties, damage, tyres, weather) and renders a focused view. Standalone components with no cross-dependencies.
 
 ## 10. iOS Voice Client (SwiftUI)

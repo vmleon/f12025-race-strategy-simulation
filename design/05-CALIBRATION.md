@@ -25,21 +25,14 @@ sequenceDiagram
     participant Q as CALIBRATION_REQUEST queue
     participant Service as Calibration Service<br/>(python -m calibration service)
     participant DB as Oracle DB
-    participant Portal as Portal / iOS
 
-    alt Automatic trigger
-        Telemetry->>Backend: TCP {"type":"sessionEnded"}
-        Backend->>Q: Enqueue {trackId, sessionUid}
-    else Manual trigger
-        Portal->>Backend: POST /api/calibration/run?trackId=X
-        Backend->>Q: Enqueue {trackId, trigger:"manual"}
-        Backend-->>Portal: 202 Accepted
-    end
+    Telemetry->>Backend: TCP {"type":"sessionEnded"}
+    Backend->>Q: Enqueue {trackId, sessionUid}
 
     Service->>Q: Dequeue calibration request
     activate Service
 
-    Service->>DB: SELECT sector_snapshots<br/>+ participants + driver_ratings<br/>WHERE track_id = ?
+    Service->>DB: SELECT sector_snapshots<br/>+ participants<br/>WHERE track_id = ?
     DB-->>Service: Historical telemetry data
 
     Note over Service: Step 1: Outlier detection<br/>(per-driver IQR analysis)
@@ -126,11 +119,11 @@ The game's physics engine must run in real-time on consumer hardware, feel fun a
 
 ### What Must Be Fitted Empirically
 
-| Effect | Real F1 Knowledge | Game Reality | Fitting Approach |
-| --- | --- | --- | --- |
-| **Dirty air** | ~35-50% downforce loss within 1 car length, reduced post-2022 | Unknown thresholds, magnitude, and track variation | Compare sector times at different `deltaToCarInFront` vs clean-air baseline. Start with piecewise model: linear below threshold, zero above |
-| **DRS advantage** | Near zero (Monaco) to ~0.8s (Monza), depends on straight length | Exists but exact gain per sector per track unknown | Compare `drsAllowed=1` vs `drsAllowed=0` for same driver/conditions. Clean binary comparison |
-| **Tyre temperature** | Narrow optimal window (~10-15°C), grip drops outside | Temperature reported but unclear if game models grip as f(temp) or just decorative | Fit quadratic model (optimal window with drop-off). Drop knob if no sensitivity found |
+| Effect               | Real F1 Knowledge                                               | Game Reality                                                                       | Fitting Approach                                                                                                                            |
+| -------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Dirty air**        | ~35-50% downforce loss within 1 car length, reduced post-2022   | Unknown thresholds, magnitude, and track variation                                 | Compare sector times at different `deltaToCarInFront` vs clean-air baseline. Start with piecewise model: linear below threshold, zero above |
+| **DRS advantage**    | Near zero (Monaco) to ~0.8s (Monza), depends on straight length | Exists but exact gain per sector per track unknown                                 | Compare `drsAllowed=1` vs `drsAllowed=0` for same driver/conditions. Clean binary comparison                                                |
+| **Tyre temperature** | Narrow optimal window (~10-15°C), grip drops outside            | Temperature reported but unclear if game models grip as f(temp) or just decorative | Fit quadratic model (optimal window with drop-off). Drop knob if no sensitivity found                                                       |
 
 Assumptions from real F1 knowledge are starting hypotheses to test, not facts to encode. If residual analysis shows the game behaves differently from expectations, trust the data.
 
@@ -370,15 +363,15 @@ These defaults should be stored alongside fitted values, with a flag indicating 
 
 The parameter space is large (10+ knobs, 20+ tracks, 3 compounds, player/AI split). Rough estimates for when fitted values become trustworthy:
 
-| Knob | Sessions per track needed | Notes |
-| --- | --- | --- |
-| Base pace | ~3-5 | Many data points per session (3 sectors × ~50 laps) |
-| Tyre deg per compound | ~5-10 per compound | Need enough stints on each compound |
-| Fuel effect | ~5 | Can use cross-stint data |
-| Dirty air | ~5-10 | Many data points per session from AI cars following each other |
-| DRS | ~3-5 | Straightforward matched comparison |
-| Weather | ~50+ | Weather variation is rare unless configured |
-| Overtake probability | ~10-20 | Need enough position changes |
+| Knob                  | Sessions per track needed | Notes                                                          |
+| --------------------- | ------------------------- | -------------------------------------------------------------- |
+| Base pace             | ~3-5                      | Many data points per session (3 sectors × ~50 laps)            |
+| Tyre deg per compound | ~5-10 per compound        | Need enough stints on each compound                            |
+| Fuel effect           | ~5                        | Can use cross-stint data                                       |
+| Dirty air             | ~5-10                     | Many data points per session from AI cars following each other |
+| DRS                   | ~3-5                      | Straightforward matched comparison                             |
+| Weather               | ~50+                      | Weather variation is rare unless configured                    |
+| Overtake probability  | ~10-20                    | Need enough position changes                                   |
 
 **Player coefficients are the bottleneck** — only 1 car per session contributes data. AI coefficients accumulate 19× faster.
 
@@ -420,7 +413,7 @@ The outlier detection runs as **Step 0 of Tier 1 batch calibration**, after hard
 1. **Group** the hard-filtered working set by `(driver_name, track_id, sector_number, tyre_compound_actual)`
 2. **Check sample size** per group:
    - N ≥ 10 → IQR path (step 3)
-   - N < 10 → cold-start fallback (step 4)
+   - N < 10 → skipped (no outlier flagging — without enough samples there is no reliable basis to judge an outlier)
 3. **IQR computation** (sufficient data):
    - Compute Q1 (25th percentile) and Q3 (75th percentile) of `sector_time_ms`
    - IQR = Q3 − Q1
@@ -429,16 +422,7 @@ The outlier detection runs as **Step 0 of Tier 1 batch calibration**, after hard
    - Lower fence = Q1 − multiplier × IQR
    - Upper fence = Q3 + multiplier × IQR
    - Flag `outlier = 1` for any `sector_time_ms` outside [lower fence, upper fence]
-4. **Cold-start fallback** (insufficient data) — uses the driver skill rating as a prior:
-   - Look up `skill_rating` from the `driver_ratings` table (track-specific first, then global fallback, then default 50)
-   - Compute `reference_median` = median `sector_time_ms` across **all drivers** for the same (track, sector, compound) — a cross-driver reference point
-   - `tolerance_ms = 1500 × (110 − skill_rating) / 60`
-     - Rating 95 → 375ms tolerance (tight — consistent driver)
-     - Rating 80 → 750ms tolerance
-     - Rating 50 → 1500ms tolerance (wide — rarely flags anything)
-   - Flag `outlier = 1` if `sector_time_ms > reference_median + tolerance_ms`
-   - Once the driver accumulates 10+ sectors in the group, the IQR method takes over completely (no blending)
-5. **Batch UPDATE** — idempotent update of `sector_snapshots.outlier` for all rows in the working set
+4. **Batch UPDATE** — idempotent update of `sector_snapshots.outlier` for all rows in the working set
 
 #### AI vs Player Thresholds
 
@@ -446,21 +430,9 @@ AI cars use a simplified physics model and are highly deterministic — their se
 
 Human players are inherently more variable. A 2.0× multiplier avoids false positives from normal lap-to-lap variation while still catching genuine mistakes. Both multipliers are hardcoded for the POC.
 
-#### Driver Skill Rating (Cold-Start Prior)
-
-A per-driver numeric rating (0–100) stored in the `driver_ratings` table (see `04-DATABASE_DESIGN.md`). The rating is set through the portal and serves as a prior for outlier detection before enough data exists to compute a meaningful IQR.
-
-- **100** = alien-level consistency (very tight expected range)
-- **50** = average driver (wide expected range, default when no rating exists)
-- **0** = wildly inconsistent (very wide expected range)
-
-As real per-driver data accumulates and the sample size threshold (N ≥ 10) is met, the statistical IQR replaces the skill-rating-based estimate entirely. No weighted transition — a clean cutover.
-
-The skill rating also connects to base pace calibration (Knob 1): a driver's rating provides context for interpreting their sector times during the cold-start phase of base pace fitting.
-
 #### Minimum Sample Size
 
-IQR requires **N ≥ 10** sectors per group before it is computed. Below ~8–10 data points, Q1 and Q3 estimates become unstable. The threshold of 10 is a pragmatic minimum for the POC.
+IQR requires **N ≥ 10** sectors per group before it is computed. Below ~8–10 data points, Q1 and Q3 estimates become unstable. Groups below the threshold are left unflagged. The threshold of 10 is a pragmatic minimum for the POC.
 
 ### Variable Isolation
 
@@ -490,12 +462,11 @@ classDiagram
         NUMBER track_id
         VARCHAR knob_name
         VARCHAR calibration_regime
+        NUMBER sector_number
+        VARCHAR method_name
         FLOAT value
-        FLOAT confidence
         NUMBER is_default
-        TIMESTAMP last_updated
-        NUMBER session_count
-        VARCHAR game_settings_hash
+        TIMESTAMP trained_at
     }
 ```
 
@@ -531,7 +502,3 @@ All steps filter by `ai_controlled` to produce separate PLAYER and AI coefficien
 ### Pit Stop Grouping
 
 Pit stop duration is derived from sector snapshots by stateful parsing of `pit_status` flags. The pipeline reconstructs individual pit stop events by detecting transitions through pit entry → pit lane → pit exit across consecutive sectors. The time loss is computed as the difference between the in-lap/out-lap sector times and the driver's baseline sector times for the same conditions.
-
-### Settings Hash Fingerprinting
-
-Each coefficient is stored with a `game_settings_hash` — a hash of `(ai_difficulty, car_damage_setting, car_damage_rate, low_fuel_mode)` from the session metadata. This fingerprints the game configuration under which the data was collected. Coefficients are only used for simulation when the current session's settings match the stored hash, preventing model contamination across different difficulty/damage configurations.

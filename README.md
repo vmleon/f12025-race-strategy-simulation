@@ -8,7 +8,7 @@ A proof-of-concept system that ingests real-time telemetry from the F1 2025 game
 graph LR
     Game["F1 2025 Game<br/><i>UDP @ 20777</i>"]
     Ingest["Telemetry Server<br/><i>Plain Java 23</i>"]
-    DB[("Oracle AI DB 26ai<br/><i>8 tables + TxEventQ</i>")]
+    DB[("Oracle AI DB 26ai<br/><i>9 tables + TxEventQ</i>")]
     Backend["Backend API<br/><i>Spring Boot 3.5.3</i>"]
     Calibration["Calibration<br/><i>Python service worker</i>"]
     Simulator["Simulator<br/><i>FastAPI, port 8081</i>"]
@@ -36,7 +36,7 @@ The system operates as five connected pipelines:
 
 **3. Simulation** — During a race the backend enqueues simulation requests via **TxEventQ**. The simulator service (`simulator/`, FastAPI on port 8081) runs a Monte Carlo engine (1,000–10,000 iterations with early stopping) that loads the fitted coefficients and current race state, then simulates at per-sector granularity. Each iteration samples from the calibrated distributions to project sector times, overtakes, and pit stop outcomes, and applies a **hardcoded car-damage penalty** (not calibrated) — a damaged car runs slower, can be advised to pit for a front-wing repair, and engine damage raises its retirement risk. The output is a probability distribution of finishing positions for each car. Simulations auto-trigger on lap completions, pit stops, safety car deployments, and disruptive events (with 3-second debounce).
 
-**4. Presentation** — The backend broadcasts simulation results, calibration status, and live race state to the portal via WebSocket. The portal provides five views: live race table, strategy comparison, calibration dashboard, session browser, and drivers overview.
+**4. Presentation** — The backend broadcasts simulation results, calibration status, and live race state to the portal via WebSocket. The portal provides two views: a live Race dashboard (race table, tyres, weather, damage, penalties, and an inline strategy widget) and a System (WIP) placeholder for future observability.
 
 **5. Race Engineer** — The iOS client connects to the backend via WebSocket, receives race engineer messages (strategy advice, warnings, status updates), and speaks them aloud using text-to-speech — acting as a real-time voice assistant for the driver.
 
@@ -55,7 +55,6 @@ graph TD
     subgraph Database
         SS[("sector_snapshots<br/><i>~60 cols, denormalized</i>")]
         CC[("calibration_coefficients")]
-        DR[("driver_ratings")]
         Aux[("sessions · participants<br/>events · tyre_sets<br/>final_classifications")]
         Q[("TxEventQ<br/><i>SIMULATION_REQUEST<br/>CALIBRATION_REQUEST<br/>SESSION_LIFECYCLE</i>")]
     end
@@ -73,7 +72,7 @@ graph TD
     subgraph Presentation
         WS["WebSocket<br/><i>/ws/race</i>"]
         REST["REST API<br/><i>/api/*</i>"]
-        Views["Portal Views<br/><i>Race · Strategy · Calibration<br/>Sessions · Drivers</i>"]
+        Views["Portal Views<br/><i>Race · System (WIP)</i>"]
         iOS["iOS Client<br/><i>WebSocket + TTS</i>"]
         WS --> Views
         WS --> iOS
@@ -101,8 +100,8 @@ graph TD
 | `backend/`     | REST/WebSocket API: bridges portal and clients with database, orchestrates calibration and simulation triggers via TxEventQ                            | Spring Boot 3.5.3, Java 23              |
 | `calibration/` | Always-on worker: consumes `CALIBRATION_REQUEST` from TxEventQ, runs outlier detection + sklearn/numpy fitting of physics model coefficients per track | Python 3.12+, sklearn, numpy            |
 | `simulator/`   | Monte Carlo race strategy simulation service, consumes TxEventQ requests                                                                               | Python 3.12+, FastAPI                   |
-| `portal/`      | Web UI: live race table, strategy comparison, calibration dashboard, session browser, drivers overview                                                 | Angular 21                              |
-| `database/`    | Oracle AI Database 26ai schema (8 tables + TxEventQ queues), Liquibase migrations                                                                      | Liquibase, SQL                          |
+| `portal/`      | Web UI: live Race dashboard (table, tyres, weather, damage, penalties, strategy widget) + System (WIP) placeholder                                     | Angular 21                              |
+| `database/`    | Oracle AI Database 26ai schema (9 tables + TxEventQ queues), Liquibase migrations                                                                      | Liquibase, SQL                          |
 | `client/`      | iOS app: real-time race engineer voice assistant for the driver                                                                                        | SwiftUI, WebSocket, AVSpeechSynthesizer |
 
 ### Key Design Choices

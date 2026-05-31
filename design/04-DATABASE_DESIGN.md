@@ -2,7 +2,7 @@
 
 ## Overview
 
-Nine tables: six mapping 1:1 to the data categories defined in `03-MONTECARLO.md` (session metadata, participants, per-sector snapshots, events, tyre sets inventory, final classifications), a `calibration_coefficients` table for fitted model values from `05-CALIBRATION.md`, and `drivers` + `driver_sessions` for driver identity management. Stints are derivable from sector data. Weather transitions are visible in per-sector snapshots.
+Seven tables: six mapping 1:1 to the data categories defined in `03-MONTECARLO.md` (session metadata, participants, per-sector snapshots, events, tyre sets inventory, final classifications), and a `calibration_coefficients` table for fitted model values from `05-CALIBRATION.md`. Stints are derivable from sector data. Weather transitions are visible in per-sector snapshots.
 
 In addition to tables, the schema includes six Oracle TxEventQ queues for asynchronous inter-component messaging: `SESSION_LIFECYCLE` (multi-consumer), `CALIBRATION_REQUEST`, `SIMULATION_REQUEST`, `SIMULATION_RESULT`, `STRATEGY_REQUEST`, and `STRATEGY_RESULT` (all single-consumer). Queue definitions are managed via Liquibase (`005-txeventq.yaml`). See `06-INTEGRATION.md` for queue usage and data flow.
 
@@ -52,19 +52,6 @@ Tempting — the most common analytical pattern is "all data for track X." But `
 The calibration pipeline applies hard filters (invalid laps, pit laps, safety car, lap 1) but these miss **performance anomalies** — lock-ups, spins, and traffic incidents that produce valid but statistically unusual sector times. An `outlier NUMBER(1) DEFAULT 0` column marks these rows so calibration excludes them (`AND outlier = 0`) while driver feedback views retain them with the flag highlighted.
 
 The flag is recomputed each calibration run via per-driver IQR analysis (see `05-CALIBRATION.md` — Outlier Detection). It is not set during ingestion — the ingestion pipeline writes `outlier = 0` (the default) and calibration updates it in batch.
-
-### 11. Separate `driver_ratings` table for skill ratings
-
-A per-driver skill rating (0–100) used as a cold-start prior for outlier detection before enough data exists to compute IQR. This is a separate table rather than a column on `participants` because ratings are a cross-session concept — the same driver appears across many sessions, and the rating is set once globally (with optional per-track overrides). Keeping it separate avoids modifying the high-volume participant data path and keeps the rating lifecycle independent of session ingestion.
-
-### 12. Separate `drivers` table with session junction
-
-Drivers are first-class entities decoupled from session participation. A `drivers` table stores identity (name, email, created_at), and `driver_sessions` is a junction table linking drivers to specific session participants via `(driver_id, session_uid)` with a compound PK.
-
-- **Rationale:** Participants are per-session records (car index, team, AI flag). Driver identity is a cross-session concept — the same person races across multiple sessions and tracks. Normalizing driver identity enables cross-session analytics (win rates, consistency trends) without scanning participants.
-- **Unique name constraint:** Enforced at DB level (`uq_drivers_name`). The API catches duplicate key violations.
-- **FK to participants:** `driver_sessions` references `participants(session_uid, car_index)` — linking to the specific car the driver controlled in that session.
-- **No cascade delete:** Deleting a driver does not cascade to `driver_sessions` to avoid silently orphaning session records. Explicit cleanup is required.
 
 ## DDL
 
@@ -345,12 +332,7 @@ CREATE TABLE calibration_coefficients (
     sector_number        NUMBER(1),               -- NULL if track-wide, 0/1/2 if sector-specific
     method_name          VARCHAR2(64)  NOT NULL,   -- e.g. 'linear_regression', 'polynomial_fit', 'ridge'
     value                NUMBER(12,6)  NOT NULL,
-    confidence           NUMBER(8,4),              -- standard error or similar
-    score                NUMBER(8,6),              -- R², RMSE, or other evaluation metric
     is_default           NUMBER(1)    DEFAULT 0 NOT NULL,
-    session_count        NUMBER(5),
-    data_point_count     NUMBER(10),
-    game_settings_hash   VARCHAR2(64),
     trained_at           TIMESTAMP     NOT NULL,
     created_at           TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
 
@@ -358,19 +340,6 @@ CREATE TABLE calibration_coefficients (
     CONSTRAINT chk_calib_regime CHECK (calibration_regime IN ('PLAYER', 'AI')),
     CONSTRAINT chk_calib_sector CHECK (sector_number IS NULL OR sector_number IN (0, 1, 2)),
     CONSTRAINT chk_calib_default CHECK (is_default IN (0, 1))
-);
-
--- =============================================================
--- 8. DRIVER_RATINGS — per-driver skill rating for outlier detection cold start
--- =============================================================
-CREATE TABLE driver_ratings (
-    driver_name      VARCHAR2(48)  NOT NULL,
-    track_id         NUMBER(3)     DEFAULT -1 NOT NULL,  -- -1 = global default, real track_id = per-track override
-    skill_rating     NUMBER(3)     NOT NULL,             -- 0 (inconsistent) to 100 (alien consistency)
-    updated_at       TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
-
-    CONSTRAINT pk_driver_ratings PRIMARY KEY (driver_name, track_id),
-    CONSTRAINT chk_skill_range CHECK (skill_rating BETWEEN 0 AND 100)
 );
 
 -- =============================================================
@@ -407,34 +376,6 @@ CREATE INDEX idx_sector_outlier
 -- Calibration coefficients: lookup by track + knob + regime + method
 CREATE INDEX idx_calib_lookup
     ON calibration_coefficients (track_id, knob_name, calibration_regime, method_name);
-
--- =============================================================
--- 9. DRIVERS — driver identity, decoupled from session participation
--- =============================================================
-CREATE TABLE drivers (
-    driver_id    NUMBER GENERATED ALWAYS AS IDENTITY,
-    name         VARCHAR2(100) NOT NULL,
-    email        VARCHAR2(255),
-    created_at   TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
-
-    CONSTRAINT pk_drivers PRIMARY KEY (driver_id),
-    CONSTRAINT uq_drivers_name UNIQUE (name)
-);
-
--- =============================================================
--- 10. DRIVER_SESSIONS — junction: which driver raced in which session
--- =============================================================
-CREATE TABLE driver_sessions (
-    driver_id    NUMBER        NOT NULL,
-    session_uid  NUMBER(20)    NOT NULL,
-    car_index    NUMBER(2)     NOT NULL,
-
-    CONSTRAINT pk_driver_sessions PRIMARY KEY (driver_id, session_uid),
-    CONSTRAINT fk_ds_driver FOREIGN KEY (driver_id)
-        REFERENCES drivers (driver_id),
-    CONSTRAINT fk_ds_participant FOREIGN KEY (session_uid, car_index)
-        REFERENCES participants (session_uid, car_index)
-);
 ```
 
 ## Simulation Query Mapping
@@ -454,9 +395,8 @@ CREATE TABLE driver_sessions (
 | Strategy ground truth           | `final_classifications` filtered by `result_status=3` — actual stint compounds and pit stop laps                | Flat stint columns give the full executed strategy without joins                             |
 | Car damage effect on pace       | `sector_snapshots` damage columns correlated with `sector_time_ms`, filtered by `car_damage_setting`            | Flat damage columns per snapshot; game settings in `sessions` for conditioning               |
 | Tyre temperature effect         | `sector_snapshots` tyre temp columns vs `sector_time_ms`, grouped by compound and weather                       | Surface + inner temps per wheel, denormalized alongside wear/damage                          |
-| Calibration coefficient lookup  | `calibration_coefficients` filtered by `track_id`, `knob_name`, `calibration_regime`                            | `idx_calib_lookup` covers the query; `method_name` + `score` enable method comparison        |
+| Calibration coefficient lookup  | `calibration_coefficients` filtered by `track_id`, `knob_name`, `calibration_regime`                            | `idx_calib_lookup` covers the query; `method_name` enables method comparison                 |
 | Outlier-clean calibration data  | All calibration queries add `AND outlier = 0` alongside existing hard filters                                   | `idx_sector_outlier` covers the filter; `outlier` column recomputed each calibration run     |
-| Driver skill rating lookup      | `driver_ratings` filtered by `driver_name`, with `track_id` fallback (`-1` = global)                            | PK lookup; small table, always in buffer cache                                               |
 
 ## What Was Deliberately Left Out
 
@@ -464,4 +404,4 @@ CREATE TABLE driver_sessions (
 - **No materialized views** — the simulation engine computes distributions offline. A materialized view for "average sector time by driver/track/compound/tyre_age" would be useful at scale, but premature for a POC.
 - **No `stints` table** — stints are derived by detecting `tyre_compound_actual` changes or `num_pit_stops` increments in sector_snapshots. A view can formalize this if needed, but a table would be redundant data.
 - **No `weather_changes` table** — weather transitions are visible by comparing consecutive sector snapshots' `weather` column. The events table captures safety car (which correlates with weather), but the game doesn't emit a weather-change event type.
-- **No `calibration_sessions` junction table** — `calibration_coefficients` tracks `session_count` and `data_point_count` but not which specific sessions were used in training. A junction table could be added later if full reproducibility of training runs is needed.
+- **No `calibration_sessions` junction table** — `calibration_coefficients` does not record which specific sessions were used in training. A junction table could be added later if full reproducibility of training runs is needed.
