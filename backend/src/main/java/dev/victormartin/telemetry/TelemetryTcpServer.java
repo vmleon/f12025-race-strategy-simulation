@@ -15,8 +15,6 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import dev.victormartin.telemetry.engineer.v2.RaceEngineerServiceV2;
@@ -32,7 +30,6 @@ public class TelemetryTcpServer implements CommandLineRunner {
     private final RaceEngineerServiceV2 raceEngineerService;
     private final LapHistoryTracker lapHistoryTracker;
     private final QueueService queueService;
-    private final JdbcTemplate jdbc;
     private static final Logger log = LoggerFactory.getLogger(TelemetryTcpServer.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -45,8 +42,7 @@ public class TelemetryTcpServer implements CommandLineRunner {
                               StrategyOrchestrator strategyOrchestrator,
                               RaceEngineerServiceV2 raceEngineerService,
                               LapHistoryTracker lapHistoryTracker,
-                              QueueService queueService,
-                              JdbcTemplate jdbc) {
+                              QueueService queueService) {
         this.raceWebSocketHandler = raceWebSocketHandler;
         this.sessionStateHolder = sessionStateHolder;
         this.simulationOrchestrator = simulationOrchestrator;
@@ -54,7 +50,6 @@ public class TelemetryTcpServer implements CommandLineRunner {
         this.lapHistoryTracker = lapHistoryTracker;
         this.raceEngineerService = raceEngineerService;
         this.queueService = queueService;
-        this.jdbc = jdbc;
     }
 
     @Override
@@ -122,18 +117,6 @@ public class TelemetryTcpServer implements CommandLineRunner {
                     raceEngineerService.onSessionStarted(sessionUid, trackId, sessionType, ersAssist, drsAssist);
                     lapHistoryTracker.onSessionStarted(trackId);
                     queueService.enqueue("PDBADMIN.SESSION_LIFECYCLE", line);
-                    try {
-                        var drivers = jdbc.query(
-                                "SELECT driver_id FROM drivers",
-                                (rs, rowNum) -> rs.getLong("driver_id"));
-                        if (drivers.size() == 1) {
-                            jdbc.update(
-                                    "INSERT INTO driver_sessions (driver_id, session_uid, car_index) VALUES (?, ?, 0)",
-                                    drivers.getFirst(), sessionUid);
-                        }
-                    } catch (DuplicateKeyException ignored) {
-                        // Already assigned — idempotent
-                    }
                 }
                 case "sessionEnded" -> {
                     String endedUid = node.get("sessionUid").asText();

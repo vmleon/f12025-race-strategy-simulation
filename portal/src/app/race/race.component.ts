@@ -7,7 +7,7 @@ import {
   WeatherForecastSample,
   RankedStrategy,
 } from '../race.service';
-import { SessionService, ActiveSessionDto } from '../session.service';
+import { SessionService } from '../session.service';
 import { trackName } from '../track-names';
 import { DecimalPipe } from '@angular/common';
 import { CircuitMapComponent } from './circuit-map/circuit-map.component';
@@ -34,15 +34,6 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
     <div class="race-header">
       <h2>Live Race</h2>
       <div class="session-info">
-        @if (activeSessions().length > 1) {
-          <select class="session-select" (change)="onSessionSelected($event)">
-            @for (s of activeSessions(); track s.sessionUid) {
-              <option [value]="s.sessionUid" [selected]="s.sessionUid === selectedSessionUid()">
-                {{ sessionLabel(s) }}
-              </option>
-            }
-          </select>
-        }
         @if (trackId() != null) {
           <span class="badge">{{ trackLabel() }}</span>
         }
@@ -256,15 +247,6 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
     .badge.safety-car {
       background: #f9a825;
       color: #000;
-    }
-
-    .session-select {
-      font-size: 0.85rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: 4px;
-      background: #222;
-      color: #ccc;
-      border: 1px solid #555;
     }
 
     .race-layout {
@@ -513,7 +495,6 @@ export class RaceComponent implements OnInit, OnDestroy {
   events = signal<RaceMessage[]>([]);
   forecast = signal<WeatherForecastSample[]>([]);
 
-  activeSessions = signal<ActiveSessionDto[]>([]);
   selectedSessionUid = signal<string | null>(null);
 
   strategyStrategies = signal<RankedStrategy[]>([]);
@@ -619,19 +600,6 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.pollSub?.unsubscribe();
   }
 
-  sessionLabel(s: ActiveSessionDto): string {
-    const parts = [s.trackName || 'Unknown track'];
-    if (s.sessionType) parts.push(s.sessionType);
-    const label = parts.join(' · ');
-    return s.live ? `● LIVE — ${label}` : label;
-  }
-
-  onSessionSelected(event: Event) {
-    const uid = (event.target as HTMLSelectElement).value;
-    this.selectedSessionUid.set(uid);
-    this.resetState();
-  }
-
   formatLapTime(ms: number): string {
     const totalSeconds = ms / 1000;
     const minutes = Math.floor(totalSeconds / 60);
@@ -660,7 +628,6 @@ export class RaceComponent implements OnInit, OnDestroy {
 
   private fetchActiveSessions() {
     this.sessionService.getActiveSessions().subscribe((sessions) => {
-      this.activeSessions.set(sessions);
       const selected = this.selectedSessionUid();
       if (sessions.length === 0) {
         this.selectedSessionUid.set(null);

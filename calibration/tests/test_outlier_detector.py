@@ -1,7 +1,7 @@
 from calibration.outlier_detector import (
-    SectorEntry, SectorKey, DriverRating,
-    detect_outliers, _index_ratings, _lookup_skill_rating, _percentile, _median,
-    weather_category,
+    SectorEntry,
+    detect_outliers, _percentile, _median,
+    weather_category, MIN_SAMPLES_FOR_IQR,
 )
 
 
@@ -15,7 +15,7 @@ class TestIqrDetection:
         times = [29500, 29800, 30000, 30100, 30200, 30300, 30400, 30500, 30600, 45000]
         entries = [_entry(1, 0, i + 2, 1, t, "Hamilton", 1, 16, False) for i, t in enumerate(times)]
 
-        outliers = detect_outliers(entries, [])
+        outliers = detect_outliers(entries)
 
         assert len(outliers) == 1
         flagged_laps = {o.lap_number for o in outliers}
@@ -24,7 +24,7 @@ class TestIqrDetection:
 
     def test_zero_variance_produces_no_outliers(self):
         entries = [_entry(1, 0, i + 2, 1, 30000, "Verstappen", 1, 16, False) for i in range(12)]
-        outliers = detect_outliers(entries, [])
+        outliers = detect_outliers(entries)
         assert len(outliers) == 0
 
     def test_ai_multiplier_is_tighter_than_human(self):
@@ -32,53 +32,20 @@ class TestIqrDetection:
         ai_entries = [_entry(1, 0, i + 2, 1, t, "AI_Driver", 1, 16, True) for i, t in enumerate(times)]
         human_entries = [_entry(1, 1, i + 2, 1, t, "Human_Driver", 1, 16, False) for i, t in enumerate(times)]
 
-        ai_outliers = detect_outliers(ai_entries, [])
-        human_outliers = detect_outliers(human_entries, [])
+        ai_outliers = detect_outliers(ai_entries)
+        human_outliers = detect_outliers(human_entries)
 
         assert len(ai_outliers) >= len(human_outliers)
 
-
-class TestColdStartDetection:
-
-    def test_cold_start_uses_skill_rating(self):
-        entries = []
-        # 15 entries from other drivers to establish cross-driver median ~30000
-        for i in range(15):
-            entries.append(_entry(1, i + 1, 2, 1, 29800 + i * 30, f"OtherDriver{i}", 1, 16, False))
-        # Target driver: 5 entries, last one above tolerance
-        entries.append(_entry(1, 0, 2, 1, 30000, "TestDriver", 1, 16, False))
-        entries.append(_entry(1, 0, 3, 1, 30100, "TestDriver", 1, 16, False))
-        entries.append(_entry(1, 0, 4, 1, 30200, "TestDriver", 1, 16, False))
-        entries.append(_entry(1, 0, 5, 1, 30300, "TestDriver", 1, 16, False))
-        entries.append(_entry(1, 0, 6, 1, 32000, "TestDriver", 1, 16, False))
-
-        ratings = [DriverRating("TestDriver", -1, 80)]
-        outliers = detect_outliers(entries, ratings)
-
-        # skill_rating=80: tolerance = 1500*(110-80)/60 = 750ms
-        # 32000 > median(~30000) + 750 → flagged
-        assert any(o.car_index == 0 and o.lap_number == 6 for o in outliers)
-
-    def test_default_rating_when_no_rating_exists(self):
-        entries = []
-        for i in range(15):
-            entries.append(_entry(1, i + 1, 2, 1, 30000, f"Other{i}", 1, 16, False))
-        # Default skill=50: tolerance = 1500*(110-50)/60 = 1500ms
-        entries.append(_entry(1, 0, 2, 1, 30000, "Norris", 1, 16, False))
-        entries.append(_entry(1, 0, 3, 1, 30100, "Norris", 1, 16, False))
-        entries.append(_entry(1, 0, 4, 1, 31600, "Norris", 1, 16, False))
-
-        outliers = detect_outliers(entries, [])
-
-        assert any(o.car_index == 0 and o.lap_number == 4 for o in outliers)
-
-    def test_track_specific_rating_overrides_global(self):
-        ratings = [
-            DriverRating("Driver1", -1, 50),
-            DriverRating("Driver1", 5, 95),
+    def test_undersized_group_flags_nothing(self):
+        entries = [
+            SectorEntry(session_uid=1, car_index=0, lap_number=lap, sector_number=0,
+                        sector_time_ms=30000 + (9000 if lap == 3 else 0),
+                        driver_name="X", track_id=1, tyre_compound_actual=16,
+                        ai_controlled=False)
+            for lap in range(1, 5)  # 4 samples < MIN_SAMPLES_FOR_IQR
         ]
-        index = _index_ratings(ratings)
-        assert _lookup_skill_rating(index, "Driver1", 5) == 95
+        assert detect_outliers(entries) == []
 
 
 class TestPercentileMedian:
@@ -93,7 +60,7 @@ class TestPercentileMedian:
         assert _median(values) == 25
 
     def test_empty_input_returns_no_outliers(self):
-        assert detect_outliers([], []) == []
+        assert detect_outliers([]) == []
 
 
 class TestWeatherCategory:
@@ -118,9 +85,9 @@ class TestWeatherGrouping:
         # 1 wet sector at 35s — would be an outlier if grouped with dry
         wet = [_entry(1, 0, 20, 1, 35000, "Hamilton", 1, 16, False, weather=4)]
 
-        outliers = detect_outliers(dry + wet, [])
+        outliers = detect_outliers(dry + wet)
 
-        # Wet sector should NOT be flagged — it's in its own group (too few samples → cold start)
+        # Wet sector should NOT be flagged — it's in its own group (too few samples → skipped)
         wet_flagged = [o for o in outliers if o.lap_number == 20]
         assert len(wet_flagged) == 0, "Wet sector should not be flagged as outlier against dry data"
 
@@ -130,7 +97,7 @@ class TestWeatherGrouping:
         entries = [_entry(1, 0, i + 2, 1, t, "Hamilton", 1, 16, False, weather=0)
                    for i, t in enumerate(times)]
 
-        outliers = detect_outliers(entries, [])
+        outliers = detect_outliers(entries)
 
         assert len(outliers) == 1
         assert outliers[0].lap_number == 11  # the 45000ms entry

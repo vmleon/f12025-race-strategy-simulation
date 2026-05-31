@@ -20,31 +20,11 @@ databaseChangeLog:
                   sector_number        NUMBER(1),
                   method_name          VARCHAR2(64)  NOT NULL,
                   value                NUMBER(12,6)  NOT NULL,
-                  confidence           NUMBER(8,4),
-                  score                NUMBER(8,6),
                   is_default           NUMBER(1)    DEFAULT 0 NOT NULL,
-                  session_count        NUMBER(5),
-                  data_point_count     NUMBER(10),
-                  game_settings_hash   VARCHAR2(64),
                   trained_at           TIMESTAMP     NOT NULL,
                   created_at           TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
                   CONSTRAINT pk_calib_coeff PRIMARY KEY (coefficient_id),
                   CONSTRAINT chk_calib_regime CHECK (calibration_regime IN ('PLAYER', 'AI')),
                   CONSTRAINT chk_calib_sector CHECK (sector_number IS NULL OR sector_number IN (0, 1, 2)),
                   CONSTRAINT chk_calib_default CHECK (is_default IN (0, 1))
-              )
-
-  - changeSet:
-      id: 003-03-driver-ratings
-      author: victormartin
-      changes:
-        - sql:
-            sql: |
-              CREATE TABLE driver_ratings (
-                  driver_name      VARCHAR2(48)  NOT NULL,
-                  track_id         NUMBER(3)     DEFAULT -1 NOT NULL,
-                  skill_rating     NUMBER(3)     NOT NULL,
-                  updated_at       TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
-                  CONSTRAINT pk_driver_ratings PRIMARY KEY (driver_name, track_id),
-                  CONSTRAINT chk_skill_range CHECK (skill_rating BETWEEN 0 AND 100)
               )

@@ -1,60 +1,9 @@
 from calibration import db
 from calibration.pipeline import (
-    _bucket_pace_rows, _compute_settings_hash, _group_pit_stops, _mad_filter,
+    _bucket_pace_rows, _group_pit_stops, _mad_filter,
     COMPOUND_KNOB_NAMES, MIN_TYRE_DEG_SAMPLES, MIN_FUEL_SAMPLES,
     MIN_PIT_STOP_SAMPLES, MIN_PACE_BASELINE_SAMPLES,
 )
-
-
-def _make_row(sector_number=0, sector_time_ms=30000, lap_number=2, tyre_age_laps=3,
-              fuel_in_tank_kg=50.0, gap_to_car_ahead_ms=3000, tyre_compound_actual=16,
-              front_wing_damage_l=0, front_wing_damage_r=0, rear_wing_damage=0,
-              floor_damage=0, diffuser_damage=0, sidepod_damage=0,
-              engine_damage=0, gearbox_damage=0,
-              ai_difficulty=95, car_damage_setting=1, car_damage_rate=1, low_fuel_mode=0):
-    """Build a tuple matching the column order of _SELECT_CALIBRATION_DATA."""
-    return (
-        1,                      # session_uid
-        0,                      # car_index
-        lap_number,             # lap_number
-        sector_number,          # sector_number
-        sector_time_ms,         # sector_time_ms
-        tyre_compound_actual,   # tyre_compound_actual
-        tyre_age_laps,          # tyre_age_laps
-        fuel_in_tank_kg,        # fuel_in_tank_kg
-        gap_to_car_ahead_ms,    # gap_to_car_ahead_ms
-        0,                      # drs_allowed
-        0,                      # weather
-        25,                     # track_temp
-        20,                     # air_temp
-        front_wing_damage_l,    # front_wing_damage_l
-        front_wing_damage_r,    # front_wing_damage_r
-        rear_wing_damage,       # rear_wing_damage
-        floor_damage,           # floor_damage
-        diffuser_damage,        # diffuser_damage
-        sidepod_damage,         # sidepod_damage
-        engine_damage,          # engine_damage
-        gearbox_damage,         # gearbox_damage
-        90, 90, 90, 90,         # tyre_surface_temps
-        80, 80, 80, 80,         # tyre_inner_temps
-        ai_difficulty,          # ai_difficulty
-        car_damage_setting,     # car_damage_setting
-        car_damage_rate,        # car_damage_rate
-        low_fuel_mode,          # low_fuel_mode
-    )
-
-
-class TestHelpers:
-
-    def test_settings_hash_deterministic(self):
-        row1 = _make_row()
-        row2 = _make_row(sector_number=1, sector_time_ms=31000)
-        assert _compute_settings_hash(row1) == _compute_settings_hash(row2)
-
-    def test_settings_hash_differs_for_different_settings(self):
-        row1 = _make_row()
-        row2 = _make_row(ai_difficulty=99)
-        assert _compute_settings_hash(row1) != _compute_settings_hash(row2)
 
 
 class TestCompoundMapping:

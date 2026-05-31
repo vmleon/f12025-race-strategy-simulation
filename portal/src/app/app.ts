@@ -11,10 +11,7 @@ import { HealthService } from './health.service';
       <h1>F1 Strategy Portal</h1>
       <nav>
         <a routerLink="/race" routerLinkActive="active">Race</a>
-        <a routerLink="/strategy" routerLinkActive="active">Strategy</a>
-        <a routerLink="/calibration" routerLinkActive="active">Calibration</a>
-        <a routerLink="/sessions" routerLinkActive="active">Sessions</a>
-        <a routerLink="/drivers" routerLinkActive="active">Drivers</a>
+        <a routerLink="/system" routerLinkActive="active">System (WIP)</a>
       </nav>
       <span class="status" [class.up]="healthUp()" [class.down]="!healthUp()">
         {{ healthUp() ? 'Backend UP' : 'Backend DOWN' }}

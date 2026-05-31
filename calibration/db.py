@@ -7,7 +7,7 @@ from datetime import datetime
 import oracledb
 
 from calibration.cold_start import KNOB_DEFAULTS, METHOD_NAME, REGIMES
-from calibration.outlier_detector import DriverRating, SectorEntry, SectorKey
+from calibration.outlier_detector import SectorEntry, SectorKey
 
 _pool: oracledb.ConnectionPool | None = None
 
@@ -67,9 +67,9 @@ def ensure_cold_start_defaults(conn: oracledb.Connection, track_id: int) -> int:
     inserted = 0
     for regime in REGIMES:
         for knob_name, value in KNOB_DEFAULTS:
-            _insert_calibration_coefficient(
+            insert_calibration_coefficient(
                 conn, track_id, knob_name, regime, None, METHOD_NAME,
-                value, None, None, 1, 0, 0, None, now,
+                value, 1, now,
             )
             inserted += 1
     return inserted
@@ -110,15 +110,6 @@ def get_sectors_for_outlier_detection(conn: oracledb.Connection, track_id: int) 
             )
             for row in cur
         ]
-
-
-_SELECT_DRIVER_RATINGS = "SELECT driver_name, track_id, skill_rating FROM driver_ratings"
-
-
-def get_driver_ratings(conn: oracledb.Connection) -> list[DriverRating]:
-    with conn.cursor() as cur:
-        cur.execute(_SELECT_DRIVER_RATINGS)
-        return [DriverRating(driver_name=row[0], track_id=row[1], skill_rating=row[2]) for row in cur]
 
 
 # ── outlier flag updates ─────────────────────────────────────────────
@@ -212,8 +203,7 @@ _SELECT_CALIBRATION_DATA = """
            ss.tyre_surface_temp_rl, ss.tyre_surface_temp_rr,
            ss.tyre_surface_temp_fl, ss.tyre_surface_temp_fr,
            ss.tyre_inner_temp_rl, ss.tyre_inner_temp_rr,
-           ss.tyre_inner_temp_fl, ss.tyre_inner_temp_fr,
-           s.ai_difficulty, s.car_damage_setting, s.car_damage_rate, s.low_fuel_mode
+           ss.tyre_inner_temp_fl, ss.tyre_inner_temp_fr
     FROM sector_snapshots ss
     JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index
     JOIN sessions s ON s.session_uid = ss.session_uid
@@ -251,10 +241,6 @@ _COL_DIFF_DMG = 17
 _COL_SIDE_DMG = 18
 _COL_ENG_DMG = 19
 _COL_GEAR_DMG = 20
-_COL_AI_DIFF = 29
-_COL_CAR_DMG_SET = 30
-_COL_CAR_DMG_RATE = 31
-_COL_LOW_FUEL = 32
 
 
 def get_calibration_data(conn: oracledb.Connection, track_id: int, regime: str) -> list[tuple]:
@@ -264,50 +250,23 @@ def get_calibration_data(conn: oracledb.Connection, track_id: int, regime: str) 
         return cur.fetchall()
 
 
-# ── session count ────────────────────────────────────────────────────
-
-def get_session_count_for_track(conn: oracledb.Connection, track_id: int) -> int:
-    with conn.cursor() as cur:
-        cur.execute("SELECT COUNT(DISTINCT session_uid) FROM sessions WHERE track_id = :1", [track_id])
-        return cur.fetchone()[0]
-
-
 # ── coefficient insert ───────────────────────────────────────────────
 
 _INSERT_COEFFICIENT = """
     INSERT INTO calibration_coefficients (
         coefficient_id, track_id, knob_name, calibration_regime,
-        sector_number, method_name, value, confidence, score,
-        is_default, session_count, data_point_count,
-        game_settings_hash, trained_at
-    ) VALUES (seq_calibration_coefficients.NEXTVAL, :1,:2,:3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13)
+        sector_number, method_name, value, is_default, trained_at
+    ) VALUES (seq_calibration_coefficients.NEXTVAL, :1,:2,:3,:4,:5,:6,:7,:8)
 """
-
-
-def _insert_calibration_coefficient(
-    conn: oracledb.Connection, track_id: int, knob_name: str, regime: str,
-    sector_number: int | None, method_name: str, value: float,
-    confidence: float | None, score: float | None, is_default: int,
-    session_count: int, data_point_count: int,
-    game_settings_hash: str | None, trained_at: datetime,
-) -> None:
-    with conn.cursor() as cur:
-        cur.execute(_INSERT_COEFFICIENT, [
-            track_id, knob_name, regime, sector_number, method_name,
-            value, confidence, score, is_default, session_count,
-            data_point_count, game_settings_hash, trained_at,
-        ])
 
 
 def insert_calibration_coefficient(
     conn: oracledb.Connection, track_id: int, knob_name: str, regime: str,
     sector_number: int | None, method_name: str, value: float,
-    confidence: float | None, score: float | None, is_default: int,
-    session_count: int, data_point_count: int,
-    game_settings_hash: str | None, trained_at: datetime,
+    is_default: int, trained_at: datetime,
 ) -> None:
-    _insert_calibration_coefficient(
-        conn, track_id, knob_name, regime, sector_number, method_name,
-        value, confidence, score, is_default, session_count,
-        data_point_count, game_settings_hash, trained_at,
-    )
+    with conn.cursor() as cur:
+        cur.execute(_INSERT_COEFFICIENT, [
+            track_id, knob_name, regime, sector_number, method_name,
+            value, is_default, trained_at,
+        ])

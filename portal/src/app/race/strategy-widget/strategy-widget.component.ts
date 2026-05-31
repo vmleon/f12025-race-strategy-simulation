@@ -1,6 +1,5 @@
 import { Component, Input } from '@angular/core';
 import { DecimalPipe, PercentPipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
 import { RankedStrategy } from '../../race.service';
 
 const COMPOUND_NAMES: Record<number, string> = {
@@ -13,12 +12,11 @@ const COMPOUND_NAMES: Record<number, string> = {
 
 @Component({
   selector: 'app-strategy-widget',
-  imports: [DecimalPipe, PercentPipe, RouterLink],
+  imports: [DecimalPipe, PercentPipe],
   template: `
     <div class="panel">
       <div class="panel-header">
         <h3>Best Strategies</h3>
-        <a routerLink="/strategy" class="details-link">View all</a>
       </div>
 
       @if (stale) {
@@ -60,15 +58,6 @@ const COMPOUND_NAMES: Record<number, string> = {
       color: #999;
       text-transform: uppercase;
     }
-    .details-link {
-      font-size: 0.75rem;
-      color: #42a5f5;
-      text-decoration: none;
-    }
-    .details-link:hover {
-      text-decoration: underline;
-    }
-
     .stale-bar {
       font-size: 0.7rem;
       color: #ffa726;

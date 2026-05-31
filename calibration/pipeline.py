@@ -30,13 +30,10 @@ def run(conn: oracledb.Connection, track_id: int) -> None:
 
     # Step 1: recompute outlier flags
     entries = db.get_sectors_for_outlier_detection(conn, track_id)
-    ratings = db.get_driver_ratings(conn)
-    outliers = detect_outliers(entries, ratings)
+    outliers = detect_outliers(entries)
     db.update_outlier_flags(conn, track_id, outliers)
     conn.commit()
     print(f"Outlier detection: {len(outliers)} flagged out of {len(entries)} sectors")
-
-    session_count = db.get_session_count_for_track(conn, track_id)
 
     # Step 2: fit each regime
     for regime in ["PLAYER", "AI"]:
@@ -45,13 +42,12 @@ def run(conn: oracledb.Connection, track_id: int) -> None:
             print(f"No data for regime {regime}, skipping")
             continue
 
-        settings_hash = _compute_settings_hash(data[0])
         now = datetime.now()
-        print(f"Regime {regime}: {len(data)} data points, {session_count} sessions")
+        print(f"Regime {regime}: {len(data)} data points")
 
-        _fit_tyre_degradation(conn, data, track_id, regime, settings_hash, session_count, now)
-        _fit_fuel_effect(conn, data, track_id, regime, settings_hash, session_count, now)
-        _fit_pit_stop_duration(conn, track_id, regime, settings_hash, session_count, now)
+        _fit_tyre_degradation(conn, data, track_id, regime, now)
+        _fit_fuel_effect(conn, data, track_id, regime, now)
+        _fit_pit_stop_duration(conn, track_id, regime, now)
 
     # Pace baselines aggregate across regimes inside the function — single call.
     _fit_pace_baselines(conn, track_id)
@@ -62,7 +58,7 @@ def run(conn: oracledb.Connection, track_id: int) -> None:
 
 def _fit_tyre_degradation(
     conn: oracledb.Connection, data: list[tuple], track_id: int, regime: str,
-    settings_hash: str, session_count: int, now: datetime,
+    now: datetime,
 ) -> None:
     groups: dict[str, list[tuple]] = defaultdict(list)
     for r in data:
@@ -86,10 +82,9 @@ def _fit_tyre_degradation(
 
         db.insert_calibration_coefficient(
             conn, track_id, knob_name, regime, sector, "linear_regression",
-            reg.slope, reg.slope_std_error, reg.r_squared, 0,
-            session_count, reg.n, settings_hash, now)
+            reg.slope, 0, now)
 
-        print(f"  {knob_name} sector {sector}: slope={reg.slope:.2f} ms/lap, R²={reg.r_squared:.4f}, n={reg.n}")
+        print(f"  {knob_name} sector {sector}: slope={reg.slope:.2f} ms/lap, n={reg.n}")
 
 
 # ── fuel effect ──────────────────────────────────────────────────────
@@ -97,7 +92,7 @@ def _fit_tyre_degradation(
 
 def _fit_fuel_effect(
     conn: oracledb.Connection, data: list[tuple], track_id: int, regime: str,
-    settings_hash: str, session_count: int, now: datetime,
+    now: datetime,
 ) -> None:
     with_fuel = [r for r in data if r[db._COL_FUEL] > 0]
 
@@ -111,10 +106,9 @@ def _fit_fuel_effect(
 
     db.insert_calibration_coefficient(
         conn, track_id, "fuel_effect", regime, None, "linear_regression",
-        reg.slope, reg.slope_std_error, reg.r_squared, 0,
-        session_count, reg.n, settings_hash, now)
+        reg.slope, 0, now)
 
-    print(f"  fuel_effect: slope={reg.slope:.2f} ms/kg, R²={reg.r_squared:.4f}, n={reg.n}")
+    print(f"  fuel_effect: slope={reg.slope:.2f} ms/kg, n={reg.n}")
 
 
 # ── pit stop duration ────────────────────────────────────────────────
@@ -122,7 +116,7 @@ def _fit_fuel_effect(
 
 def _fit_pit_stop_duration(
     conn: oracledb.Connection, track_id: int, regime: str,
-    settings_hash: str, session_count: int, now: datetime,
+    now: datetime,
 ) -> None:
     pit_sectors = db.get_pit_stop_sectors(conn, track_id)
     baselines = db.get_normal_sector_medians(conn, track_id)
@@ -155,10 +149,10 @@ def _fit_pit_stop_duration(
 
     db.insert_calibration_coefficient(
         conn, track_id, "pit_stop_time_loss", regime, None, "mean",
-        m, None, None, 0, session_count, len(time_losses), settings_hash, now)
+        m, 0, now)
     db.insert_calibration_coefficient(
         conn, track_id, "pit_stop_time_loss_stddev", regime, None, "stddev",
-        sd, None, None, 0, session_count, len(time_losses), settings_hash, now)
+        sd, 0, now)
 
     print(f"  pit_stop_time_loss: mean={m:.0f}ms, sd={sd:.0f}ms, n={len(time_losses)}")
 
@@ -304,13 +298,3 @@ def _group_pit_stops(pit_sectors: list[tuple]) -> list[list[tuple]]:
         stops.append(current)
 
     return stops
-
-
-# ── helpers ──────────────────────────────────────────────────────────
-
-
-def _compute_settings_hash(row: tuple) -> str:
-    key = f"{row[db._COL_AI_DIFF]}|{row[db._COL_CAR_DMG_SET]}|{row[db._COL_CAR_DMG_RATE]}|{row[db._COL_LOW_FUEL]}"
-    return format(hash(key) & 0xFFFFFFFF, "x")
-
-

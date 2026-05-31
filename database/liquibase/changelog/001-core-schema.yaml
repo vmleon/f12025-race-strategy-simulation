@@ -42,34 +42,3 @@ databaseChangeLog:
                       REFERENCES sessions (session_uid)
               )
 
-  - changeSet:
-      id: 001-03-drivers
-      author: victormartin
-      changes:
-        - sql:
-            sql: |
-              CREATE TABLE drivers (
-                  driver_id    NUMBER GENERATED ALWAYS AS IDENTITY,
-                  name         VARCHAR2(100) NOT NULL,
-                  email        VARCHAR2(255),
-                  created_at   TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
-                  CONSTRAINT pk_drivers PRIMARY KEY (driver_id),
-                  CONSTRAINT uq_drivers_name UNIQUE (name)
-              )
-
-  - changeSet:
-      id: 001-04-driver-sessions
-      author: victormartin
-      changes:
-        - sql:
-            sql: |
-              CREATE TABLE driver_sessions (
-                  driver_id    NUMBER NOT NULL,
-                  session_uid  NUMBER(20) NOT NULL,
-                  car_index    NUMBER(2) NOT NULL,
-                  CONSTRAINT pk_driver_sessions PRIMARY KEY (driver_id, session_uid),
-                  CONSTRAINT fk_ds_driver FOREIGN KEY (driver_id)
-                      REFERENCES drivers (driver_id),
-                  CONSTRAINT fk_ds_participant FOREIGN KEY (session_uid, car_index)
-                      REFERENCES participants (session_uid, car_index)
-              )

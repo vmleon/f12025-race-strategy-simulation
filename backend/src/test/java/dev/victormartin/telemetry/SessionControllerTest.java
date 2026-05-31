@@ -5,7 +5,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -128,82 +127,5 @@ class SessionControllerTest {
         mockMvc.perform(get("/api/sessions/active/state"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("{\"cars\":[]}"));
-    }
-
-    // ── Database-backed endpoints ────────────────────────────────────────
-
-    @SuppressWarnings("unchecked")
-    @Test
-    void listSessionsReturnsFromDb() throws Exception {
-        when(jdbc.query(contains("FROM sessions"), any(RowMapper.class), any(Object.class)))
-                .thenReturn(List.of(
-                        new SessionController.SessionDto("uid1", 5, "RACE", 57, 95, "2026-03-20T14:30:00", 1L, "Victor"),
-                        new SessionController.SessionDto("uid2", 3, "RACE", 44, 90, "2026-03-19T10:00:00", null, null)));
-
-        mockMvc.perform(get("/api/sessions"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].sessionUid").value("uid1"))
-                .andExpect(jsonPath("$[0].trackId").value(5));
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    void listSessionsWithTrackIdFilter() throws Exception {
-        when(jdbc.query(contains("track_id = ?"), any(RowMapper.class), eq(5), eq(20)))
-                .thenReturn(List.of(
-                        new SessionController.SessionDto("uid1", 5, "RACE", 57, 95, "2026-03-20T14:30:00", 1L, "Victor")));
-
-        mockMvc.perform(get("/api/sessions?trackId=5"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1));
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    void getSessionReturns404WhenNotFound() throws Exception {
-        when(jdbc.query(contains("session_uid = ?"), any(RowMapper.class), eq("unknown")))
-                .thenReturn(List.of());
-
-        mockMvc.perform(get("/api/sessions/unknown"))
-                .andExpect(status().isNotFound());
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    void getSessionReturnsDetailWithParticipants() throws Exception {
-        when(jdbc.query(contains("session_uid = ?"), any(RowMapper.class), eq("uid1")))
-                .thenReturn(List.of(
-                        new SessionController.SessionDto("uid1", 5, "RACE", 57, 95, "2026-03-20T14:30:00", 1L, "Victor")));
-        when(jdbc.query(contains("FROM participants"), any(RowMapper.class), eq("uid1")))
-                .thenReturn(List.of(
-                        new SessionController.ParticipantDto(0, "Hamilton", 3, false),
-                        new SessionController.ParticipantDto(1, "Verstappen", 1, true)));
-        when(jdbc.queryForObject(contains("car_index"), eq(Integer.class), eq(1L), eq("uid1")))
-                .thenReturn(0);
-
-        mockMvc.perform(get("/api/sessions/uid1"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sessionUid").value("uid1"))
-                .andExpect(jsonPath("$.participants.length()").value(2))
-                .andExpect(jsonPath("$.participants[0].driverName").value("Hamilton"))
-                .andExpect(jsonPath("$.participants[1].aiControlled").value(true))
-                .andExpect(jsonPath("$.driverId").value(1))
-                .andExpect(jsonPath("$.driverName").value("Victor"))
-                .andExpect(jsonPath("$.assignedCarIndex").value(0));
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    void getSectorsReturnsData() throws Exception {
-        when(jdbc.query(contains("FROM sector_snapshots"), any(RowMapper.class), any(Object[].class)))
-                .thenReturn(List.of(
-                        new SessionController.SectorSnapshotDto(0, 1, 0, 28500.0, 1, "SOFT", 16, 3, 0)));
-
-        mockMvc.perform(get("/api/sessions/uid1/sectors"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].carIndex").value(0))
-                .andExpect(jsonPath("$[0].sectorTimeMs").value(28500.0));
     }
 }
