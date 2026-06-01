@@ -91,4 +91,20 @@ class PitWindowMessagesDetectorTest {
 
         assertTrue(msg.isEmpty());
     }
+
+    @Test
+    void firstWindowIsNotTreatedAsRecovery() {
+        // Very first recommendation of the session — no prior target exists.
+        detector.setRecommendation(UID, 20, SOFT);
+        Optional<EngineerMessage> msg = detector.evaluate(tick(15, 100f, 0)); // delta 5
+
+        assertTrue(msg.isPresent());
+        assertEquals("Box window opens in 5 laps. Softs ready.", msg.get().text());
+    }
+
+    @Test
+    void clearedRecommendationIsSilent() {
+        detector.setRecommendation(UID, -1, 0);
+        assertTrue(detector.evaluate(tick(10, 100f, 0)).isEmpty());
+    }
 }
