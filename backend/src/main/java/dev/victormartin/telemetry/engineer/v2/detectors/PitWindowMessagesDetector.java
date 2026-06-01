@@ -48,13 +48,27 @@ public class PitWindowMessagesDetector implements RadioDetector {
         int target = s.recommendedLap;
         if (target <= 0 || target < tick.currentLap()) return Optional.empty();
 
+        String compound = EngineerMessageHelpers.compoundDisplayName(s.recommendedCompound);
+
         if (target != s.lastAnnouncedTarget) {
+            // A missed window: the old target was already a live box call, and the
+            // new recommendation is for a later lap. Announce the recovery now —
+            // delta to the new target is ≥3, so the normal gates would sit silent.
+            boolean recovery = s.lastAnnouncedTarget > 0
+                    && s.lastKind.ordinal() >= Kind.T_MINUS_1.ordinal()
+                    && target > s.lastAnnouncedTarget;
             s.lastAnnouncedTarget = target;
             s.lastKind = Kind.NONE;
+            if (recovery) {
+                return Optional.of(new EngineerMessage(
+                        Priority.HIGH,
+                        "We've missed that window. New plan, box lap " + target + ", "
+                                + compound + " ready.",
+                        tick.wallClockMs(), tick.currentLap(), 2));
+            }
         }
 
         int delta = target - tick.currentLap();
-        String compound = EngineerMessageHelpers.compoundDisplayName(s.recommendedCompound);
 
         if (delta == 5 && s.lastKind == Kind.NONE) {
             s.lastKind = Kind.T_MINUS_5;
