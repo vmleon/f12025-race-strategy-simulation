@@ -75,4 +75,20 @@ class PitWindowMessagesDetectorTest {
         assertTrue(tMinus1.isPresent());
         assertEquals("Box next lap. Hards ready.", tMinus1.get().text());
     }
+
+    @Test
+    void noRecoveryWhenDriverPittedAsInstructed() {
+        // Strategy recommends boxing on lap 20 (Hards).
+        detector.setRecommendation(UID, 20, HARD);
+        detector.evaluate(tick(15, 100f, 0));
+        detector.evaluate(tick(19, 100f, 0));
+        detector.evaluate(tick(20, TRACK_LENGTH * 0.9f, 0));
+
+        // Driver pits on lap 20 (pits 0 -> 1). A second stop is now recommended
+        // for lap 28 — this is a fresh plan, not a missed window.
+        detector.setRecommendation(UID, 28, MEDIUM);
+        Optional<EngineerMessage> msg = detector.evaluate(tick(21, 100f, 1));
+
+        assertTrue(msg.isEmpty());
+    }
 }

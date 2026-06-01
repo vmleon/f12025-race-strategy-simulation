@@ -49,6 +49,8 @@ public class PitWindowMessagesDetector implements RadioDetector {
         if (target <= 0 || target < tick.currentLap()) return Optional.empty();
 
         String compound = EngineerMessageHelpers.compoundDisplayName(s.recommendedCompound);
+        int playerPits = (tick.playerCar() != null && tick.playerCar().has("pits"))
+                ? tick.playerCar().get("pits").asInt() : 0;
 
         if (target != s.lastAnnouncedTarget) {
             // A missed window: the old target was already a live box call, and the
@@ -56,8 +58,10 @@ public class PitWindowMessagesDetector implements RadioDetector {
             // delta to the new target is ≥3, so the normal gates would sit silent.
             boolean recovery = s.lastAnnouncedTarget > 0
                     && s.lastKind.ordinal() >= Kind.T_MINUS_1.ordinal()
-                    && target > s.lastAnnouncedTarget;
+                    && target > s.lastAnnouncedTarget
+                    && playerPits == s.lastPlayerPits;
             s.lastAnnouncedTarget = target;
+            s.lastPlayerPits = playerPits;
             s.lastKind = Kind.NONE;
             if (recovery) {
                 return Optional.of(new EngineerMessage(
@@ -110,6 +114,7 @@ public class PitWindowMessagesDetector implements RadioDetector {
         int recommendedLap = -1;
         int recommendedCompound = 0;
         int lastAnnouncedTarget = -1;
+        int lastPlayerPits = 0;
         Kind lastKind = Kind.NONE;
     }
 }
