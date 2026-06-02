@@ -78,12 +78,14 @@ _EXPORT_TABLES = [
     ("lap_pace_observations", ["id"]),
     ("lap_pace_baselines",
      ["track_id", "compound", "regime", "fuel_bucket_kg", "weather", "track_temp_bucket_c"]),
+    ("radio_messages", ["message_id"]),
 ]
 
 _SEQUENCES = [
     ("seq_session_events", "session_events", "event_id"),
     ("seq_calibration_coefficients", "calibration_coefficients", "coefficient_id"),
     ("seq_lap_pace_obs", "lap_pace_observations", "id"),
+    ("seq_radio_messages", "radio_messages", "message_id"),
 ]
 
 
