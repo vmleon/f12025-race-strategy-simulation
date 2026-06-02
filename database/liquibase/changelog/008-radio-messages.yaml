@@ -21,7 +21,7 @@ databaseChangeLog:
                   total_laps       NUMBER(3),
                   player_position  NUMBER(2),
                   lap_distance_m   NUMBER(10,2),
-                  sector           NUMBER(1),
+                  sector           NUMBER(3),
                   pit_state        VARCHAR2(16),
                   tyre_compound    VARCHAR2(16),
                   tyre_age_laps    NUMBER(3),
