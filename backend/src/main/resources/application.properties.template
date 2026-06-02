@@ -18,3 +18,11 @@ spring.datasource.oracleucp.connection-wait-duration=30s
 spring.datasource.oracleucp.validate-connection-on-borrow=true
 
 telemetry.tcp.port=9090
+
+# Race-engineer radio LLM (vLLM). Phase 1 ships a passthrough renderer that
+# ignores host/port/model and logs them at startup; timeout-ms bounds the
+# (future) render call and falls back to the templated text.
+engineer.llm.host=localhost
+engineer.llm.port=8000
+engineer.llm.model=meta-llama/Llama-3.1-8B-Instruct
+engineer.llm.timeout-ms=500
