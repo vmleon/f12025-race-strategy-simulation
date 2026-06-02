@@ -17,7 +17,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
-import dev.victormartin.telemetry.engineer.v2.RaceEngineerServiceV2;
+import dev.victormartin.telemetry.engineer.RaceEngineerService;
 import dev.victormartin.telemetry.simulation.LapHistoryTracker;
 
 @Component
@@ -27,7 +27,7 @@ public class TelemetryTcpServer implements CommandLineRunner {
     private final SessionStateHolder sessionStateHolder;
     private final SimulationOrchestrator simulationOrchestrator;
     private final StrategyOrchestrator strategyOrchestrator;
-    private final RaceEngineerServiceV2 raceEngineerService;
+    private final RaceEngineerService raceEngineerService;
     private final LapHistoryTracker lapHistoryTracker;
     private final QueueService queueService;
     private static final Logger log = LoggerFactory.getLogger(TelemetryTcpServer.class);
@@ -40,7 +40,7 @@ public class TelemetryTcpServer implements CommandLineRunner {
                               SessionStateHolder sessionStateHolder,
                               SimulationOrchestrator simulationOrchestrator,
                               StrategyOrchestrator strategyOrchestrator,
-                              RaceEngineerServiceV2 raceEngineerService,
+                              RaceEngineerService raceEngineerService,
                               LapHistoryTracker lapHistoryTracker,
                               QueueService queueService) {
         this.raceWebSocketHandler = raceWebSocketHandler;

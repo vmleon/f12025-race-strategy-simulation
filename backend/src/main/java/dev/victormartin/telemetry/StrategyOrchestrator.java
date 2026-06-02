@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import dev.victormartin.telemetry.engineer.v2.RaceEngineerServiceV2;
+import dev.victormartin.telemetry.engineer.RaceEngineerService;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 import dev.victormartin.telemetry.simulation.StrategyEvaluation;
 
@@ -31,7 +31,7 @@ public class StrategyOrchestrator {
     private final QueueService queueService;
     private final JdbcTemplate jdbc;
     private final RaceWebSocketHandler raceWebSocketHandler;
-    private final RaceEngineerServiceV2 raceEngineerService;
+    private final RaceEngineerService raceEngineerService;
     private final dev.victormartin.telemetry.simulation.LapHistoryTracker lapHistoryTracker;
     private final dev.victormartin.telemetry.simulation.PaceBaselineLookup paceBaselineLookup;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -67,7 +67,7 @@ public class StrategyOrchestrator {
 
     public StrategyOrchestrator(QueueService queueService, JdbcTemplate jdbc,
                                  RaceWebSocketHandler raceWebSocketHandler,
-                                 RaceEngineerServiceV2 raceEngineerService,
+                                 RaceEngineerService raceEngineerService,
                                  dev.victormartin.telemetry.simulation.LapHistoryTracker lapHistoryTracker,
                                  dev.victormartin.telemetry.simulation.PaceBaselineLookup paceBaselineLookup) {
         this.lapHistoryTracker = lapHistoryTracker;
