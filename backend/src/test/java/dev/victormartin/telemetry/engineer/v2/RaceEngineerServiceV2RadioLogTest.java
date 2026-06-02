@@ -44,6 +44,10 @@ class RaceEngineerServiceV2RadioLogTest {
         };
     }
 
+    // These tests rely on SessionStartGreetingDetector firing (and the always-in-zone
+    // stub letting it through) on the first ON_TRACK tick, so onStateUpdate delivers at
+    // least one message that gets logged.
+
     /** One player car, on track, lap 1, with a tyre + sector so context is populated. */
     private static String stateJson(int currentLap) {
         return "{\"type\":\"state\",\"trackId\":" + TRACK_ID

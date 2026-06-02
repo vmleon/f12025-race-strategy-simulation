@@ -245,7 +245,7 @@ public class RaceEngineerServiceV2 {
                     lapDist, trackId, currentLap, speedKmh, safeZoneService);
             if (delivered != null) {
                 deliver(session.sessionUid, delivered);
-                logDelivered(session, tick, playerCar, delivered);
+                logDelivered(session, tick, delivered);
             }
         } catch (Exception e) {
             TRACE.warn("V2_ERROR onStateUpdate failed: {}", e.getMessage());
@@ -354,8 +354,9 @@ public class RaceEngineerServiceV2 {
     }
 
     private void logDelivered(V2SessionState session, EngineerTick tick,
-                              JsonNode playerCar, EngineerMessage message) {
+                              EngineerMessage message) {
         try {
+            JsonNode playerCar = tick.playerCar();
             String tyre = playerCar.has("tyre") ? playerCar.get("tyre").asText() : null;
             int tyreAge = playerCar.has("tyreAge") ? playerCar.get("tyreAge").asInt() : 0;
             int sector = playerCar.has("sector") ? playerCar.get("sector").asInt() : 0;
