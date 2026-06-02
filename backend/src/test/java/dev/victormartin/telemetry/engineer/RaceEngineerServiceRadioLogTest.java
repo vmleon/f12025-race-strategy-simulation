@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import dev.victormartin.telemetry.engineer.CircuitSafeZoneService;
 import dev.victormartin.telemetry.engineer.RaceEngineerWebSocketHandler;
 import dev.victormartin.telemetry.engineer.log.RadioMessageLog;
+import dev.victormartin.telemetry.engineer.llm.PassthroughRadioMessageRenderer;
 import dev.victormartin.telemetry.engineer.log.RadioMessageLogEntry;
 import dev.victormartin.telemetry.simulation.StrategyEvaluation;
 import dev.victormartin.telemetry.simulation.StrategyEvaluation.RankedStrategy;
@@ -44,6 +45,10 @@ class RaceEngineerServiceRadioLogTest {
         };
     }
 
+    private static PassthroughRadioMessageRenderer passthrough() {
+        return new PassthroughRadioMessageRenderer("localhost", 8000, "test-model");
+    }
+
     // These tests rely on SessionStartGreetingDetector firing (and the always-in-zone
     // stub letting it through) on the first ON_TRACK tick, so onStateUpdate delivers at
     // least one message that gets logged.
@@ -63,7 +68,7 @@ class RaceEngineerServiceRadioLogTest {
         List<RadioMessageLogEntry> logged = new ArrayList<>();
         List<String> broadcasts = new ArrayList<>();
         RaceEngineerService service = new RaceEngineerService(
-                alwaysInZone(), capturing(broadcasts), logged::add);
+                alwaysInZone(), capturing(broadcasts), logged::add, passthrough(), 500L, Runnable::run);
 
         service.onSessionStarted(SESSION_UID, TRACK_ID, SESSION_TYPE_RACE, 0, 0);
         service.onStateUpdate(stateJson(1));
@@ -89,7 +94,7 @@ class RaceEngineerServiceRadioLogTest {
     void strategyEvaluationIsCapturedInLog() {
         List<RadioMessageLogEntry> logged = new ArrayList<>();
         RaceEngineerService service = new RaceEngineerService(
-                alwaysInZone(), capturing(new ArrayList<>()), logged::add);
+                alwaysInZone(), capturing(new ArrayList<>()), logged::add, passthrough(), 500L, Runnable::run);
 
         service.onSessionStarted(SESSION_UID, TRACK_ID, SESSION_TYPE_RACE, 0, 0);
         StrategyEvaluation eval = new StrategyEvaluation(0, List.of(
@@ -108,7 +113,7 @@ class RaceEngineerServiceRadioLogTest {
         List<String> broadcasts = new ArrayList<>();
         RadioMessageLog throwing = entry -> { throw new RuntimeException("boom"); };
         RaceEngineerService service = new RaceEngineerService(
-                alwaysInZone(), capturing(broadcasts), throwing);
+                alwaysInZone(), capturing(broadcasts), throwing, passthrough(), 500L, Runnable::run);
 
         service.onSessionStarted(SESSION_UID, TRACK_ID, SESSION_TYPE_RACE, 0, 0);
         service.onStateUpdate(stateJson(1));

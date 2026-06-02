@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import dev.victormartin.telemetry.engineer.CircuitSafeZoneService;
 import dev.victormartin.telemetry.engineer.RaceEngineerWebSocketHandler;
 import dev.victormartin.telemetry.engineer.log.RadioMessageLog;
+import dev.victormartin.telemetry.engineer.llm.PassthroughRadioMessageRenderer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -46,7 +47,10 @@ class RaceEngineerServiceTest {
             @Override public void broadcast(String json) { broadcasts.add(json); }
         };
         RadioMessageLog noopLog = entry -> { };
-        service = new RaceEngineerService(safeZone, handler, noopLog);
+        PassthroughRadioMessageRenderer renderer =
+                new PassthroughRadioMessageRenderer("localhost", 8000, "test-model");
+        service = new RaceEngineerService(
+                safeZone, handler, noopLog, renderer, 500L, Runnable::run);
     }
 
     /** Builds a one-car JSON state line. {@code aiCar} optional second car (may be null). */

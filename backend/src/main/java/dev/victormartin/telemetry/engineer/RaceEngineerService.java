@@ -3,13 +3,19 @@ package dev.victormartin.telemetry.engineer;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import dev.victormartin.telemetry.engineer.EngineerMessage.Priority;
@@ -44,6 +50,8 @@ import dev.victormartin.telemetry.engineer.detectors.SlowLapTrafficWarningDetect
 import dev.victormartin.telemetry.engineer.detectors.TyreConditionDetector;
 import dev.victormartin.telemetry.engineer.detectors.TrackTrafficExitDetector;
 import dev.victormartin.telemetry.engineer.detectors.WeatherDetector;
+import dev.victormartin.telemetry.engineer.llm.RadioMessageRenderer;
+import dev.victormartin.telemetry.engineer.llm.RadioRenderContext;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 import dev.victormartin.telemetry.simulation.StrategyEvaluation;
 
@@ -70,6 +78,9 @@ public class RaceEngineerService {
     private final CircuitSafeZoneService safeZoneService;
     private final RaceEngineerWebSocketHandler webSocketHandler;
     private final RadioMessageLog radioMessageLog;
+    private final RadioMessageRenderer renderer;
+    private final long renderTimeoutMs;
+    private final Executor renderExecutor;
     private final ObjectMapper mapper = new ObjectMapper();
     private final List<RadioDetector> detectors;
 
@@ -80,12 +91,34 @@ public class RaceEngineerService {
 
     private final Map<String, SessionState> sessions = new ConcurrentHashMap<>();
 
+    @Autowired
     public RaceEngineerService(CircuitSafeZoneService safeZoneService,
-                                 RaceEngineerWebSocketHandler webSocketHandler,
-                                 RadioMessageLog radioMessageLog) {
+                               RaceEngineerWebSocketHandler webSocketHandler,
+                               RadioMessageLog radioMessageLog,
+                               RadioMessageRenderer renderer,
+                               @Value("${engineer.llm.timeout-ms:500}") long renderTimeoutMs) {
+        this(safeZoneService, webSocketHandler, radioMessageLog, renderer, renderTimeoutMs,
+                Executors.newSingleThreadExecutor(r -> {
+                    Thread t = new Thread(r, "radio-render");
+                    t.setDaemon(true);
+                    return t;
+                }));
+    }
+
+    /** Visible for tests — inject a same-thread executor ({@code Runnable::run}) for
+     *  deterministic, synchronous delivery. */
+    RaceEngineerService(CircuitSafeZoneService safeZoneService,
+                        RaceEngineerWebSocketHandler webSocketHandler,
+                        RadioMessageLog radioMessageLog,
+                        RadioMessageRenderer renderer,
+                        long renderTimeoutMs,
+                        Executor renderExecutor) {
         this.safeZoneService = safeZoneService;
         this.webSocketHandler = webSocketHandler;
         this.radioMessageLog = radioMessageLog;
+        this.renderer = renderer;
+        this.renderTimeoutMs = renderTimeoutMs;
+        this.renderExecutor = renderExecutor;
         this.pitStopCompleted = new PitStopCompletedDetector();
         this.pitWindow = new PitWindowMessagesDetector();
         this.raceFinish = new RaceFinishDetector();
@@ -240,8 +273,7 @@ public class RaceEngineerService {
             EngineerMessage delivered = session.queue.pollForDelivery(
                     lapDist, trackId, currentLap, speedKmh, safeZoneService);
             if (delivered != null) {
-                deliver(session.sessionUid, delivered);
-                logDelivered(session, tick, delivered, delivered.text());
+                renderAndDeliver(session, tick, delivered);
             }
         } catch (Exception e) {
             TRACE.warn("ENGINEER_ERROR onStateUpdate failed: {}", e.getMessage());
@@ -334,16 +366,53 @@ public class RaceEngineerService {
         return null;
     }
 
-    private void deliver(String sessionUid, EngineerMessage message) {
+    /**
+     * Renders the message off the telemetry thread, then broadcasts and logs the
+     * result. The render call is bounded by {@code renderTimeoutMs}; on timeout or
+     * any error it falls back to the original templated text so the driver always
+     * hears something. The telemetry thread is never blocked.
+     */
+    private void renderAndDeliver(SessionState session, EngineerTick tick, EngineerMessage original) {
+        // The single-thread renderExecutor orders the render step only; on timeout the
+        // fallback completes on a scheduler thread, so delivery order is best-effort.
+        RadioRenderContext ctx = buildRenderContext(session, tick, original);
+        CompletableFuture
+                .supplyAsync(() -> renderer.render(ctx), renderExecutor)
+                .orTimeout(renderTimeoutMs, TimeUnit.MILLISECONDS)
+                .exceptionally(ex -> {
+                    TRACE.warn("ENGINEER_RENDER_FALLBACK {}: {}", ex.getClass().getSimpleName(), ex.getMessage());
+                    return original.text();
+                })
+                .thenAccept(rendered -> {
+                    String text = rendered != null ? rendered : original.text();
+                    deliver(session.sessionUid, original, text);
+                    logDelivered(session, tick, original, text);
+                });
+    }
+
+    private RadioRenderContext buildRenderContext(SessionState session, EngineerTick tick,
+                                                  EngineerMessage original) {
+        JsonNode playerCar = tick.playerCar();
+        String tyre = playerCar.has("tyre") ? playerCar.get("tyre").asText() : null;
+        int tyreAge = playerCar.has("tyreAge") ? playerCar.get("tyreAge").asInt() : 0;
+        int sector = playerCar.has("sector") ? playerCar.get("sector").asInt() : 0;
+        String strategies = RadioStrategySummary.topThreeJson(mapper, session.latestEvaluation);
+        return new RadioRenderContext(
+                original.text(), original.priority(), tick.sessionType(), tick.trackId(),
+                tick.currentLap(), tick.totalLaps(), tick.playerPos(),
+                tyre, tyreAge, sector, strategies);
+    }
+
+    private void deliver(String sessionUid, EngineerMessage original, String renderedText) {
         try {
             String wireJson = mapper.writeValueAsString(Map.of(
                     "type", "raceEngineer",
                     "sessionUid", sessionUid,
-                    "priority", message.priority().name(),
-                    "text", message.text(),
-                    "timestamp", message.createdAt()));
+                    "priority", original.priority().name(),
+                    "text", renderedText,
+                    "timestamp", original.createdAt()));
             webSocketHandler.broadcast(wireJson);
-            TRACE.debug("ENGINEER_DELIVER priority={} text=\"{}\"", message.priority(), message.text());
+            TRACE.debug("ENGINEER_DELIVER priority={} text=\"{}\"", original.priority(), renderedText);
         } catch (Exception e) {
             TRACE.warn("ENGINEER_DELIVER_FAILED {}", e.getMessage());
         }
