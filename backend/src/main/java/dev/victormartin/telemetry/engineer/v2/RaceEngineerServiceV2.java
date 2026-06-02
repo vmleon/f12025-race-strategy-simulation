@@ -17,6 +17,9 @@ import dev.victormartin.telemetry.engineer.EngineerMessage;
 import dev.victormartin.telemetry.engineer.EngineerMessage.Priority;
 import dev.victormartin.telemetry.engineer.RaceEngineerQueue;
 import dev.victormartin.telemetry.engineer.RaceEngineerWebSocketHandler;
+import dev.victormartin.telemetry.engineer.log.RadioMessageLog;
+import dev.victormartin.telemetry.engineer.log.RadioMessageLogEntry;
+import dev.victormartin.telemetry.engineer.log.RadioStrategySummary;
 import dev.victormartin.telemetry.engineer.v2.detectors.CarAheadDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.CarBehindDetector;
 import dev.victormartin.telemetry.engineer.v2.detectors.DamageDetector;
@@ -70,6 +73,7 @@ public class RaceEngineerServiceV2 {
 
     private final CircuitSafeZoneService safeZoneService;
     private final RaceEngineerWebSocketHandler webSocketHandler;
+    private final RadioMessageLog radioMessageLog;
     private final ObjectMapper mapper = new ObjectMapper();
     private final List<RadioDetector> detectors;
 
@@ -81,9 +85,11 @@ public class RaceEngineerServiceV2 {
     private final Map<String, V2SessionState> sessions = new ConcurrentHashMap<>();
 
     public RaceEngineerServiceV2(CircuitSafeZoneService safeZoneService,
-                                 RaceEngineerWebSocketHandler webSocketHandler) {
+                                 RaceEngineerWebSocketHandler webSocketHandler,
+                                 RadioMessageLog radioMessageLog) {
         this.safeZoneService = safeZoneService;
         this.webSocketHandler = webSocketHandler;
+        this.radioMessageLog = radioMessageLog;
         this.pitStopCompleted = new PitStopCompletedDetector();
         this.pitWindow = new PitWindowMessagesDetector();
         this.raceFinish = new RaceFinishDetector();
@@ -239,6 +245,7 @@ public class RaceEngineerServiceV2 {
                     lapDist, trackId, currentLap, speedKmh, safeZoneService);
             if (delivered != null) {
                 deliver(session.sessionUid, delivered);
+                logDelivered(session, tick, playerCar, delivered);
             }
         } catch (Exception e) {
             TRACE.warn("V2_ERROR onStateUpdate failed: {}", e.getMessage());
@@ -297,6 +304,7 @@ public class RaceEngineerServiceV2 {
         StrategyEvaluation.RankedStrategy best = evaluation.strategies().getFirst();
         List<RaceSnapshot.PitStrategy.PitStop> stops = best.candidate().stops();
         for (V2SessionState session : sessions.values()) {
+            session.latestEvaluation = evaluation;
             int lap = session.currentLap;
             RaceSnapshot.PitStrategy.PitStop nextStop = null;
             if (stops != null) {
@@ -345,6 +353,34 @@ public class RaceEngineerServiceV2 {
         }
     }
 
+    private void logDelivered(V2SessionState session, EngineerTick tick,
+                              JsonNode playerCar, EngineerMessage message) {
+        try {
+            String tyre = playerCar.has("tyre") ? playerCar.get("tyre").asText() : null;
+            int tyreAge = playerCar.has("tyreAge") ? playerCar.get("tyreAge").asInt() : 0;
+            int sector = playerCar.has("sector") ? playerCar.get("sector").asInt() : 0;
+            String strategies = RadioStrategySummary.topThreeJson(mapper, session.latestEvaluation);
+            radioMessageLog.record(new RadioMessageLogEntry(
+                    session.sessionUid,
+                    tick.trackId(),
+                    tick.sessionType(),
+                    tick.currentLap(),
+                    tick.totalLaps(),
+                    tick.playerPos(),
+                    tick.playerLapDist(),
+                    sector,
+                    tick.pitState().name(),
+                    tyre,
+                    tyreAge,
+                    message.priority().name(),
+                    message.text(),
+                    strategies,
+                    tick.wallClockMs()));
+        } catch (Exception e) {
+            TRACE.warn("V2_RADIO_LOG_FAILED {}", e.getMessage());
+        }
+    }
+
     static class V2SessionState {
         final String sessionUid;
         final int trackId;
@@ -354,6 +390,7 @@ public class RaceEngineerServiceV2 {
         PitState lastPitState;        // null until first tick
         int currentLap = 0;
         boolean chequeredFlag = false;
+        volatile StrategyEvaluation latestEvaluation;   // null until first strategy push
 
         V2SessionState(String sessionUid, int trackId, int sessionType, SessionKind kind) {
             this.sessionUid = sessionUid;
