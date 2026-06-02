@@ -23,8 +23,8 @@ public class JdbcRadioMessageLog implements RadioMessageLog {
             INSERT INTO radio_messages (
                 message_id, session_uid, track_id, session_type, lap_number, total_laps,
                 player_position, lap_distance_m, sector, pit_state, tyre_compound,
-                tyre_age_laps, priority, message_text, best_strategies, sent_at
-            ) VALUES (seq_radio_messages.NEXTVAL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                tyre_age_laps, priority, message_text, rendered_text, best_strategies, sent_at
+            ) VALUES (seq_radio_messages.NEXTVAL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     private final JdbcTemplate jdbc;
@@ -65,6 +65,7 @@ public class JdbcRadioMessageLog implements RadioMessageLog {
                 e.tyreAgeLaps(),
                 e.priority(),
                 e.messageText(),
+                e.renderedText(),
                 e.bestStrategiesJson(),
                 new Timestamp(e.sentAtEpochMs())
         };

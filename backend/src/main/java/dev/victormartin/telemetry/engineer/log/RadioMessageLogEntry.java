@@ -21,6 +21,7 @@ public record RadioMessageLogEntry(
         int tyreAgeLaps,
         String priority,
         String messageText,
+        String renderedText,
         String bestStrategiesJson,
         long sentAtEpochMs
 ) {}

@@ -79,6 +79,8 @@ class RaceEngineerServiceRadioLogTest {
         assertEquals("Soft", e.tyreCompound());
         assertEquals(4, e.tyreAgeLaps());
         assertFalse(e.messageText().isBlank());
+        assertEquals(e.messageText(), e.renderedText(),
+                "passthrough renders the original text unchanged");
         assertFalse(e.priority().isBlank());
         assertNull(e.bestStrategiesJson(), "no strategy pushed yet -> null");
     }
