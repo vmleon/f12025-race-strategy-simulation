@@ -1,0 +1,35 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008-01-seq-radio-messages
+      author: victormartin
+      changes:
+        - sql:
+            sql: CREATE SEQUENCE seq_radio_messages START WITH 1 INCREMENT BY 1
+
+  - changeSet:
+      id: 008-02-radio-messages
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE radio_messages (
+                  message_id       NUMBER(12)    NOT NULL,
+                  session_uid      NUMBER(20)    NOT NULL,
+                  track_id         NUMBER(3),
+                  session_type     NUMBER(2),
+                  lap_number       NUMBER(3),
+                  total_laps       NUMBER(3),
+                  player_position  NUMBER(2),
+                  lap_distance_m   NUMBER(10,2),
+                  sector           NUMBER(1),
+                  pit_state        VARCHAR2(16),
+                  tyre_compound    VARCHAR2(16),
+                  tyre_age_laps    NUMBER(3),
+                  priority         VARCHAR2(16),
+                  message_text     VARCHAR2(512),
+                  best_strategies  VARCHAR2(4000),
+                  sent_at          TIMESTAMP     NOT NULL,
+                  CONSTRAINT pk_radio_messages PRIMARY KEY (message_id),
+                  CONSTRAINT fk_radio_session FOREIGN KEY (session_uid)
+                      REFERENCES sessions (session_uid)
+              )
