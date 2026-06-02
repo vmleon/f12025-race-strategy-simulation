@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - changeSet:
+      id: 009-01-radio-rendered-text
+      author: victormartin
+      changes:
+        - sql:
+            sql: ALTER TABLE radio_messages ADD (rendered_text VARCHAR2(512))
