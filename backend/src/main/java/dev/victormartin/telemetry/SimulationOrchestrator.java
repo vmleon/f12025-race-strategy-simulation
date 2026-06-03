@@ -109,6 +109,11 @@ public class SimulationOrchestrator {
         return jobs.get(jobId);
     }
 
+    /** Number of stored jobs that have not yet produced a result (running / in flight). */
+    public int simsInFlight() {
+        return (int) jobs.values().stream().filter(j -> j.result() == null).count();
+    }
+
     /**
      * Manually trigger a simulation with the latest state. Returns jobId or null if no state.
      */

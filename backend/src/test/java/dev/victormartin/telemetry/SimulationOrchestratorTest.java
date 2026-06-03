@@ -182,6 +182,15 @@ class SimulationOrchestratorTest {
     }
 
     @Test
+    void simsInFlightCountsRunningJobs() throws Exception {
+        assertEquals(0, orchestrator.simsInFlight(), "no jobs initially");
+        orchestrator.onStateUpdate(buildStateJson(5, 0, 0));
+        orchestrator.triggerNow();
+        // enqueue swallows the NullPointerException, so the job stays in the map with result==null
+        assertEquals(1, orchestrator.simsInFlight(), "in-flight job is counted");
+    }
+
+    @Test
     void throwingRunLogDoesNotBreakTrigger() throws Exception {
         SimulationRunLog throwing = new SimulationRunLog() {
             @Override public void recordStarted(String j, String s, long a) { throw new RuntimeException("boom"); }
