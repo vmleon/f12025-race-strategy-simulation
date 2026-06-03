@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import dev.victormartin.telemetry.GameMappings;
 import dev.victormartin.telemetry.engineer.EngineerMessage.Priority;
 import dev.victormartin.telemetry.engineer.log.RadioMessageLog;
 import dev.victormartin.telemetry.engineer.log.RadioMessageLogEntry;
@@ -396,10 +397,12 @@ public class RaceEngineerService {
         String tyre = playerCar.has("tyre") ? playerCar.get("tyre").asText() : null;
         int tyreAge = playerCar.has("tyreAge") ? playerCar.get("tyreAge").asInt() : 0;
         int sector = playerCar.has("sector") ? playerCar.get("sector").asInt() : 0;
+        String driverName = playerCar.has("name") ? playerCar.get("name").asText() : null;
+        String circuitName = GameMappings.trackName(tick.trackId());
         String strategies = RadioStrategySummary.topThreeJson(mapper, session.latestEvaluation);
         return new RadioRenderContext(
-                original.text(), original.priority(), tick.sessionType(), tick.trackId(),
-                tick.currentLap(), tick.totalLaps(), tick.playerPos(),
+                original.text(), original.priority(), tick.sessionType(), tick.trackId(), circuitName,
+                tick.currentLap(), tick.totalLaps(), tick.playerPos(), driverName,
                 tyre, tyreAge, sector, strategies);
     }
 
