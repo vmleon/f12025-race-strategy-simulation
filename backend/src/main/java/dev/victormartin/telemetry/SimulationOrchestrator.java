@@ -37,6 +37,7 @@ public class SimulationOrchestrator {
     private final LapHistoryTracker lapHistoryTracker;
     private final dev.victormartin.telemetry.simulation.PaceBaselineLookup paceBaselineLookup;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final SimulationRunLog simulationRunLog;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "sim-orchestrator");
@@ -58,10 +59,12 @@ public class SimulationOrchestrator {
 
     public SimulationOrchestrator(QueueService queueService,
                                   LapHistoryTracker lapHistoryTracker,
-                                  dev.victormartin.telemetry.simulation.PaceBaselineLookup paceBaselineLookup) {
+                                  dev.victormartin.telemetry.simulation.PaceBaselineLookup paceBaselineLookup,
+                                  SimulationRunLog simulationRunLog) {
         this.queueService = queueService;
         this.lapHistoryTracker = lapHistoryTracker;
         this.paceBaselineLookup = paceBaselineLookup;
+        this.simulationRunLog = simulationRunLog;
     }
 
     /**
@@ -106,6 +109,11 @@ public class SimulationOrchestrator {
         return jobs.get(jobId);
     }
 
+    /** Number of stored jobs that have not yet produced a result (running / in flight). */
+    public int simsInFlight() {
+        return (int) jobs.values().stream().filter(j -> j.result() == null).count();
+    }
+
     /**
      * Manually trigger a simulation with the latest state. Returns jobId or null if no state.
      */
@@ -132,6 +140,9 @@ public class SimulationOrchestrator {
         SimulationJob existing = jobs.get(jobId);
         if (existing != null) {
             jobs.put(jobId, new SimulationJob(jobId, existing.startedAt(), result));
+            long durationMs = System.currentTimeMillis() - existing.startedAt();
+            int iterations = result != null ? result.iterations() : 0;
+            safeRecordCompleted(jobId, durationMs, iterations, "completed");
             log.info("SimulationOrchestrator: job {} completed", jobId);
         }
     }
@@ -200,7 +211,14 @@ public class SimulationOrchestrator {
 
     private String executeSimulation(JsonNode state) {
         String jobId = UUID.randomUUID().toString().substring(0, 8);
-        jobs.put(jobId, new SimulationJob(jobId, System.currentTimeMillis(), null));
+        long startedAt = System.currentTimeMillis();
+        jobs.put(jobId, new SimulationJob(jobId, startedAt, null));
+        String sessionUid = state.has("sessionUid") ? state.get("sessionUid").asText() : "-";
+        try {
+            simulationRunLog.recordStarted(jobId, sessionUid, startedAt);
+        } catch (Exception e) {
+            log.warn("SimulationOrchestrator: run log recordStarted failed: {}", e.getMessage());
+        }
 
         // Evict old jobs if too many
         if (jobs.size() > MAX_STORED_RESULTS) {
@@ -215,11 +233,11 @@ public class SimulationOrchestrator {
             RaceSnapshot snapshot = assembleSnapshot(state);
             if (snapshot == null) {
                 log.error("SimulationOrchestrator: failed to assemble snapshot for job {}", jobId);
+                safeRecordCompleted(jobId, System.currentTimeMillis() - startedAt, 0, "failed");
                 jobs.remove(jobId);
                 return jobId;
             }
 
-            String sessionUid = state.has("sessionUid") ? state.get("sessionUid").asText() : "-";
             String payload = objectMapper.writeValueAsString(Map.of(
                     "jobId", jobId,
                     "sessionUid", sessionUid,
@@ -228,6 +246,7 @@ public class SimulationOrchestrator {
             log.info("SimulationOrchestrator: enqueued simulation request {}", jobId);
         } catch (Exception e) {
             log.error("SimulationOrchestrator: job {} failed to enqueue: {}", jobId, e.getMessage(), e);
+            safeRecordCompleted(jobId, System.currentTimeMillis() - startedAt, 0, "failed");
             jobs.remove(jobId);
         }
 
@@ -313,6 +332,14 @@ public class SimulationOrchestrator {
             case "W" -> 8;
             default -> 17;
         };
+    }
+
+    private void safeRecordCompleted(String jobId, long durationMs, int iterations, String status) {
+        try {
+            simulationRunLog.recordCompleted(jobId, durationMs, iterations, status);
+        } catch (Exception e) {
+            log.warn("SimulationOrchestrator: run log recordCompleted failed: {}", e.getMessage());
+        }
     }
 
     // ── job record ────────────────────────────────────────────────────
