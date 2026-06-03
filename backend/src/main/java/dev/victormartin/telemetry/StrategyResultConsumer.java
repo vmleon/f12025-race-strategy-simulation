@@ -1,5 +1,6 @@
 package dev.victormartin.telemetry;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -19,7 +20,17 @@ public class StrategyResultConsumer {
 
     private final QueueService queueService;
     private final StrategyOrchestrator strategyOrchestrator;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = newResultMapper();
+
+    /**
+     * The simulator owns the STRATEGY_RESULT schema and may add fields (e.g.
+     * {@code repairFrontWing} on a pit stop) ahead of the backend. Tolerate
+     * unknown properties so one new field never drops the whole result.
+     */
+    static ObjectMapper newResultMapper() {
+        return new ObjectMapper()
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    }
 
     public StrategyResultConsumer(QueueService queueService,
                                   StrategyOrchestrator strategyOrchestrator) {

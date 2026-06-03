@@ -1,6 +1,9 @@
+import re
+from datetime import datetime
+
 from calibration import db
 from calibration.pipeline import (
-    _bucket_pace_rows, _group_pit_stops, _mad_filter,
+    _bucket_pace_rows, _group_pit_stops, _mad_filter, _upsert_pace_baseline,
     COMPOUND_KNOB_NAMES, MIN_TYRE_DEG_SAMPLES, MIN_FUEL_SAMPLES,
     MIN_PIT_STOP_SAMPLES, MIN_PACE_BASELINE_SAMPLES,
 )
@@ -158,3 +161,65 @@ class TestPaceBaselineConstants:
 
     def test_minimum_samples(self):
         assert MIN_PACE_BASELINE_SAMPLES == 5
+
+
+class _FakeCursor:
+    """Mimics python-oracledb's bind-checking contract.
+
+    For positional (list/tuple) binds, oracledb counts every ``:N`` occurrence
+    in the SQL as a distinct bind position — so a MERGE that reuses ``:1`` in
+    several clauses needs as many values as occurrences. This is exactly what
+    raised ``DPY-4009: 20 positional bind values are required but 10 were
+    provided`` against the live DB. For named (dict) binds, repeats refer to the
+    same name, so only the distinct names must be supplied.
+    """
+
+    def __init__(self):
+        self.executed = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, sql, params):
+        placeholders = re.findall(r":(\w+)", sql)
+        if isinstance(params, dict):
+            missing = [p for p in placeholders if p not in params]
+            if missing:
+                raise AssertionError(f"missing named binds: {sorted(set(missing))}")
+        else:
+            if len(params) != len(placeholders):
+                raise AssertionError(
+                    f"{len(placeholders)} positional bind values are required "
+                    f"but {len(params)} were provided"
+                )
+        self.executed.append((sql, params))
+
+
+class _FakeConn:
+    def __init__(self):
+        self.cursor_obj = _FakeCursor()
+
+    def cursor(self):
+        return self.cursor_obj
+
+    def commit(self):
+        pass
+
+
+class TestUpsertPaceBaseline:
+
+    def test_binds_satisfy_merge_placeholders(self):
+        """The MERGE in _upsert_pace_baseline must supply every placeholder it
+        references — regression for DPY-4009 (reused numbered binds counted as
+        20 positions while only 10 values were provided)."""
+        conn = _FakeConn()
+        _upsert_pace_baseline(
+            conn, track_id=4, compound=16, regime="PLAYER",
+            fuel_bucket_kg=40, weather=0, track_temp_bucket_c=30,
+            mean_lap_ms=80_000.0, stddev_lap_ms=150.0, sample_count=7,
+            fitted_at=datetime(2026, 6, 3, 18, 0, 0),
+        )
+        assert len(conn.cursor_obj.executed) == 1

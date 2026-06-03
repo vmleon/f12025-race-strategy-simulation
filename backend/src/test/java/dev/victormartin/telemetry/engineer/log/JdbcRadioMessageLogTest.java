@@ -5,20 +5,27 @@ import java.sql.Timestamp;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class JdbcRadioMessageLogTest {
 
     @Test
     void bindArgsMapsFieldsToColumnOrder() {
+        // Telemetry serializes the session uid as unsigned hex (Long.toHexString),
+        // so the entry carries the hex string; it must be bound as the signed long
+        // matching sessions.session_uid (NUMBER).
+        long uid = -8511303853535344022L;
+        String hexUid = Long.toHexString(uid); // "89e1c63d729cca6a"
+
         RadioMessageLogEntry e = new RadioMessageLogEntry(
-                "12345", 7, 15, 3, 58, 5, 1234.5, 1,
+                hexUid, 7, 15, 3, 58, 5, 1234.5, 1,
                 "ON_TRACK", "Soft", 4, "NORMAL", "Box this lap", "Box, box",
                 "[{\"rank\":1}]", 1_700_000_000_000L);
 
         Object[] args = JdbcRadioMessageLog.bindArgs(e);
 
         assertEquals(16, args.length);
-        assertEquals("12345", args[0]);
+        assertEquals(uid, args[0]);
         assertEquals(7, args[1]);
         assertEquals(15, args[2]);
         assertEquals(3, args[3]);
@@ -34,5 +41,21 @@ class JdbcRadioMessageLogTest {
         assertEquals("Box, box", args[13]);
         assertEquals("[{\"rank\":1}]", args[14]);
         assertEquals(new Timestamp(1_700_000_000_000L), args[15]);
+    }
+
+    @Test
+    void parseSessionUidConvertsUnsignedHexToSignedLong() {
+        // Inverse of Long.toHexString used by the telemetry serializer.
+        assertEquals(6148076303767893186L,
+                JdbcRadioMessageLog.parseSessionUid(Long.toHexString(6148076303767893186L)));
+        assertEquals(-8511303853535344022L,
+                JdbcRadioMessageLog.parseSessionUid("89e1c63d729cca6a"));
+    }
+
+    @Test
+    void parseSessionUidReturnsNullForPlaceholders() {
+        assertNull(JdbcRadioMessageLog.parseSessionUid(null));
+        assertNull(JdbcRadioMessageLog.parseSessionUid(""));
+        assertNull(JdbcRadioMessageLog.parseSessionUid("-"));
     }
 }

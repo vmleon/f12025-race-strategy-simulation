@@ -63,11 +63,16 @@ public class JdbcSimulationRunLog implements SimulationRunLog {
         });
     }
 
-    /** session_uid is a NUMBER column; the orchestrator may pass "-" or blank -> store null. */
+    /**
+     * session_uid is a NUMBER column. Telemetry serializes the uid as unsigned
+     * hex ({@code Long.toHexString}), so decode it back to the signed long that
+     * matches sessions.session_uid. The orchestrator may pass "-" or blank when
+     * no session is active -> store null.
+     */
     static Long parseSessionUid(String sessionUid) {
         if (sessionUid == null || sessionUid.isBlank() || sessionUid.equals("-")) return null;
         try {
-            return Long.parseLong(sessionUid.trim());
+            return Long.parseUnsignedLong(sessionUid.trim(), 16);
         } catch (NumberFormatException e) {
             return null;
         }

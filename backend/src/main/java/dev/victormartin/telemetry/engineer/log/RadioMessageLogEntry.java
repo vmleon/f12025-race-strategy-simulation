@@ -2,9 +2,10 @@ package dev.victormartin.telemetry.engineer.log;
 
 /**
  * One delivered radio message plus the situational context captured at the
- * moment it was broadcast to the iOS client. {@code sessionUid} is the decimal
- * string of the game session uid (bound directly to the NUMBER column, matching
- * how {@code SessionController} queries it). {@code bestStrategiesJson} is null
+ * moment it was broadcast to the iOS client. {@code sessionUid} is the unsigned
+ * hex string of the game session uid as serialized by telemetry; the radio log
+ * converts it to the signed NUMBER value before persisting (see
+ * {@code JdbcRadioMessageLog#parseSessionUid}). {@code bestStrategiesJson} is null
  * when no strategy evaluation exists yet (e.g. Practice).
  */
 public record RadioMessageLogEntry(

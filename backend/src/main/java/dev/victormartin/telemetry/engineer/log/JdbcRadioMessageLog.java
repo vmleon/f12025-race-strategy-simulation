@@ -49,10 +49,21 @@ public class JdbcRadioMessageLog implements RadioMessageLog {
         });
     }
 
+    /**
+     * Telemetry serializes the session uid as unsigned hex ({@code Long.toHexString});
+     * {@code radio_messages.session_uid} is the signed {@code NUMBER} matching
+     * {@code sessions.session_uid}. Convert hex → signed long here so the insert
+     * (and its FK) succeeds. Returns null for the {@code "-"}/blank placeholders.
+     */
+    static Long parseSessionUid(String hexUid) {
+        if (hexUid == null || hexUid.isBlank() || hexUid.equals("-")) return null;
+        return Long.parseUnsignedLong(hexUid.trim(), 16);
+    }
+
     /** Bind values in the exact column order of {@link #INSERT_SQL} (message_id comes from the sequence). */
     static Object[] bindArgs(RadioMessageLogEntry e) {
         return new Object[] {
-                e.sessionUid(),
+                parseSessionUid(e.sessionUid()),
                 e.trackId(),
                 e.sessionType(),
                 e.lapNumber(),

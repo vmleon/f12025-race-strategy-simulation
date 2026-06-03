@@ -249,24 +249,37 @@ def _upsert_pace_baseline(
     fitted_at: datetime,
 ) -> None:
     with conn.cursor() as cur:
+        # Named binds (not :1..:N): oracledb counts each *occurrence* of a
+        # numbered placeholder as a separate positional value, so reusing the
+        # same number across the USING / UPDATE / INSERT clauses requires 20
+        # values for 10 logical binds (DPY-4009). Named binds dedupe by name.
         cur.execute(
             """
             MERGE INTO lap_pace_baselines b
-            USING (SELECT :1 track_id, :2 compound, :3 regime, :4 fuel_bucket_kg,
-                          :5 weather, :6 track_temp_bucket_c FROM dual) s
+            USING (SELECT :track_id track_id, :compound compound, :regime regime,
+                          :fuel_bucket_kg fuel_bucket_kg, :weather weather,
+                          :track_temp_bucket_c track_temp_bucket_c FROM dual) s
             ON (b.track_id = s.track_id AND b.compound = s.compound
                 AND b.regime = s.regime AND b.fuel_bucket_kg = s.fuel_bucket_kg
                 AND b.weather = s.weather AND b.track_temp_bucket_c = s.track_temp_bucket_c)
             WHEN MATCHED THEN UPDATE SET
-                mean_lap_ms = :7, stddev_lap_ms = :8,
-                sample_count = :9, last_fitted_at = :10
+                mean_lap_ms = :mean_lap_ms, stddev_lap_ms = :stddev_lap_ms,
+                sample_count = :sample_count, last_fitted_at = :last_fitted_at
             WHEN NOT MATCHED THEN INSERT
                 (track_id, compound, regime, fuel_bucket_kg, weather, track_temp_bucket_c,
                  mean_lap_ms, stddev_lap_ms, sample_count, last_fitted_at)
-                VALUES (:1, :2, :3, :4, :5, :6, :7, :8, :9, :10)
+                VALUES (:track_id, :compound, :regime, :fuel_bucket_kg, :weather,
+                        :track_temp_bucket_c, :mean_lap_ms, :stddev_lap_ms,
+                        :sample_count, :last_fitted_at)
             """,
-            [track_id, compound, regime, fuel_bucket_kg, weather, track_temp_bucket_c,
-             int(round(mean_lap_ms)), int(round(stddev_lap_ms)), sample_count, fitted_at],
+            {
+                "track_id": track_id, "compound": compound, "regime": regime,
+                "fuel_bucket_kg": fuel_bucket_kg, "weather": weather,
+                "track_temp_bucket_c": track_temp_bucket_c,
+                "mean_lap_ms": int(round(mean_lap_ms)),
+                "stddev_lap_ms": int(round(stddev_lap_ms)),
+                "sample_count": sample_count, "last_fitted_at": fitted_at,
+            },
         )
     conn.commit()
 
