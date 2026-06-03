@@ -89,4 +89,19 @@ class SystemStatsControllerTest {
                 .andExpect(jsonPath("$.perDay[0].day").value("2026-05-30"))
                 .andExpect(jsonPath("$.perDay[0].count").value(14));
     }
+
+    @Test
+    void liveReturnsInFlightAndTodayCounts() throws Exception {
+        when(orchestrator.simsInFlight()).thenReturn(2);
+        when(jdbc.queryForObject(contains("simulation_runs WHERE started_at >= TRUNC"), eq(Long.class)))
+                .thenReturn(5L);
+        when(jdbc.queryForObject(contains("radio_messages WHERE sent_at >= TRUNC"), eq(Long.class)))
+                .thenReturn(9L);
+
+        mockMvc.perform(get("/api/system/stats/live"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.simsInFlight").value(2))
+                .andExpect(jsonPath("$.today.simulations").value(5))
+                .andExpect(jsonPath("$.today.radioMessages").value(9));
+    }
 }

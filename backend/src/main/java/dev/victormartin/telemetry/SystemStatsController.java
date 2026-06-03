@@ -77,6 +77,19 @@ public class SystemStatsController {
         return out;
     }
 
+    @GetMapping("/live")
+    public Map<String, Object> live() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("simsInFlight", orchestrator.simsInFlight());
+        Map<String, Long> today = new LinkedHashMap<>();
+        today.put("simulations", firstNonNull(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM simulation_runs WHERE started_at >= TRUNC(SYSTIMESTAMP)", Long.class), 0L));
+        today.put("radioMessages", firstNonNull(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM radio_messages WHERE sent_at >= TRUNC(SYSTIMESTAMP)", Long.class), 0L));
+        out.put("today", today);
+        return out;
+    }
+
     @GetMapping("/calibration")
     public Map<String, Object> calibration() {
         Map<String, Object> out = new LinkedHashMap<>();
