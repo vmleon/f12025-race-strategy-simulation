@@ -10,6 +10,9 @@ import dev.victormartin.telemetry.simulation.LapHistoryTracker;
 import dev.victormartin.telemetry.simulation.PaceBaselineLookup;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class SimulationOrchestratorTest {
@@ -17,11 +20,25 @@ class SimulationOrchestratorTest {
     private SimulationOrchestrator orchestrator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    record StartedRow(String jobId, String sessionUid, long at) {}
+
+    private final List<StartedRow> started = new ArrayList<>();
+
+    private SimulationRunLog capturingLog() {
+        return new SimulationRunLog() {
+            @Override public void recordStarted(String jobId, String sessionUid, long at) {
+                started.add(new StartedRow(jobId, sessionUid, at));
+            }
+            @Override public void recordCompleted(String jobId, long d, int it, String status) { }
+        };
+    }
+
     @BeforeEach
     void setUp() {
+        started.clear();
         QueueService queueService = new QueueService(null);
         orchestrator = new SimulationOrchestrator(
-                queueService, new LapHistoryTracker(), new PaceBaselineLookup(null));
+                queueService, new LapHistoryTracker(), new PaceBaselineLookup(null), capturingLog());
     }
 
     private String buildStateJson(int leaderLap, int safetyCarStatus, int car0PitStatus) {
@@ -150,5 +167,30 @@ class SimulationOrchestratorTest {
     @Test
     void triggerNowReturnsNullWithNoState() {
         assertNull(orchestrator.triggerNow());
+    }
+
+    @Test
+    void recordsStartedWhenSimulationExecutes() throws Exception {
+        orchestrator.onStateUpdate(buildStateJson(5, 0, 0));
+        String jobId = orchestrator.triggerNow();
+
+        assertNotNull(jobId, "triggerNow should return a jobId when state is present");
+        assertEquals(1, started.size(), "executing a simulation records exactly one started row");
+        assertEquals(jobId, started.get(0).jobId());
+        // buildStateJson has no sessionUid field -> orchestrator passes "-" -> captured as "-"
+        assertEquals("-", started.get(0).sessionUid());
+    }
+
+    @Test
+    void throwingRunLogDoesNotBreakTrigger() throws Exception {
+        SimulationRunLog throwing = new SimulationRunLog() {
+            @Override public void recordStarted(String j, String s, long a) { throw new RuntimeException("boom"); }
+            @Override public void recordCompleted(String j, long d, int i, String s) { throw new RuntimeException("boom"); }
+        };
+        SimulationOrchestrator o = new SimulationOrchestrator(
+                new QueueService(null), new LapHistoryTracker(), new PaceBaselineLookup(null), throwing);
+
+        o.onStateUpdate(buildStateJson(5, 0, 0));
+        assertNotNull(o.triggerNow(), "a throwing run log must not break triggering");
     }
 }
