@@ -8,6 +8,7 @@ import {
   RadioStats,
   CalibrationStats,
   DayCount,
+  LiveStats,
 } from './system.service';
 
 @Component({
@@ -20,6 +21,12 @@ import {
         <h2>System</h2>
         <button (click)="refresh()">Refresh</button>
       </header>
+
+      <div class="live-strip">
+        <div class="tile"><span>{{ live?.simsInFlight ?? 0 }}</span>in flight</div>
+        <div class="tile"><span>{{ live?.today?.simulations ?? 0 }}</span>sims today</div>
+        <div class="tile"><span>{{ live?.today?.radioMessages ?? 0 }}</span>radio today</div>
+      </div>
 
       <div class="cards">
         <!-- Simulations -->
@@ -72,6 +79,7 @@ import {
     `
       .system { padding: 1.5rem; }
       .system__head { display: flex; justify-content: space-between; align-items: center; }
+      .live-strip { display: flex; gap: 1.5rem; margin: 1rem 0; padding: 0.75rem 1rem; background: var(--surface, #1b1b1b); border-radius: 8px; }
       .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; margin-top: 1rem; }
       .card { background: var(--surface, #1b1b1b); border-radius: 8px; padding: 1rem; }
       .card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
@@ -86,6 +94,7 @@ export class SystemComponent implements OnInit {
   sim?: SimulationStats;
   radio?: RadioStats;
   calib?: CalibrationStats;
+  live?: LiveStats;
 
   simPerDay = this.emptyDataset('Simulations');
   simStatus = this.emptyDataset('Status');
@@ -102,6 +111,7 @@ export class SystemComponent implements OnInit {
 
   ngOnInit(): void {
     this.refresh();
+    this.svc.live$().subscribe((l) => (this.live = l));
   }
 
   refresh(): void {

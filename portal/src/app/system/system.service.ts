@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, timer } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
 
 export interface DayCount {
   day: string;
@@ -33,6 +34,11 @@ export interface CalibrationStats {
   perDay: DayCount[];
 }
 
+export interface LiveStats {
+  simsInFlight: number;
+  today: { simulations: number; radioMessages: number };
+}
+
 @Injectable({ providedIn: 'root' })
 export class SystemService {
   constructor(private http: HttpClient) {}
@@ -47,5 +53,9 @@ export class SystemService {
 
   calibration(): Observable<CalibrationStats> {
     return this.http.get<CalibrationStats>('/api/system/stats/calibration');
+  }
+
+  live$(): Observable<LiveStats> {
+    return timer(0, 5000).pipe(switchMap(() => this.http.get<LiveStats>('/api/system/stats/live')));
   }
 }
