@@ -26,3 +26,6 @@ databaseChangeLog:
   - include:
       file: 009-radio-rendered-text.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 010-simulation-runs.yaml
+      relativeToChangelogFile: true

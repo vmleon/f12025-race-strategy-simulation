@@ -1,0 +1,26 @@
+databaseChangeLog:
+  - changeSet:
+      id: 010-01-seq-simulation-runs
+      author: victormartin
+      changes:
+        - sql:
+            sql: CREATE SEQUENCE seq_simulation_runs START WITH 1 INCREMENT BY 1
+
+  - changeSet:
+      id: 010-02-simulation-runs
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE simulation_runs (
+                  run_id          NUMBER(12)    NOT NULL,
+                  job_id          VARCHAR2(16)  NOT NULL,
+                  session_uid     NUMBER(20),
+                  started_at      TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+                  completed_at    TIMESTAMP,
+                  duration_ms     NUMBER(10),
+                  iterations      NUMBER(8),
+                  status          VARCHAR2(12)  NOT NULL,
+                  CONSTRAINT pk_simulation_runs PRIMARY KEY (run_id),
+                  CONSTRAINT uq_simulation_runs_job UNIQUE (job_id)
+              )
