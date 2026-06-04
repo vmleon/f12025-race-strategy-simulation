@@ -3,6 +3,8 @@ from __future__ import annotations
 from simulator.models import CarSnapshot, Penalty
 from simulator.track_defaults import circuit_default_ms
 
+SECTORS = 3
+
 
 class CarState:
     """Mutable state of a single car during a Monte Carlo iteration."""
@@ -14,7 +16,7 @@ class CarState:
         "front_wing_damage", "floor_damage", "engine_damage",
         "num_pit_stops", "retired", "total_time_ms", "current_lap",
         "pending_penalties", "penalty_time_ms",
-        "lap_pace_ms",
+        "sector_pace_ms", "perfect_sector_ms",
     )
 
     def __init__(
@@ -33,7 +35,8 @@ class CarState:
         num_pit_stops: int,
         total_time_ms: float,
         current_lap: int,
-        lap_pace_ms: float,
+        sector_pace_ms: list[float],
+        perfect_sector_ms: list[float],
         pending_penalties: list[Penalty] | None = None,
         penalty_time_ms: float = 0.0,
     ) -> None:
@@ -52,7 +55,8 @@ class CarState:
         self.retired = False
         self.total_time_ms = total_time_ms
         self.current_lap = current_lap
-        self.lap_pace_ms = lap_pace_ms
+        self.sector_pace_ms = sector_pace_ms
+        self.perfect_sector_ms = perfect_sector_ms
         self.pending_penalties = list(pending_penalties) if pending_penalties else []
         self.penalty_time_ms = penalty_time_ms
 
@@ -68,6 +72,7 @@ class CarState:
             if p.penalty_type == "time":
                 penalty_time_ms += p.seconds * 1000.0
         active_penalties = [p for p in penalties if p.penalty_type != "time"]
+        sector_pace = _sector_pace_ms(cs.sector_history_ms, cs.sector_baseline_ms, track_id)
         return CarState(
             car_index=cs.car_index,
             driver_name=cs.driver_name,
@@ -83,26 +88,50 @@ class CarState:
             num_pit_stops=cs.num_pit_stops,
             total_time_ms=cs.total_time_ms,
             current_lap=current_lap,
-            lap_pace_ms=_pace_from_recent_laps(
-                cs.recent_lap_times_ms, track_id, cs.baseline_lap_ms),
+            sector_pace_ms=sector_pace,
+            perfect_sector_ms=_perfect_sector_floor_ms(cs.perfect_sector_ms, sector_pace),
             pending_penalties=active_penalties,
             penalty_time_ms=penalty_time_ms,
         )
 
 
-def _pace_from_recent_laps(
-    recent_lap_times_ms: list[int],
+def _sector_pace_ms(
+    sector_history_ms: list[list[int]],
+    sector_baseline_ms: list[int],
     track_id: int,
-    baseline_lap_ms: int = 0,
-) -> float:
-    """Median of up to 3 most recent valid laps when available; calibrated
-    baseline next; per-circuit fastest-lap default last. The chain prefers
-    fresher signal but never falls below a track-aware floor.
+) -> list[float]:
+    """Per-sector base pace: median of recent observed sector times, else the
+    calibrated sector baseline, else the per-circuit default split evenly across
+    the three sectors. A bad single sector only affects that sector's pace.
     """
-    valid = [t for t in recent_lap_times_ms if t > 0]
-    if valid:
-        valid.sort()
-        return float(valid[len(valid) // 2])
-    if baseline_lap_ms > 0:
-        return float(baseline_lap_ms)
-    return circuit_default_ms(track_id)
+    default_sector = circuit_default_ms(track_id) / SECTORS
+    out: list[float] = []
+    for s in range(SECTORS):
+        observed = [t for t in sector_history_ms[s] if t > 0] if s < len(sector_history_ms) else []
+        if observed:
+            observed.sort()
+            out.append(float(observed[len(observed) // 2]))
+        elif s < len(sector_baseline_ms) and sector_baseline_ms[s] > 0:
+            out.append(float(sector_baseline_ms[s]))
+        else:
+            out.append(default_sector)
+    return out
+
+
+def _perfect_sector_floor_ms(
+    perfect_sector_ms: list[int],
+    sector_pace_ms: list[float],
+) -> list[float]:
+    """Per-sector floor: the calibrated perfect (min clean) sector when present,
+    else 90% of the sector's base pace (the legacy clamp)."""
+    out: list[float] = []
+    for s in range(SECTORS):
+        p = perfect_sector_ms[s] if s < len(perfect_sector_ms) else 0
+        out.append(float(p) if p > 0 else sector_pace_ms[s] * 0.9)
+    return out
+
+
+def _lap_pace_ms(cs: CarSnapshot, track_id: int) -> float:
+    """Diagnostics helper: a lap-level pace estimate = Σ of the per-sector base
+    pace. Used by strategy logging, not by the engine."""
+    return sum(_sector_pace_ms(cs.sector_history_ms, cs.sector_baseline_ms, track_id))

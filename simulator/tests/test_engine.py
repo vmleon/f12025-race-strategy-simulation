@@ -21,6 +21,8 @@ def _make_car(
     num_pit_stops: int = 0,
     total_time_ms: float = 0.0,
     penalties: list[Penalty] | None = None,
+    sector_history_ms: list[list[int]] | None = None,
+    sector_baseline_ms: list[int] | None = None,
 ) -> CarSnapshot:
     return CarSnapshot(
         car_index=car_index,
@@ -37,6 +39,8 @@ def _make_car(
         num_pit_stops=num_pit_stops,
         total_time_ms=total_time_ms,
         penalties=penalties or [],
+        sector_history_ms=sector_history_ms or [[], [], []],
+        sector_baseline_ms=sector_baseline_ms or [0, 0, 0],
     )
 
 
@@ -203,7 +207,7 @@ class TestResultsAttribution:
             fuel_kg=80.0, fuel_burn_per_sector_kg=0.18,
             front_wing_damage=0, floor_damage=0, engine_damage=0,
             num_pit_stops=0, total_time_ms=19_000.0,
-            recent_lap_times_ms=[75_000, 75_500, 75_200],  # ~15 s/lap faster
+            sector_history_ms=[[25_000, 25_200], [25_000, 25_100], [25_000, 24_900]],  # ~75 s/lap
         )
         cars.append(player_snapshot)
         snapshot = _make_snapshot(cars=cars, total_laps=10, current_lap=1)
@@ -312,7 +316,8 @@ def test_ai_pits_at_exactly_soft_lifespan_30():
         tyre_compound=16, tyre_age_laps=29, fuel_kg=50.0,
         fuel_burn_per_sector_kg=0.18, front_wing_damage=0, floor_damage=0,
         engine_damage=0, num_pit_stops=0, total_time_ms=0.0, current_lap=20,
-        lap_pace_ms=90_000.0,
+        sector_pace_ms=[30_000.0, 30_000.0, 30_000.0],
+        perfect_sector_ms=[0.0, 0.0, 0.0],
     )
     engine._check_pit_stop(car_young, lap=20, snapshot=snapshot)
     assert car_young.num_pit_stops == 0, "AI should NOT pit at age 29 (under lifespan 30)"
@@ -323,7 +328,8 @@ def test_ai_pits_at_exactly_soft_lifespan_30():
         tyre_compound=16, tyre_age_laps=30, fuel_kg=50.0,
         fuel_burn_per_sector_kg=0.18, front_wing_damage=0, floor_damage=0,
         engine_damage=0, num_pit_stops=0, total_time_ms=0.0, current_lap=20,
-        lap_pace_ms=90_000.0,
+        sector_pace_ms=[30_000.0, 30_000.0, 30_000.0],
+        perfect_sector_ms=[0.0, 0.0, 0.0],
     )
     engine._check_pit_stop(car_due, lap=20, snapshot=snapshot)
     assert car_due.num_pit_stops == 1, "AI should pit at age 30 (lifespan)"
@@ -402,3 +408,32 @@ class TestEngineDamageDnf:
 
         assert engine._check_dnf(self._car(engine_damage=0)) is False   # rate = base
         assert engine._check_dnf(self._car(engine_damage=100)) is True  # rate = 4x base
+
+
+class TestPerSectorPace:
+    def test_per_sector_tyre_deg_is_consumed(self):
+        # A per-sector tyre-deg coefficient (sector 1 only) must change S1's time.
+        coeffs = Coefficients.defaults()
+        coeffs.put("tyre_deg_medium", "AI", 1, 100.0)  # 100 ms/lap of age, sector 1
+        engine = MonteCarloEngine(coeffs, seed=1)
+        car = CarState.from_snapshot(
+            _make_car(0, tyre_age_laps=10, sector_baseline_ms=[30_000, 30_000, 30_000]),
+            current_lap=1, track_id=0,
+        )
+        # Sector 1 carries 10*100 = 1000 ms of deg; sector 0 carries none.
+        # Average many draws to cancel the Gaussian noise.
+        import statistics
+        s0 = statistics.mean(engine._predict_sector_time(car, 0, False, []) for _ in range(400))
+        s1 = statistics.mean(engine._predict_sector_time(car, 1, False, []) for _ in range(400))
+        assert s1 - s0 == pytest.approx(1000.0, abs=60.0)
+
+    def test_perfect_sector_is_the_floor(self):
+        coeffs = Coefficients.defaults()
+        engine = MonteCarloEngine(coeffs, seed=1)
+        car = CarState.from_snapshot(
+            _make_car(0, sector_baseline_ms=[30_000, 30_000, 30_000]),
+            current_lap=1, track_id=0,
+        )
+        car.perfect_sector_ms = [29_999_000.0, 29_999_000.0, 29_999_000.0]  # absurd floor
+        t = engine._predict_sector_time(car, 0, False, [])
+        assert t == 29_999_000.0

@@ -167,21 +167,20 @@ class MonteCarloEngine:
     ) -> float:
         regime = car.regime
 
-        # Per-car base sector pace, derived from observed lap times (median of
-        # last 3) by car_state. Splits the lap evenly across 3 sectors —
-        # per-sector pace ratios are not yet calibrated.
-        base_sector_pace = car.lap_pace_ms / SECTORS_PER_LAP
+        # Per-sector base pace (observed median → calibrated baseline → circuit
+        # default split), set on the car by car_state from the snapshot.
+        base_sector_pace = car.sector_pace_ms[sector]
 
         if safety_car:
             return base_sector_pace * 1.4
 
         noise = self.rng.gauss(0, NOISE_SIGMA_MS)
-        tyre_deg = self._tyre_degradation(car, regime)
+        tyre_deg = self._tyre_degradation(car, regime, sector)
         fuel_effect = self.coefficients.get("fuel_effect", regime, sector) * car.fuel_kg
         damage = self._damage_penalty(car)
 
         sector_time = base_sector_pace + tyre_deg + fuel_effect + damage + noise
-        return max(sector_time, base_sector_pace * 0.9)
+        return max(sector_time, car.perfect_sector_ms[sector])
 
     def _damage_penalty(self, car: CarState) -> float:
         """Per-sector ms lost to car damage (hardcoded, not calibrated).
@@ -200,7 +199,7 @@ class MonteCarloEngine:
         )
         return total_per_lap / SECTORS_PER_LAP
 
-    def _tyre_degradation(self, car: CarState, regime: str) -> float:
+    def _tyre_degradation(self, car: CarState, regime: str, sector: int) -> float:
         knob = {
             16: "tyre_deg_soft",
             17: "tyre_deg_medium",
@@ -208,7 +207,7 @@ class MonteCarloEngine:
             7: "tyre_deg_intermediate",
             8: "tyre_deg_wet",
         }.get(car.tyre_compound, "tyre_deg_medium")
-        deg_per_lap = self.coefficients.get(knob, regime)
+        deg_per_lap = self.coefficients.get(knob, regime, sector)
         return deg_per_lap * car.tyre_age_laps
 
     # ── sub-models ───────────────────────────────────────────────────────

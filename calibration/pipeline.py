@@ -50,7 +50,6 @@ def run(conn: oracledb.Connection, track_id: int) -> None:
         _fit_pit_stop_duration(conn, track_id, regime, now)
 
     # Pace baselines aggregate across regimes inside the function — single call.
-    _fit_pace_baselines(conn, track_id)
     _fit_sector_baselines(conn, track_id)
 
 
@@ -164,56 +163,11 @@ def _fit_pit_stop_duration(
     print(f"  pit_stop_time_loss: mean={m:.0f}ms, sd={sd:.0f}ms, n={len(time_losses)}")
 
 
-# ── pace baselines ──────────────────────────────────────────────────
-#
-# Aggregate raw lap times from `lap_pace_observations` into per-bucket means
-# keyed by (track, compound, regime, fuel bucket, weather, temp bucket).
-# Consumed by the simulator as the cold-start / post-pit-stop fallback below
-# observed laps, above the per-circuit default.
-
-MIN_PACE_BASELINE_SAMPLES = 5
 MIN_SECTOR_BASELINE_SAMPLES = 3   # sectors give ~3× the data; gate kept low for sparse FP
 FUEL_BUCKET_KG = 20      # round to nearest 20 kg
 TEMP_BUCKET_C = 10       # round to nearest 10 °C
 MAD_OUTLIER_FACTOR = 2.5
 
-
-def _fit_pace_baselines(conn: oracledb.Connection, track_id: int) -> None:
-    rows: list[tuple] = []
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT compound, ai_controlled, fuel_kg, weather, track_temp_c, lap_time_ms
-            FROM lap_pace_observations
-            WHERE track_id = :1 AND lap_time_ms > 0
-            """,
-            [track_id],
-        )
-        rows = cur.fetchall()
-
-    groups = _bucket_pace_rows(rows)
-    now = datetime.now()
-    written = 0
-    for key, times in groups.items():
-        filtered = _mad_filter(times)
-        if len(filtered) < MIN_PACE_BASELINE_SAMPLES:
-            continue
-        m = mean(np.array(filtered, dtype=float))
-        sd = sqrt(variance(np.array(filtered, dtype=float)))
-        compound, regime, fuel_bucket, weather, temp_bucket = key
-        _upsert_pace_baseline(
-            conn, track_id, compound, regime, fuel_bucket, weather, temp_bucket,
-            m, sd, len(filtered), now,
-        )
-        written += 1
-        print(
-            f"  pace_baseline track={track_id} compound={compound} regime={regime} "
-            f"bucket=fuel{fuel_bucket}/w{weather}/t{temp_bucket} "
-            f"mean={m:.0f}ms sd={sd:.0f}ms n={len(filtered)}"
-        )
-
-    if written == 0:
-        print(f"  pace_baseline: no buckets with >= {MIN_PACE_BASELINE_SAMPLES} samples")
 
 
 _SELECT_SECTOR_BASELINE_DATA = """
@@ -269,23 +223,6 @@ def _fit_sector_baselines(conn: oracledb.Connection, track_id: int) -> None:
         print(f"  sector_baseline: no buckets with >= {MIN_SECTOR_BASELINE_SAMPLES} samples")
 
 
-def _bucket_pace_rows(rows: list[tuple]) -> dict[tuple, list[int]]:
-    """Group raw observations into buckets keyed by
-    (compound, regime, fuel_bucket, weather, temp_bucket). Rows missing any
-    bucketing field are skipped — we can't aggregate them meaningfully.
-    """
-    groups: dict[tuple, list[int]] = defaultdict(list)
-    for compound, ai_controlled, fuel_kg, weather, track_temp_c, lap_ms in rows:
-        if (ai_controlled is None or fuel_kg is None
-                or weather is None or track_temp_c is None):
-            continue
-        fuel_bucket = int(round(float(fuel_kg) / FUEL_BUCKET_KG) * FUEL_BUCKET_KG)
-        temp_bucket = int(round(float(track_temp_c) / TEMP_BUCKET_C) * TEMP_BUCKET_C)
-        regime = "AI" if int(ai_controlled) == 1 else "PLAYER"
-        key = (int(compound), regime, fuel_bucket, int(weather), temp_bucket)
-        groups[key].append(int(lap_ms))
-    return groups
-
 
 def _mad_filter(times: list[int]) -> list[int]:
     """Drop laps whose deviation from the median exceeds MAD_OUTLIER_FACTOR × MAD.
@@ -338,7 +275,8 @@ def _upsert_sector_baseline(
 ) -> None:
     with conn.cursor() as cur:
         # Named binds (not :1..:N) to dedupe placeholders across the MERGE
-        # clauses — see the DPY-4009 note on _upsert_pace_baseline.
+        # clauses — oracledb counts each occurrence of a numbered placeholder
+        # as a distinct positional value (DPY-4009); named binds dedupe by name.
         cur.execute(
             """
             MERGE INTO sector_pace_baselines b
@@ -377,48 +315,6 @@ def _upsert_sector_baseline(
         )
     conn.commit()
 
-
-def _upsert_pace_baseline(
-    conn: oracledb.Connection,
-    track_id: int, compound: int, regime: str,
-    fuel_bucket_kg: int, weather: int, track_temp_bucket_c: int,
-    mean_lap_ms: float, stddev_lap_ms: float, sample_count: int,
-    fitted_at: datetime,
-) -> None:
-    with conn.cursor() as cur:
-        # Named binds (not :1..:N): oracledb counts each *occurrence* of a
-        # numbered placeholder as a separate positional value, so reusing the
-        # same number across the USING / UPDATE / INSERT clauses requires 20
-        # values for 10 logical binds (DPY-4009). Named binds dedupe by name.
-        cur.execute(
-            """
-            MERGE INTO lap_pace_baselines b
-            USING (SELECT :track_id track_id, :compound compound, :regime regime,
-                          :fuel_bucket_kg fuel_bucket_kg, :weather weather,
-                          :track_temp_bucket_c track_temp_bucket_c FROM dual) s
-            ON (b.track_id = s.track_id AND b.compound = s.compound
-                AND b.regime = s.regime AND b.fuel_bucket_kg = s.fuel_bucket_kg
-                AND b.weather = s.weather AND b.track_temp_bucket_c = s.track_temp_bucket_c)
-            WHEN MATCHED THEN UPDATE SET
-                mean_lap_ms = :mean_lap_ms, stddev_lap_ms = :stddev_lap_ms,
-                sample_count = :sample_count, last_fitted_at = :last_fitted_at
-            WHEN NOT MATCHED THEN INSERT
-                (track_id, compound, regime, fuel_bucket_kg, weather, track_temp_bucket_c,
-                 mean_lap_ms, stddev_lap_ms, sample_count, last_fitted_at)
-                VALUES (:track_id, :compound, :regime, :fuel_bucket_kg, :weather,
-                        :track_temp_bucket_c, :mean_lap_ms, :stddev_lap_ms,
-                        :sample_count, :last_fitted_at)
-            """,
-            {
-                "track_id": track_id, "compound": compound, "regime": regime,
-                "fuel_bucket_kg": fuel_bucket_kg, "weather": weather,
-                "track_temp_bucket_c": track_temp_bucket_c,
-                "mean_lap_ms": int(round(mean_lap_ms)),
-                "stddev_lap_ms": int(round(stddev_lap_ms)),
-                "sample_count": sample_count, "last_fitted_at": fitted_at,
-            },
-        )
-    conn.commit()
 
 
 def _group_pit_stops(pit_sectors: list[tuple]) -> list[list[tuple]]:

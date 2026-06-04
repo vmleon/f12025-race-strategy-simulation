@@ -17,7 +17,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import dev.victormartin.telemetry.simulation.LapHistoryTracker;
+import dev.victormartin.telemetry.simulation.SectorHistoryLookup;
+import dev.victormartin.telemetry.simulation.SectorBaselineLookup;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 import dev.victormartin.telemetry.simulation.SimulationResult;
 
@@ -34,8 +35,8 @@ public class SimulationOrchestrator {
     private static final int MAX_STORED_RESULTS = 50;
 
     private final QueueService queueService;
-    private final LapHistoryTracker lapHistoryTracker;
-    private final dev.victormartin.telemetry.simulation.PaceBaselineLookup paceBaselineLookup;
+    private final SectorHistoryLookup sectorHistoryLookup;
+    private final SectorBaselineLookup sectorBaselineLookup;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final SimulationRunLog simulationRunLog;
 
@@ -58,12 +59,12 @@ public class SimulationOrchestrator {
     private final int[] previousPitStatus = new int[22];
 
     public SimulationOrchestrator(QueueService queueService,
-                                  LapHistoryTracker lapHistoryTracker,
-                                  dev.victormartin.telemetry.simulation.PaceBaselineLookup paceBaselineLookup,
+                                  SectorHistoryLookup sectorHistoryLookup,
+                                  SectorBaselineLookup sectorBaselineLookup,
                                   SimulationRunLog simulationRunLog) {
         this.queueService = queueService;
-        this.lapHistoryTracker = lapHistoryTracker;
-        this.paceBaselineLookup = paceBaselineLookup;
+        this.sectorHistoryLookup = sectorHistoryLookup;
+        this.sectorBaselineLookup = sectorBaselineLookup;
         this.simulationRunLog = simulationRunLog;
     }
 
@@ -302,15 +303,15 @@ public class SimulationOrchestrator {
                 // Compute cumulative time estimate from position (simplified: leader=0, +1s per position)
                 double totalTimeMs = (pos - 1) * 1000.0;
 
-                long baselineLapMs = paceBaselineLookup.lookup(
+                SectorBaselineLookup.SectorBaselines baselines = sectorBaselineLookup.lookup(
                         trackId, tyreCompound, ai, fuel, weather, trackTemp);
 
                 cars.add(new RaceSnapshot.CarSnapshot(
                         idx, name, ai, pos, tyreCompound, tyreAge,
                         fuel, fuelBurnPerSector, fwDmg, flDmg, engDmg,
                         pits, totalTimeMs, List.of(),
-                        lapHistoryTracker.recentForCompound(idx, tyreCompound),
-                        baselineLapMs));
+                        sectorHistoryLookup.recentBySector(trackId, idx, tyreCompound),
+                        baselines.mean(), baselines.perfect()));
             }
 
             if (cars.isEmpty()) return null;

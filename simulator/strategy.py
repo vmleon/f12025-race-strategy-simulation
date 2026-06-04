@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections import Counter
 
-from simulator.car_state import _pace_from_recent_laps
+from simulator.car_state import _lap_pace_ms
 from simulator.engine import MonteCarloEngine
 from simulator.models import (
     CarResult,
@@ -47,21 +47,19 @@ class StrategyEvaluator:
 
         # One-line input summary. Full per-car detail is at DEBUG so it's
         # available when we need it without flooding INFO.
-        observed = sum(1 for c in base_snapshot.cars if c.recent_lap_times_ms)
-        baseline_seeded = sum(1 for c in base_snapshot.cars if c.baseline_lap_ms > 0)
+        observed = sum(
+            1 for c in base_snapshot.cars if any(c.sector_history_ms))
+        baseline_seeded = sum(
+            1 for c in base_snapshot.cars if any(b > 0 for b in c.sector_baseline_ms))
         player_cs = next(
             (c for c in base_snapshot.cars if c.car_index == player_car_index),
             None,
         )
         if player_cs is not None:
-            player_pace = _pace_from_recent_laps(
-                player_cs.recent_lap_times_ms,
-                base_snapshot.track_id,
-                player_cs.baseline_lap_ms,
-            )
-            if player_cs.recent_lap_times_ms:
+            player_pace = _lap_pace_ms(player_cs, base_snapshot.track_id)
+            if any(player_cs.sector_history_ms):
                 player_pace_src = "observed"
-            elif player_cs.baseline_lap_ms > 0:
+            elif any(b > 0 for b in player_cs.sector_baseline_ms):
                 player_pace_src = "baseline"
             else:
                 player_pace_src = "circuit_default"
@@ -74,14 +72,13 @@ class StrategyEvaluator:
             )
         if logger.isEnabledFor(logging.DEBUG):
             for cs in base_snapshot.cars:
-                pace = _pace_from_recent_laps(
-                    cs.recent_lap_times_ms, base_snapshot.track_id, cs.baseline_lap_ms)
+                pace = _lap_pace_ms(cs, base_snapshot.track_id)
                 tag = "PLAYER" if not cs.ai_controlled else "AI"
                 logger.debug(
-                    "strategy.input.car: car=%d pos=%d %s recent_laps_ms=%s "
+                    "strategy.input.car: car=%d pos=%d %s sector_history_ms=%s "
                     "pace_ms=%.0f compound=%d age=%d",
                     cs.car_index, cs.position, tag,
-                    list(cs.recent_lap_times_ms), pace,
+                    cs.sector_history_ms, pace,
                     cs.tyre_compound, cs.tyre_age_laps,
                 )
 

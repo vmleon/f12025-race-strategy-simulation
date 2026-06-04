@@ -32,3 +32,6 @@ databaseChangeLog:
   - include:
       file: 011-sector-pace-baselines.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 012-drop-lap-pace.yaml
+      relativeToChangelogFile: true
