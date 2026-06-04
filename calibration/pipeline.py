@@ -51,6 +51,7 @@ def run(conn: oracledb.Connection, track_id: int) -> None:
 
     # Pace baselines aggregate across regimes inside the function — single call.
     _fit_pace_baselines(conn, track_id)
+    _fit_sector_baselines(conn, track_id)
 
 
 # ── tyre degradation ─────────────────────────────────────────────────
@@ -213,6 +214,59 @@ def _fit_pace_baselines(conn: oracledb.Connection, track_id: int) -> None:
 
     if written == 0:
         print(f"  pace_baseline: no buckets with >= {MIN_PACE_BASELINE_SAMPLES} samples")
+
+
+_SELECT_SECTOR_BASELINE_DATA = """
+    SELECT ss.sector_number, ss.tyre_compound_actual, p.ai_controlled,
+           ss.fuel_in_tank_kg, ss.weather, ss.track_temp, ss.sector_time_ms
+    FROM sector_snapshots ss
+    JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index
+    JOIN sessions s ON s.session_uid = ss.session_uid
+    WHERE s.track_id = :1
+      AND ss.lap_invalid = 0
+      AND ss.corner_cutting_warnings = 0
+      AND ss.pit_status = 0
+      AND ss.safety_car_status = 0
+      AND ss.outlier = 0
+      AND ss.sector_time_ms > 0
+      AND NOT (ss.lap_number = 1 AND ss.sector_number = 0)
+      AND ss.session_type NOT IN (5, 6, 7, 8, 9)
+"""
+
+
+def _fit_sector_baselines(conn: oracledb.Connection, track_id: int) -> None:
+    """Per-sector pace baselines from sector_snapshots, bucketed by
+    (sector, compound, regime, fuel, weather, temp). Qualifying sessions are
+    excluded (low-fuel push laps bias race pace). Stores mean / stddev / perfect
+    (= min clean sector) per bucket with >= MIN_SECTOR_BASELINE_SAMPLES samples.
+    """
+    with conn.cursor() as cur:
+        cur.execute(_SELECT_SECTOR_BASELINE_DATA, [track_id])
+        rows = cur.fetchall()
+
+    groups = _bucket_sector_rows(rows)
+    now = datetime.now()
+    written = 0
+    for key, times in groups.items():
+        filtered = _mad_filter(times)
+        if len(filtered) < MIN_SECTOR_BASELINE_SAMPLES:
+            continue
+        m, sd, perfect = _summarize_bucket(filtered)
+        sector, compound, regime, fuel_bucket, weather, temp_bucket = key
+        _upsert_sector_baseline(
+            conn, track_id, sector, compound, regime,
+            fuel_bucket, weather, temp_bucket,
+            m, sd, perfect, len(filtered), now,
+        )
+        written += 1
+        print(
+            f"  sector_baseline track={track_id} s{sector} compound={compound} "
+            f"regime={regime} bucket=fuel{fuel_bucket}/w{weather}/t{temp_bucket} "
+            f"mean={m:.0f}ms perfect={perfect:.0f}ms n={len(filtered)}"
+        )
+
+    if written == 0:
+        print(f"  sector_baseline: no buckets with >= {MIN_SECTOR_BASELINE_SAMPLES} samples")
 
 
 def _bucket_pace_rows(rows: list[tuple]) -> dict[tuple, list[int]]:
