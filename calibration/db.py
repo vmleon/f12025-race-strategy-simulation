@@ -88,7 +88,7 @@ _SELECT_SECTORS_FOR_OUTLIER_DETECTION = """
       AND ss.lap_invalid = 0
       AND ss.pit_status = 0
       AND ss.safety_car_status = 0
-      AND ss.lap_number > 1
+      AND NOT (ss.lap_number = 1 AND ss.sector_number = 0)
       AND ss.sector_time_ms > 0
       AND ss.front_wing_damage_l = 0 AND ss.front_wing_damage_r = 0
       AND ss.rear_wing_damage = 0 AND ss.floor_damage = 0
@@ -213,7 +213,7 @@ _SELECT_CALIBRATION_DATA = """
       AND ss.corner_cutting_warnings = 0
       AND ss.pit_status = 0
       AND ss.safety_car_status = 0
-      AND ss.lap_number > 1
+      AND NOT (ss.lap_number = 1 AND ss.sector_number = 0)
       AND ss.outlier = 0
       AND ss.sector_time_ms > 0
     ORDER BY ss.car_index, ss.lap_number, ss.sector_number
