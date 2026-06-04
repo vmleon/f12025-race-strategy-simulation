@@ -29,3 +29,6 @@ databaseChangeLog:
   - include:
       file: 010-simulation-runs.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 011-sector-pace-baselines.yaml
+      relativeToChangelogFile: true
