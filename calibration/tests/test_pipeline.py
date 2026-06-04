@@ -280,3 +280,80 @@ class TestUpsertPaceBaseline:
             fitted_at=datetime(2026, 6, 3, 18, 0, 0),
         )
         assert len(conn.cursor_obj.executed) == 1
+
+
+class TestSummarizeBucket:
+
+    def test_mean_stddev_perfect(self):
+        from calibration.pipeline import _summarize_bucket
+        m, sd, perfect = _summarize_bucket([80_000, 80_100, 80_200])
+        assert m == 80_100.0
+        assert perfect == 80_000.0
+        assert 80.0 < sd < 84.0  # population stddev of {0,100,200} ≈ 81.65
+
+    def test_single_value(self):
+        from calibration.pipeline import _summarize_bucket
+        m, sd, perfect = _summarize_bucket([79_500])
+        assert m == 79_500.0
+        assert perfect == 79_500.0
+        assert sd == 0.0
+
+
+class TestSectorBaselineBucketing:
+
+    def _row(self, sector=0, compound=16, ai=0, fuel=50.0, weather=0,
+             temp=25, time_ms=30_000):
+        # Matches the SELECT order of _SELECT_SECTOR_BASELINE_DATA.
+        return (sector, compound, ai, fuel, weather, temp, time_ms)
+
+    def test_skips_rows_with_missing_context(self):
+        from calibration.pipeline import _bucket_sector_rows
+        rows = [
+            self._row(fuel=None),
+            self._row(weather=None),
+            self._row(temp=None),
+            self._row(ai=None),
+        ]
+        assert _bucket_sector_rows(rows) == {}
+
+    def test_splits_by_sector(self):
+        from calibration.pipeline import _bucket_sector_rows
+        rows = [self._row(sector=0), self._row(sector=1), self._row(sector=2)]
+        groups = _bucket_sector_rows(rows)
+        sectors = sorted(key[0] for key in groups)
+        assert sectors == [0, 1, 2]
+
+    def test_regime_split(self):
+        from calibration.pipeline import _bucket_sector_rows
+        rows = [self._row(ai=1, time_ms=31_000), self._row(ai=0, time_ms=30_000)]
+        groups = _bucket_sector_rows(rows)
+        regimes = {key[2] for key in groups}
+        assert regimes == {"AI", "PLAYER"}
+
+    def test_buckets_fuel_and_temp(self):
+        from calibration.pipeline import _bucket_sector_rows
+        # fuel 9→0 bucket, 14→20 bucket → two distinct groups
+        rows = [self._row(fuel=9.0), self._row(fuel=14.0)]
+        assert len(_bucket_sector_rows(rows)) == 2
+
+
+class TestSectorBaselineConstants:
+
+    def test_minimum_samples_is_three(self):
+        from calibration.pipeline import MIN_SECTOR_BASELINE_SAMPLES
+        assert MIN_SECTOR_BASELINE_SAMPLES == 3
+
+
+class TestUpsertSectorBaseline:
+
+    def test_binds_satisfy_merge_placeholders(self):
+        from calibration.pipeline import _upsert_sector_baseline
+        conn = _FakeConn()
+        _upsert_sector_baseline(
+            conn, track_id=4, sector_number=1, compound=16, regime="PLAYER",
+            fuel_bucket_kg=40, weather=0, track_temp_bucket_c=30,
+            mean_sector_ms=27_000.0, stddev_sector_ms=80.0,
+            perfect_sector_ms=26_800.0, sample_count=7,
+            fitted_at=datetime(2026, 6, 4, 12, 0, 0),
+        )
+        assert len(conn.cursor_obj.executed) == 1

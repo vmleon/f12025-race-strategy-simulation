@@ -171,6 +171,7 @@ def _fit_pit_stop_duration(
 # observed laps, above the per-circuit default.
 
 MIN_PACE_BASELINE_SAMPLES = 5
+MIN_SECTOR_BASELINE_SAMPLES = 3   # sectors give ~3× the data; gate kept low for sparse FP
 FUEL_BUCKET_KG = 20      # round to nearest 20 kg
 TEMP_BUCKET_C = 10       # round to nearest 10 °C
 MAD_OUTLIER_FACTOR = 2.5
@@ -245,6 +246,82 @@ def _mad_filter(times: list[int]) -> list[int]:
         return list(times)
     threshold = MAD_OUTLIER_FACTOR * mad
     return [t for t in times if abs(t - median) <= threshold]
+
+
+def _summarize_bucket(times: list[int]) -> tuple[float, float, float]:
+    """(mean, population stddev, perfect=min) for one bucket of sector times."""
+    arr = np.array(times, dtype=float)
+    return mean(arr), sqrt(variance(arr)), float(min(times))
+
+
+def _bucket_sector_rows(rows: list[tuple]) -> dict[tuple, list[int]]:
+    """Group raw sector rows into buckets keyed by
+    (sector, compound, regime, fuel_bucket, weather, temp_bucket). Rows missing
+    any bucketing field are skipped — they can't be aggregated meaningfully.
+
+    Row order matches _SELECT_SECTOR_BASELINE_DATA:
+    (sector_number, compound, ai_controlled, fuel_kg, weather, track_temp, sector_time_ms).
+    """
+    groups: dict[tuple, list[int]] = defaultdict(list)
+    for sector, compound, ai_controlled, fuel_kg, weather, temp_c, time_ms in rows:
+        if (ai_controlled is None or fuel_kg is None
+                or weather is None or temp_c is None):
+            continue
+        fuel_bucket = int(round(float(fuel_kg) / FUEL_BUCKET_KG) * FUEL_BUCKET_KG)
+        temp_bucket = int(round(float(temp_c) / TEMP_BUCKET_C) * TEMP_BUCKET_C)
+        regime = "AI" if int(ai_controlled) == 1 else "PLAYER"
+        key = (int(sector), int(compound), regime, fuel_bucket, int(weather), temp_bucket)
+        groups[key].append(int(time_ms))
+    return groups
+
+
+def _upsert_sector_baseline(
+    conn: oracledb.Connection,
+    track_id: int, sector_number: int, compound: int, regime: str,
+    fuel_bucket_kg: int, weather: int, track_temp_bucket_c: int,
+    mean_sector_ms: float, stddev_sector_ms: float, perfect_sector_ms: float,
+    sample_count: int, fitted_at: datetime,
+) -> None:
+    with conn.cursor() as cur:
+        # Named binds (not :1..:N) to dedupe placeholders across the MERGE
+        # clauses — see the DPY-4009 note on _upsert_pace_baseline.
+        cur.execute(
+            """
+            MERGE INTO sector_pace_baselines b
+            USING (SELECT :track_id track_id, :sector_number sector_number,
+                          :compound compound, :regime regime,
+                          :fuel_bucket_kg fuel_bucket_kg, :weather weather,
+                          :track_temp_bucket_c track_temp_bucket_c FROM dual) s
+            ON (b.track_id = s.track_id AND b.sector_number = s.sector_number
+                AND b.compound = s.compound AND b.regime = s.regime
+                AND b.fuel_bucket_kg = s.fuel_bucket_kg AND b.weather = s.weather
+                AND b.track_temp_bucket_c = s.track_temp_bucket_c)
+            WHEN MATCHED THEN UPDATE SET
+                mean_sector_ms = :mean_sector_ms,
+                stddev_sector_ms = :stddev_sector_ms,
+                perfect_sector_ms = :perfect_sector_ms,
+                sample_count = :sample_count, last_fitted_at = :last_fitted_at
+            WHEN NOT MATCHED THEN INSERT
+                (track_id, sector_number, compound, regime, fuel_bucket_kg,
+                 weather, track_temp_bucket_c, mean_sector_ms, stddev_sector_ms,
+                 perfect_sector_ms, sample_count, last_fitted_at)
+                VALUES (:track_id, :sector_number, :compound, :regime,
+                        :fuel_bucket_kg, :weather, :track_temp_bucket_c,
+                        :mean_sector_ms, :stddev_sector_ms, :perfect_sector_ms,
+                        :sample_count, :last_fitted_at)
+            """,
+            {
+                "track_id": track_id, "sector_number": sector_number,
+                "compound": compound, "regime": regime,
+                "fuel_bucket_kg": fuel_bucket_kg, "weather": weather,
+                "track_temp_bucket_c": track_temp_bucket_c,
+                "mean_sector_ms": int(round(mean_sector_ms)),
+                "stddev_sector_ms": int(round(stddev_sector_ms)),
+                "perfect_sector_ms": int(round(perfect_sector_ms)),
+                "sample_count": sample_count, "last_fitted_at": fitted_at,
+            },
+        )
+    conn.commit()
 
 
 def _upsert_pace_baseline(
