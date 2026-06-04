@@ -78,6 +78,8 @@ _EXPORT_TABLES = [
     ("lap_pace_observations", ["id"]),
     ("lap_pace_baselines",
      ["track_id", "compound", "regime", "fuel_bucket_kg", "weather", "track_temp_bucket_c"]),
+    ("sector_pace_baselines",
+     ["track_id", "sector_number", "compound", "regime", "fuel_bucket_kg", "weather", "track_temp_bucket_c"]),
     ("radio_messages", ["message_id"]),
 ]
 
