@@ -67,12 +67,17 @@ class CarSnapshot(BaseModel):
     total_time_ms: float = Field(alias="totalTimeMs")
     penalties: list[Penalty] = Field(default_factory=list)
     tyre_sets: list[TyreSetInfo] = Field(default_factory=list, alias="tyreSets")
-    # Up to 3 most recent valid lap times (newest first), populated by the
-    # backend's LapHistoryTracker. Empty until the car has completed a lap.
-    recent_lap_times_ms: list[int] = Field(default_factory=list, alias="recentLapTimesMs")
-    # Calibrated pace baseline (ms) for this car's (track, compound, regime,
-    # fuel bucket, weather, temp bucket). 0 when no baseline exists yet.
-    baseline_lap_ms: int = Field(default=0, alias="baselineLapMs")
+    # Recent valid sector times per sector (index 0/1/2), newest first, from the
+    # backend's SectorHistoryLookup. Inner lists empty until laps are observed.
+    sector_history_ms: list[list[int]] = Field(
+        default_factory=lambda: [[], [], []], alias="sectorHistoryMs")
+    # Calibrated mean sector baseline (ms) per sector (index 0/1/2). 0 where none.
+    sector_baseline_ms: list[int] = Field(
+        default_factory=lambda: [0, 0, 0], alias="sectorBaselineMs")
+    # Calibrated perfect (min clean) sector time (ms) per sector (index 0/1/2).
+    # Used as the per-sector floor. 0 where none.
+    perfect_sector_ms: list[int] = Field(
+        default_factory=lambda: [0, 0, 0], alias="perfectSectorMs")
 
     model_config = {"populate_by_name": True}
 

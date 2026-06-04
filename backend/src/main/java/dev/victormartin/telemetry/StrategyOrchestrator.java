@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
 
 import dev.victormartin.telemetry.engineer.RaceEngineerService;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
+import dev.victormartin.telemetry.simulation.SectorBaselineLookup;
 import dev.victormartin.telemetry.simulation.StrategyEvaluation;
 
 @Component
@@ -32,8 +33,8 @@ public class StrategyOrchestrator {
     private final JdbcTemplate jdbc;
     private final RaceWebSocketHandler raceWebSocketHandler;
     private final RaceEngineerService raceEngineerService;
-    private final dev.victormartin.telemetry.simulation.LapHistoryTracker lapHistoryTracker;
-    private final dev.victormartin.telemetry.simulation.PaceBaselineLookup paceBaselineLookup;
+    private final dev.victormartin.telemetry.simulation.SectorHistoryLookup sectorHistoryLookup;
+    private final dev.victormartin.telemetry.simulation.SectorBaselineLookup sectorBaselineLookup;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -68,10 +69,10 @@ public class StrategyOrchestrator {
     public StrategyOrchestrator(QueueService queueService, JdbcTemplate jdbc,
                                  RaceWebSocketHandler raceWebSocketHandler,
                                  RaceEngineerService raceEngineerService,
-                                 dev.victormartin.telemetry.simulation.LapHistoryTracker lapHistoryTracker,
-                                 dev.victormartin.telemetry.simulation.PaceBaselineLookup paceBaselineLookup) {
-        this.lapHistoryTracker = lapHistoryTracker;
-        this.paceBaselineLookup = paceBaselineLookup;
+                                 dev.victormartin.telemetry.simulation.SectorHistoryLookup sectorHistoryLookup,
+                                 dev.victormartin.telemetry.simulation.SectorBaselineLookup sectorBaselineLookup) {
+        this.sectorHistoryLookup = sectorHistoryLookup;
+        this.sectorBaselineLookup = sectorBaselineLookup;
         this.queueService = queueService;
         this.jdbc = jdbc;
         this.raceWebSocketHandler = raceWebSocketHandler;
@@ -97,7 +98,7 @@ public class StrategyOrchestrator {
             // strategy is already meaningful.
             int playerIdx = currentPlayerIdx(node);
             if (playerIdx >= 0
-                    && lapHistoryTracker.totalLapsRecorded(playerIdx) < 2
+                    && sectorHistoryLookup.lapsRecorded(node.get("trackId").asInt(), playerIdx) < 2
                     && !playerHasBaseline(node, playerIdx)) {
                 log.debug("StrategyOrchestrator: skipping — player has <2 observed laps and no baseline");
                 return;
@@ -158,7 +159,8 @@ public class StrategyOrchestrator {
             if (idx != playerIdx) continue;
             int compound = mapTyreCode(car.has("tyre") ? car.get("tyre").asText() : "M");
             double fuel = car.has("fuel") ? car.get("fuel").asDouble() : 30.0;
-            return paceBaselineLookup.lookup(trackId, compound, false, fuel, weather, trackTemp) > 0;
+            return sectorBaselineLookup.lookup(trackId, compound, false, fuel, weather, trackTemp)
+                    .mean().stream().anyMatch(m -> m > 0);
         }
         return false;
     }
@@ -379,15 +381,15 @@ public class StrategyOrchestrator {
                 double totalTimeMs = (pos - 1) * 1000.0;
                 List<RaceSnapshot.TyreSet> tyreSets = tyreSetsByCarIndex.getOrDefault(idx, List.of());
 
-                long baselineLapMs = paceBaselineLookup.lookup(
+                SectorBaselineLookup.SectorBaselines baselines = sectorBaselineLookup.lookup(
                         trackId, tyreCompound, ai, fuel, weather, trackTemp);
 
                 cars.add(new RaceSnapshot.CarSnapshot(
                         idx, name, ai, pos, tyreCompound, tyreAge,
                         fuel, fuelBurnPerSector, fwDmg, flDmg, engDmg,
                         pits, totalTimeMs, tyreSets,
-                        lapHistoryTracker.recentForCompound(idx, tyreCompound),
-                        baselineLapMs));
+                        sectorHistoryLookup.recentBySector(trackId, idx, tyreCompound),
+                        baselines.mean(), baselines.perfect()));
             }
 
             if (cars.isEmpty()) return null;

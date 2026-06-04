@@ -3,9 +3,9 @@ from datetime import datetime
 
 from calibration import db
 from calibration.pipeline import (
-    _bucket_pace_rows, _group_pit_stops, _mad_filter, _upsert_pace_baseline,
+    _group_pit_stops, _mad_filter,
     COMPOUND_KNOB_NAMES, MIN_TYRE_DEG_SAMPLES, MIN_FUEL_SAMPLES,
-    MIN_PIT_STOP_SAMPLES, MIN_PACE_BASELINE_SAMPLES,
+    MIN_PIT_STOP_SAMPLES,
 )
 
 
@@ -91,49 +91,6 @@ class TestGroupPitStops:
         assert _group_pit_stops([]) == []
 
 
-class TestPaceBaselineBucketing:
-
-    def test_skips_rows_with_missing_context(self):
-        rows = [
-            (16, 1, None, 0, 25, 80_000),         # fuel_kg missing
-            (16, 1, 30.0, None, 25, 80_000),      # weather missing
-            (16, 1, 30.0, 0, None, 80_000),       # temp missing
-            (16, None, 30.0, 0, 25, 80_000),      # ai_controlled missing (legacy row)
-        ]
-        assert _bucket_pace_rows(rows) == {}
-
-    def test_buckets_fuel_to_nearest_20kg(self):
-        rows = [
-            (16, 1, 9.0, 0, 25, 80_000),    # rounds to 0
-            (16, 1, 14.0, 0, 25, 80_000),   # rounds to 20
-            (16, 1, 30.0, 0, 25, 80_000),   # rounds to 20 (30→1.5→round→2→40 — wait)
-        ]
-        groups = _bucket_pace_rows(rows)
-        # 9.0/20 = 0.45 → round(0.45) = 0 → 0
-        # 14.0/20 = 0.7 → round(0.7) = 1 → 20
-        # 30.0/20 = 1.5 → round(1.5) = 2 (banker's rounding) → 40
-        # We're not asserting specific bucket math; just that bucketing happens.
-        assert len(groups) >= 2
-
-    def test_buckets_temp_to_nearest_10c(self):
-        rows = [
-            (17, 0, 50.0, 0, 22, 90_000),   # rounds to 20
-            (17, 0, 50.0, 0, 28, 90_000),   # rounds to 30
-        ]
-        groups = _bucket_pace_rows(rows)
-        # Two distinct temp buckets → two groups.
-        assert len(groups) == 2
-
-    def test_regime_split(self):
-        # Same compound/fuel/weather/temp, different ai_controlled → two buckets.
-        rows = [
-            (16, 1, 50.0, 0, 25, 82_000),   # AI
-            (16, 0, 50.0, 0, 25, 80_000),   # PLAYER
-        ]
-        groups = _bucket_pace_rows(rows)
-        regimes = {key[1] for key in groups}
-        assert regimes == {"AI", "PLAYER"}
-
 
 class TestMadFilter:
 
@@ -156,11 +113,6 @@ class TestMadFilter:
         times = [80_000, 80_000, 80_000, 80_000]
         assert _mad_filter(times) == times
 
-
-class TestPaceBaselineConstants:
-
-    def test_minimum_samples(self):
-        assert MIN_PACE_BASELINE_SAMPLES == 5
 
 
 class _FakeCursor:
@@ -209,17 +161,136 @@ class _FakeConn:
         pass
 
 
-class TestUpsertPaceBaseline:
+class TestFuelEffectPerSector:
+
+    def test_fits_one_slope_per_sector(self, monkeypatch):
+        from datetime import datetime as _dt
+        from calibration.pipeline import _fit_fuel_effect, MIN_FUEL_SAMPLES
+
+        captured = []
+
+        def fake_insert(conn, track_id, knob, regime, sector, method,
+                        value, is_default, now):
+            captured.append((knob, sector))
+
+        monkeypatch.setattr(db, "insert_calibration_coefficient", fake_insert)
+
+        def row(sector, fuel, time_ms):
+            r = [0] * 21
+            r[db._COL_SECTOR_NUMBER] = sector
+            r[db._COL_SECTOR_TIME_MS] = time_ms
+            r[db._COL_FUEL] = fuel
+            return tuple(r)
+
+        data = []
+        for sector in (0, 1, 2):
+            for i in range(MIN_FUEL_SAMPLES):
+                data.append(row(sector, 60.0 - i * 5, 30_000 + i * 10))
+
+        _fit_fuel_effect(None, data, track_id=4, regime="PLAYER", now=_dt.now())
+
+        sectors = sorted(s for (knob, s) in captured if knob == "fuel_effect")
+        assert sectors == [0, 1, 2]
+
+    def test_skips_sector_below_min_samples(self, monkeypatch):
+        from datetime import datetime as _dt
+        from calibration.pipeline import _fit_fuel_effect, MIN_FUEL_SAMPLES
+
+        captured = []
+        monkeypatch.setattr(
+            db, "insert_calibration_coefficient",
+            lambda *a, **k: captured.append((a[3], a[5])),  # length-only guard
+        )
+
+        def row(sector, fuel, time_ms):
+            r = [0] * 21
+            r[db._COL_SECTOR_NUMBER] = sector
+            r[db._COL_SECTOR_TIME_MS] = time_ms
+            r[db._COL_FUEL] = fuel
+            return tuple(r)
+
+        # Only sector 1 has enough samples; sectors 0 and 2 have one each.
+        data = [row(0, 50.0, 30_000), row(2, 50.0, 30_000)]
+        for i in range(MIN_FUEL_SAMPLES):
+            data.append(row(1, 60.0 - i * 5, 30_000 + i * 10))
+
+        _fit_fuel_effect(None, data, track_id=4, regime="AI", now=_dt.now())
+        assert len(captured) == 1
+
+
+
+class TestSummarizeBucket:
+
+    def test_mean_stddev_perfect(self):
+        from calibration.pipeline import _summarize_bucket
+        m, sd, perfect = _summarize_bucket([80_000, 80_100, 80_200])
+        assert m == 80_100.0
+        assert perfect == 80_000.0
+        assert 80.0 < sd < 84.0  # population stddev of {0,100,200} ≈ 81.65
+
+    def test_single_value(self):
+        from calibration.pipeline import _summarize_bucket
+        m, sd, perfect = _summarize_bucket([79_500])
+        assert m == 79_500.0
+        assert perfect == 79_500.0
+        assert sd == 0.0
+
+
+class TestSectorBaselineBucketing:
+
+    def _row(self, sector=0, compound=16, ai=0, fuel=50.0, weather=0,
+             temp=25, time_ms=30_000):
+        # Matches the SELECT order of _SELECT_SECTOR_BASELINE_DATA.
+        return (sector, compound, ai, fuel, weather, temp, time_ms)
+
+    def test_skips_rows_with_missing_context(self):
+        from calibration.pipeline import _bucket_sector_rows
+        rows = [
+            self._row(fuel=None),
+            self._row(weather=None),
+            self._row(temp=None),
+            self._row(ai=None),
+        ]
+        assert _bucket_sector_rows(rows) == {}
+
+    def test_splits_by_sector(self):
+        from calibration.pipeline import _bucket_sector_rows
+        rows = [self._row(sector=0), self._row(sector=1), self._row(sector=2)]
+        groups = _bucket_sector_rows(rows)
+        sectors = sorted(key[0] for key in groups)
+        assert sectors == [0, 1, 2]
+
+    def test_regime_split(self):
+        from calibration.pipeline import _bucket_sector_rows
+        rows = [self._row(ai=1, time_ms=31_000), self._row(ai=0, time_ms=30_000)]
+        groups = _bucket_sector_rows(rows)
+        regimes = {key[2] for key in groups}
+        assert regimes == {"AI", "PLAYER"}
+
+    def test_buckets_fuel_and_temp(self):
+        from calibration.pipeline import _bucket_sector_rows
+        # fuel 9→0 bucket, 14→20 bucket → two distinct groups
+        rows = [self._row(fuel=9.0), self._row(fuel=14.0)]
+        assert len(_bucket_sector_rows(rows)) == 2
+
+
+class TestSectorBaselineConstants:
+
+    def test_minimum_samples_is_three(self):
+        from calibration.pipeline import MIN_SECTOR_BASELINE_SAMPLES
+        assert MIN_SECTOR_BASELINE_SAMPLES == 3
+
+
+class TestUpsertSectorBaseline:
 
     def test_binds_satisfy_merge_placeholders(self):
-        """The MERGE in _upsert_pace_baseline must supply every placeholder it
-        references — regression for DPY-4009 (reused numbered binds counted as
-        20 positions while only 10 values were provided)."""
+        from calibration.pipeline import _upsert_sector_baseline
         conn = _FakeConn()
-        _upsert_pace_baseline(
-            conn, track_id=4, compound=16, regime="PLAYER",
+        _upsert_sector_baseline(
+            conn, track_id=4, sector_number=1, compound=16, regime="PLAYER",
             fuel_bucket_kg=40, weather=0, track_temp_bucket_c=30,
-            mean_lap_ms=80_000.0, stddev_lap_ms=150.0, sample_count=7,
-            fitted_at=datetime(2026, 6, 3, 18, 0, 0),
+            mean_sector_ms=27_000.0, stddev_sector_ms=80.0,
+            perfect_sector_ms=26_800.0, sample_count=7,
+            fitted_at=datetime(2026, 6, 4, 12, 0, 0),
         )
         assert len(conn.cursor_obj.executed) == 1

@@ -43,8 +43,9 @@ public record RaceSnapshot(
             int numPitStops,
             double totalTimeMs,
             List<TyreSet> tyreSets,
-            List<Long> recentLapTimesMs,
-            long baselineLapMs
+            List<List<Long>> sectorHistoryMs,   // per sector 0/1/2, recent first
+            List<Long> sectorBaselineMs,        // per sector 0/1/2, calibrated mean
+            List<Long> perfectSectorMs          // per sector 0/1/2, calibrated perfect (min)
     ) {}
 
     public record PitStrategy(

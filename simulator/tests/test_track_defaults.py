@@ -1,4 +1,4 @@
-from simulator.car_state import _pace_from_recent_laps
+from simulator.car_state import _sector_pace_ms, _perfect_sector_floor_ms
 from simulator.track_defaults import DEFAULT_LAP_MS, circuit_default_ms
 
 
@@ -29,48 +29,42 @@ class TestCircuitDefaults:
         assert circuit_default_ms(21) < circuit_default_ms(3)
 
 
-class TestPaceFromRecentLaps:
-    def test_uses_circuit_default_when_no_observed_laps(self):
-        # Monaco — fallback should be the Monaco default, not 90 s.
-        pace = _pace_from_recent_laps([], track_id=5)
-        assert pace == circuit_default_ms(5)
-        assert pace < 80_000
+class TestSectorPace:
+    def test_circuit_default_split_when_empty(self):
+        from simulator.car_state import _sector_pace_ms
+        pace = _sector_pace_ms([[], [], []], [0, 0, 0], track_id=5)
+        third = circuit_default_ms(5) / 3.0
+        assert pace == [third, third, third]
 
-    def test_uses_median_of_observed_when_available(self):
-        # Three laps: 80, 81, 82. Median index = 1 → 81 (sorted upper-median).
-        pace = _pace_from_recent_laps([80_000, 81_000, 82_000], track_id=10)
-        assert pace == 81_000.0
+    def test_observed_median_per_sector(self):
+        from simulator.car_state import _sector_pace_ms
+        pace = _sector_pace_ms(
+            [[25_000, 25_200, 24_800], [26_000], []], [0, 0, 0], track_id=10)
+        assert pace[0] == 25_000.0          # median of the three
+        assert pace[1] == 26_000.0          # single value
+        assert pace[2] == circuit_default_ms(10) / 3.0  # empty → default split
 
-    def test_observed_overrides_circuit_default(self):
-        # Even on a slow circuit, observed fast laps win.
-        pace_obs = _pace_from_recent_laps([70_000], track_id=10)  # Spa
-        assert pace_obs == 70_000.0
-        # Compared with the empty case where Spa's default kicks in.
-        pace_def = _pace_from_recent_laps([], track_id=10)
-        assert pace_def > 100_000
-
-    def test_unknown_track_falls_back_to_legacy_90s(self):
-        pace = _pace_from_recent_laps([], track_id=999)
-        assert pace == DEFAULT_LAP_MS == 90_000.0
-
-
-class TestPaceFromBaseline:
-    def test_baseline_used_when_no_observed_laps(self):
-        # No observed laps but a calibrated baseline — use the baseline.
-        pace = _pace_from_recent_laps([], track_id=5, baseline_lap_ms=78_500)
-        assert pace == 78_500.0
+    def test_baseline_when_no_observed(self):
+        from simulator.car_state import _sector_pace_ms
+        pace = _sector_pace_ms([[], [], []], [24_000, 25_000, 26_000], track_id=5)
+        assert pace == [24_000.0, 25_000.0, 26_000.0]
 
     def test_observed_overrides_baseline(self):
-        # Even when a baseline is set, an observed lap wins.
-        pace = _pace_from_recent_laps([80_000], track_id=5, baseline_lap_ms=78_500)
-        assert pace == 80_000.0
+        from simulator.car_state import _sector_pace_ms
+        pace = _sector_pace_ms([[23_500], [], []], [24_000, 25_000, 26_000], track_id=5)
+        assert pace[0] == 23_500.0
+        assert pace[1] == 25_000.0
 
-    def test_circuit_default_when_neither_observed_nor_baseline(self):
-        # No observed laps and no baseline — fall through to circuit default.
-        pace = _pace_from_recent_laps([], track_id=5, baseline_lap_ms=0)
-        assert pace == circuit_default_ms(5)
 
-    def test_baseline_used_for_unknown_track(self):
-        # Unknown track + baseline ⇒ baseline still wins over the 90 s default.
-        pace = _pace_from_recent_laps([], track_id=999, baseline_lap_ms=82_000)
-        assert pace == 82_000.0
+class TestPerfectSectorFloor:
+    def test_uses_calibrated_perfect_when_present(self):
+        from simulator.car_state import _perfect_sector_floor_ms
+        floor = _perfect_sector_floor_ms([24_000, 25_000, 0], [25_000.0, 26_000.0, 27_000.0])
+        assert floor[0] == 24_000.0
+        assert floor[1] == 25_000.0
+        assert floor[2] == 27_000.0 * 0.9   # missing → 90% of base
+
+    def test_all_missing_falls_back_to_90pct(self):
+        from simulator.car_state import _perfect_sector_floor_ms
+        floor = _perfect_sector_floor_ms([0, 0, 0], [30_000.0, 30_000.0, 30_000.0])
+        assert floor == [27_000.0, 27_000.0, 27_000.0]

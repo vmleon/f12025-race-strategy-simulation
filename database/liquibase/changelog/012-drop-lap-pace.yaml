@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 012-01-drop-lap-pace-baselines
+      author: victormartin
+      changes:
+        - sql:
+            sql: DROP TABLE lap_pace_baselines
+  - changeSet:
+      id: 012-02-drop-lap-pace-observations
+      author: victormartin
+      changes:
+        - sql:
+            sql: DROP TABLE lap_pace_observations
+  - changeSet:
+      id: 012-03-drop-seq-lap-pace-obs
+      author: victormartin
+      changes:
+        - sql:
+            sql: DROP SEQUENCE seq_lap_pace_obs

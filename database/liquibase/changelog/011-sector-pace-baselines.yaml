@@ -1,0 +1,25 @@
+databaseChangeLog:
+  - changeSet:
+      id: 011-01-sector-pace-baselines
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE sector_pace_baselines (
+                  track_id              NUMBER(3)     NOT NULL,
+                  sector_number         NUMBER(1)     NOT NULL,
+                  compound              NUMBER(2)     NOT NULL,
+                  regime                VARCHAR2(8)   NOT NULL,
+                  fuel_bucket_kg        NUMBER(3)     NOT NULL,
+                  weather               NUMBER(2)     NOT NULL,
+                  track_temp_bucket_c   NUMBER(3)     NOT NULL,
+                  mean_sector_ms        NUMBER(8)     NOT NULL,
+                  stddev_sector_ms      NUMBER(8),
+                  perfect_sector_ms     NUMBER(8)     NOT NULL,
+                  sample_count          NUMBER(6)     NOT NULL,
+                  last_fitted_at        TIMESTAMP     NOT NULL,
+                  CONSTRAINT pk_sector_pace_baselines PRIMARY KEY (track_id, sector_number, compound, regime, fuel_bucket_kg, weather, track_temp_bucket_c),
+                  CONSTRAINT chk_sector_baseline_regime CHECK (regime IN ('PLAYER', 'AI')),
+                  CONSTRAINT chk_sector_baseline_compound CHECK (compound IN (7, 8, 16, 17, 18)),
+                  CONSTRAINT chk_sector_baseline_sector CHECK (sector_number IN (0, 1, 2))
+              )

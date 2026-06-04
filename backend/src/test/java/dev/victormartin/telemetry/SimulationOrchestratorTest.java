@@ -6,8 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import dev.victormartin.telemetry.simulation.LapHistoryTracker;
-import dev.victormartin.telemetry.simulation.PaceBaselineLookup;
+import dev.victormartin.telemetry.simulation.SectorHistoryLookup;
+import dev.victormartin.telemetry.simulation.SectorBaselineLookup;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 
 import java.util.ArrayList;
@@ -38,7 +38,7 @@ class SimulationOrchestratorTest {
         started.clear();
         QueueService queueService = new QueueService(null);
         orchestrator = new SimulationOrchestrator(
-                queueService, new LapHistoryTracker(), new PaceBaselineLookup(null), capturingLog());
+                queueService, new SectorHistoryLookup(null), new SectorBaselineLookup(null), capturingLog());
     }
 
     private String buildStateJson(int leaderLap, int safetyCarStatus, int car0PitStatus) {
@@ -197,7 +197,7 @@ class SimulationOrchestratorTest {
             @Override public void recordCompleted(String j, long d, int i, String s) { throw new RuntimeException("boom"); }
         };
         SimulationOrchestrator o = new SimulationOrchestrator(
-                new QueueService(null), new LapHistoryTracker(), new PaceBaselineLookup(null), throwing);
+                new QueueService(null), new SectorHistoryLookup(null), new SectorBaselineLookup(null), throwing);
 
         o.onStateUpdate(buildStateJson(5, 0, 0));
         assertNotNull(o.triggerNow(), "a throwing run log must not break triggering");
