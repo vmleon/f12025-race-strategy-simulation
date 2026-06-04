@@ -10,11 +10,12 @@ import {
   DayCount,
   LiveStats,
 } from './system.service';
+import { ReadinessSectionComponent } from './readiness-section.component';
 
 @Component({
   selector: 'app-system',
   standalone: true,
-  imports: [CommonModule, BaseChartDirective],
+  imports: [CommonModule, BaseChartDirective, ReadinessSectionComponent],
   template: `
     <section class="system">
       <header class="system__head">
@@ -73,6 +74,8 @@ import {
           <canvas baseChart type="line" [data]="calibPerDay" [options]="lineOpts"></canvas>
         </div>
       </div>
+
+      <app-readiness-section></app-readiness-section>
     </section>
   `,
   styles: [
