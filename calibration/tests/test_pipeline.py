@@ -209,6 +209,63 @@ class _FakeConn:
         pass
 
 
+class TestFuelEffectPerSector:
+
+    def test_fits_one_slope_per_sector(self, monkeypatch):
+        from datetime import datetime as _dt
+        from calibration.pipeline import _fit_fuel_effect, MIN_FUEL_SAMPLES
+
+        captured = []
+
+        def fake_insert(conn, track_id, knob, regime, sector, method,
+                        value, is_default, now):
+            captured.append((knob, sector))
+
+        monkeypatch.setattr(db, "insert_calibration_coefficient", fake_insert)
+
+        def row(sector, fuel, time_ms):
+            r = [0] * 21
+            r[db._COL_SECTOR_NUMBER] = sector
+            r[db._COL_SECTOR_TIME_MS] = time_ms
+            r[db._COL_FUEL] = fuel
+            return tuple(r)
+
+        data = []
+        for sector in (0, 1, 2):
+            for i in range(MIN_FUEL_SAMPLES):
+                data.append(row(sector, 60.0 - i * 5, 30_000 + i * 10))
+
+        _fit_fuel_effect(None, data, track_id=4, regime="PLAYER", now=_dt.now())
+
+        sectors = sorted(s for (knob, s) in captured if knob == "fuel_effect")
+        assert sectors == [0, 1, 2]
+
+    def test_skips_sector_below_min_samples(self, monkeypatch):
+        from datetime import datetime as _dt
+        from calibration.pipeline import _fit_fuel_effect, MIN_FUEL_SAMPLES
+
+        captured = []
+        monkeypatch.setattr(
+            db, "insert_calibration_coefficient",
+            lambda *a, **k: captured.append((a[3], a[5])),  # length-only guard
+        )
+
+        def row(sector, fuel, time_ms):
+            r = [0] * 21
+            r[db._COL_SECTOR_NUMBER] = sector
+            r[db._COL_SECTOR_TIME_MS] = time_ms
+            r[db._COL_FUEL] = fuel
+            return tuple(r)
+
+        # Only sector 1 has enough samples; sectors 0 and 2 have one each.
+        data = [row(0, 50.0, 30_000), row(2, 50.0, 30_000)]
+        for i in range(MIN_FUEL_SAMPLES):
+            data.append(row(1, 60.0 - i * 5, 30_000 + i * 10))
+
+        _fit_fuel_effect(None, data, track_id=4, regime="AI", now=_dt.now())
+        assert len(captured) == 1
+
+
 class TestUpsertPaceBaseline:
 
     def test_binds_satisfy_merge_placeholders(self):

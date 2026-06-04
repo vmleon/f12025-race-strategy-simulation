@@ -94,21 +94,27 @@ def _fit_fuel_effect(
     conn: oracledb.Connection, data: list[tuple], track_id: int, regime: str,
     now: datetime,
 ) -> None:
-    with_fuel = [r for r in data if r[db._COL_FUEL] > 0]
+    by_sector: dict[int, list[tuple]] = defaultdict(list)
+    for r in data:
+        fuel = r[db._COL_FUEL]
+        if fuel is not None and fuel > 0:
+            by_sector[r[db._COL_SECTOR_NUMBER]].append(r)
 
-    if len(with_fuel) < MIN_FUEL_SAMPLES:
-        print(f"  fuel_effect: insufficient data ({len(with_fuel)}), skipping")
-        return
+    for sector in sorted(by_sector):
+        group = by_sector[sector]
+        if len(group) < MIN_FUEL_SAMPLES:
+            print(f"  fuel_effect sector {sector}: insufficient data ({len(group)}), skipping")
+            continue
 
-    x = np.array([r[db._COL_FUEL] for r in with_fuel], dtype=float)
-    y = np.array([r[db._COL_SECTOR_TIME_MS] for r in with_fuel], dtype=float)
-    reg = linear_regression(x, y)
+        x = np.array([r[db._COL_FUEL] for r in group], dtype=float)
+        y = np.array([r[db._COL_SECTOR_TIME_MS] for r in group], dtype=float)
+        reg = linear_regression(x, y)
 
-    db.insert_calibration_coefficient(
-        conn, track_id, "fuel_effect", regime, None, "linear_regression",
-        reg.slope, 0, now)
+        db.insert_calibration_coefficient(
+            conn, track_id, "fuel_effect", regime, sector, "linear_regression",
+            reg.slope, 0, now)
 
-    print(f"  fuel_effect: slope={reg.slope:.2f} ms/kg, n={reg.n}")
+        print(f"  fuel_effect sector {sector}: slope={reg.slope:.2f} ms/kg, n={reg.n}")
 
 
 # ── pit stop duration ────────────────────────────────────────────────
