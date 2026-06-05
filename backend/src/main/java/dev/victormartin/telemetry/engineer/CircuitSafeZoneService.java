@@ -16,7 +16,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class CircuitSafeZoneService {
 
-    private static final float LAG_SECONDS = 1.5f;
+    // Speed-scaled lead time that opens each safe zone early. Larger = the gate
+    // releases messages sooner; because it scales with speed it shifts the fast
+    // main straight much more than slow corners, so messages clear before braking
+    // instead of cramming near the end of the straight.
+    private static final float LAG_SECONDS = 3.0f;
     private final Map<Integer, List<SafeZone>> circuits = new HashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
 

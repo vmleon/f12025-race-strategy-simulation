@@ -45,6 +45,14 @@ class CircuitSafeZoneServiceTest {
     }
 
     @Test
+    void gateOpensEarlierOnTheStraightAtRacingSpeed() {
+        // Lakeside Drive straight starts at 1065m. At 250 km/h the gate should
+        // open well before the zone start so a message clears before braking —
+        // 900m is now deliverable (it was not under the previous shorter lag).
+        assertTrue(service.isSafeToDeliver(0, 900f, 250));
+    }
+
+    @Test
     void lagOffsetDoesNotExpandZoneEnd() {
         // Melbourne Lakeside Drive zone ends at 1450m.
         // Offset only affects fromMetres, not toMetres.
