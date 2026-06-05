@@ -26,7 +26,7 @@ class SectorEntry:
     sector_time_ms: int
     driver_name: str
     track_id: int
-    tyre_compound_actual: int
+    tyre_compound_visual: int
     ai_controlled: bool
     weather: int = 0
 
@@ -45,7 +45,7 @@ def detect_outliers(entries: list[SectorEntry]) -> list[SectorKey]:
 
     groups: dict[str, list[SectorEntry]] = defaultdict(list)
     for e in entries:
-        key = f"{e.driver_name}|{e.track_id}|{e.sector_number}|{e.tyre_compound_actual}|{weather_category(e.weather)}"
+        key = f"{e.driver_name}|{e.track_id}|{e.sector_number}|{e.tyre_compound_visual}|{weather_category(e.weather)}"
         groups[key].append(e)
 
     outliers: list[SectorKey] = []

@@ -41,7 +41,7 @@ class TestIqrDetection:
         entries = [
             SectorEntry(session_uid=1, car_index=0, lap_number=lap, sector_number=0,
                         sector_time_ms=30000 + (9000 if lap == 3 else 0),
-                        driver_name="X", track_id=1, tyre_compound_actual=16,
+                        driver_name="X", track_id=1, tyre_compound_visual=16,
                         ai_controlled=False)
             for lap in range(1, 5)  # 4 samples < MIN_SAMPLES_FOR_IQR
         ]

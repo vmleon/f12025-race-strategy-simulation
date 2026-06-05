@@ -35,7 +35,7 @@ public class SectorHistoryLookup {
                             + " FROM sector_snapshots ss"
                             + " JOIN sessions s ON s.session_uid = ss.session_uid"
                             + " WHERE s.track_id = ? AND ss.car_index = ?"
-                            + "   AND ss.tyre_compound_actual = ? AND ss.sector_number = ?"
+                            + "   AND ss.tyre_compound_visual = ? AND ss.sector_number = ?"
                             + "   AND ss.outlier = 0 AND ss.lap_invalid = 0"
                             + "   AND ss.pit_status = 0 AND ss.sector_time_ms > 0"
                             + " ORDER BY ss.created_at DESC"

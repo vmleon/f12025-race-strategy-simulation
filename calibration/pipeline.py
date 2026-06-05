@@ -168,10 +168,14 @@ FUEL_BUCKET_KG = 20      # round to nearest 20 kg
 TEMP_BUCKET_C = 10       # round to nearest 10 °C
 MAD_OUTLIER_FACTOR = 2.5
 
+# Visual compound codes: 16=soft, 17=medium, 18=hard, 7=inter, 8=wet.
+# Matches CHK_SECTOR_BASELINE_COMPOUND; excludes 0 garbage and out-of-range codes.
+VALID_VISUAL_COMPOUNDS = frozenset({7, 8, 16, 17, 18})
+
 
 
 _SELECT_SECTOR_BASELINE_DATA = """
-    SELECT ss.sector_number, ss.tyre_compound_actual, p.ai_controlled,
+    SELECT ss.sector_number, ss.tyre_compound_visual, p.ai_controlled,
            ss.fuel_in_tank_kg, ss.weather, ss.track_temp, ss.sector_time_ms
     FROM sector_snapshots ss
     JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index
@@ -257,6 +261,8 @@ def _bucket_sector_rows(rows: list[tuple]) -> dict[tuple, list[int]]:
     for sector, compound, ai_controlled, fuel_kg, weather, temp_c, time_ms in rows:
         if (ai_controlled is None or fuel_kg is None
                 or weather is None or temp_c is None):
+            continue
+        if compound not in VALID_VISUAL_COMPOUNDS:
             continue
         fuel_bucket = int(round(float(fuel_kg) / FUEL_BUCKET_KG) * FUEL_BUCKET_KG)
         temp_bucket = int(round(float(temp_c) / TEMP_BUCKET_C) * TEMP_BUCKET_C)

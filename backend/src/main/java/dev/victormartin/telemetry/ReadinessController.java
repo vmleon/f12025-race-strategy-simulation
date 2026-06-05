@@ -94,7 +94,7 @@ public class ReadinessController {
 
     private List<SectorRow> projectRows(int trackId) {
         return jdbc.query(
-                "SELECT ss.tyre_compound_actual AS compound, ss.sector_number AS sector, "
+                "SELECT ss.tyre_compound_visual AS compound, ss.sector_number AS sector, "
                 + "ss.pit_status AS pit, ss.safety_car_status AS sc, ss.lap_invalid AS invalid, "
                 + "ss.corner_cutting_warnings AS cut, ss.lap_number AS lap, ss.outlier AS outlier, "
                 + "ss.sector_time_ms AS time_ms, "
@@ -103,7 +103,7 @@ public class ReadinessController {
                 + "  OR ss.sidepod_damage > 0 OR ss.engine_damage > 0 OR ss.gearbox_damage > 0 "
                 + "  THEN 1 ELSE 0 END AS damaged "
                 + "FROM sector_snapshots ss JOIN sessions s ON s.session_uid = ss.session_uid "
-                + "WHERE s.track_id = ? AND ss.tyre_compound_actual IN (7,8,16,17,18) "
+                + "WHERE s.track_id = ? AND ss.tyre_compound_visual IN (7,8,16,17,18) "
                 + "  AND ss.sector_number IN (0,1,2)",
                 (rs, i) -> new SectorRow(
                         rs.getInt("COMPOUND"), rs.getInt("SECTOR"), rs.getInt("PIT"),

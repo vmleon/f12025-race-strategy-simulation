@@ -273,6 +273,15 @@ class TestSectorBaselineBucketing:
         rows = [self._row(fuel=9.0), self._row(fuel=14.0)]
         assert len(_bucket_sector_rows(rows)) == 2
 
+    def test_excludes_out_of_range_compounds(self):
+        from calibration.pipeline import _bucket_sector_rows
+        # 0 = garbage; 19/20 = C-codes from tyre_compound_actual that violate
+        # CHK_SECTOR_BASELINE_COMPOUND. Only visual codes (7,8,16,17,18) survive.
+        rows = [self._row(compound=0), self._row(compound=19),
+                self._row(compound=20), self._row(compound=16)]
+        groups = _bucket_sector_rows(rows)
+        assert {key[1] for key in groups} == {16}
+
 
 class TestSectorBaselineConstants:
 

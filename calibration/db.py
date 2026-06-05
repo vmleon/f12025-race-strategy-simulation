@@ -80,7 +80,7 @@ def ensure_cold_start_defaults(conn: oracledb.Connection, track_id: int) -> int:
 _SELECT_SECTORS_FOR_OUTLIER_DETECTION = """
     SELECT ss.session_uid, ss.car_index, ss.lap_number, ss.sector_number,
            ss.sector_time_ms, p.driver_name, s.track_id,
-           ss.tyre_compound_actual, p.ai_controlled, ss.weather
+           ss.tyre_compound_visual, p.ai_controlled, ss.weather
     FROM sector_snapshots ss
     JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index
     JOIN sessions s ON s.session_uid = ss.session_uid
@@ -94,7 +94,7 @@ _SELECT_SECTORS_FOR_OUTLIER_DETECTION = """
       AND ss.rear_wing_damage = 0 AND ss.floor_damage = 0
       AND ss.diffuser_damage = 0 AND ss.sidepod_damage = 0
       AND ss.engine_damage = 0 AND ss.gearbox_damage = 0
-    ORDER BY p.driver_name, ss.sector_number, ss.tyre_compound_actual
+    ORDER BY p.driver_name, ss.sector_number, ss.tyre_compound_visual
 """
 
 
@@ -105,7 +105,7 @@ def get_sectors_for_outlier_detection(conn: oracledb.Connection, track_id: int) 
             SectorEntry(
                 session_uid=row[0], car_index=row[1], lap_number=row[2],
                 sector_number=row[3], sector_time_ms=row[4], driver_name=row[5],
-                track_id=row[6], tyre_compound_actual=row[7], ai_controlled=row[8] == 1,
+                track_id=row[6], tyre_compound_visual=row[7], ai_controlled=row[8] == 1,
                 weather=row[9],
             )
             for row in cur
@@ -192,7 +192,7 @@ def get_normal_sector_medians(conn: oracledb.Connection, track_id: int) -> dict[
 _SELECT_CALIBRATION_DATA = """
     SELECT ss.session_uid, ss.car_index, ss.lap_number, ss.sector_number,
            ss.sector_time_ms,
-           ss.tyre_compound_actual, ss.tyre_age_laps,
+           ss.tyre_compound_visual, ss.tyre_age_laps,
            ss.fuel_in_tank_kg,
            ss.gap_to_car_ahead_ms,
            ss.drs_allowed,
