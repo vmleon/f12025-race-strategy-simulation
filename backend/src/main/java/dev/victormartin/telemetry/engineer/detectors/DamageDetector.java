@@ -75,13 +75,23 @@ public class DamageDetector implements RadioDetector {
         // Reset rule: damage dropped meaningfully below the current armed level
         // (e.g. front wing repaired during a pit stop). Allows re-firing on a
         // fresh impact at a lower tier.
+        boolean frontWingRepaired = false;
         for (int i = 0; i < NUM_PARTS; i++) {
             JsonNode node = pc.get(WIRE_KEYS[i]);
             if (node == null || !node.canConvertToInt()) continue;
             int v = node.asInt();
             if (armed[i] > 0 && v < armed[i] - 1) {
+                if (i == 0) frontWingRepaired = true; // index 0 = front wing
                 armed[i] = 0;
             }
+        }
+
+        // Confirm a front-wing repair (useful in FP to know the car is race-ready).
+        if (frontWingRepaired) {
+            return Optional.of(new EngineerMessage(
+                    Priority.NORMAL,
+                    "Front wing replaced, good to go.",
+                    tick.wallClockMs(), tick.currentLap(), 2));
         }
 
         // Walk tiers from most to least severe. Within a tier, walk parts in

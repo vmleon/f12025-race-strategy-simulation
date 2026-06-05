@@ -50,6 +50,19 @@ class DamageDetectorTest {
     }
 
     @Test
+    void announcesFrontWingReplacedOnRepair() {
+        ObjectNode damaged = MAPPER.createObjectNode();
+        damaged.put("fwDmg", 40);
+        detector.evaluate(tickWith(damaged)); // arms the front wing at DAMAGED
+
+        ObjectNode repaired = MAPPER.createObjectNode();
+        repaired.put("fwDmg", 0);
+        EngineerMessage msg = detector.evaluate(tickWith(repaired)).orElseThrow();
+
+        assertEquals("Front wing replaced, good to go.", msg.text());
+    }
+
+    @Test
     void filtersAreUnrestricted() {
         assertEquals(Set.of(), detector.appliesToStates());
         assertEquals(Set.of(), detector.appliesToSessions());
@@ -144,9 +157,11 @@ class DamageDetectorTest {
         car.put("fwDmg", 70);
         assertTrue(detector.evaluate(tickWith(car)).isPresent()); // heavy
 
-        // Pit stop — damage returns to 0.
+        // Pit stop — damage returns to 0; the front-wing repair is confirmed.
         car.put("fwDmg", 0);
-        assertTrue(detector.evaluate(tickWith(car)).isEmpty());
+        var repair = detector.evaluate(tickWith(car));
+        assertTrue(repair.isPresent());
+        assertEquals("Front wing replaced, good to go.", repair.get().text());
 
         // Later impact to 15% fires minor again.
         car.put("fwDmg", 15);
