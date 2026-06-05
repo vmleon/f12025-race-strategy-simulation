@@ -170,6 +170,8 @@ public class App {
                                                 + ",\"time\":" + event.time + ",\"lap\":" + event.lapNum + "}");
                                         case "CHQF" -> raceState.queueEvent(
                                                 "{\"type\":\"event\",\"event\":\"CHQF\"}");
+                                        case "FLBK" -> raceState.queueEvent(
+                                                "{\"type\":\"event\",\"event\":\"FLBK\"}");
                                         default -> {}
                                     }
                                 }

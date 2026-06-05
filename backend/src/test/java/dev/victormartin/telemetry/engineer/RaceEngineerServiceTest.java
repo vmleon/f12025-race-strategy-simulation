@@ -205,6 +205,20 @@ class RaceEngineerServiceTest {
                 "RTMT should not mention debris; got: " + messageTexts());
     }
 
+    // --- FLBK: flashback suppresses radio for a few seconds ------------------
+
+    @Test
+    void flashbackSuppressesQueuedRadio() {
+        service.onSessionStarted(SESSION_UID, TRACK_ID, 10, 0, 0);
+        // Queue a safety-car call, then a flashback before it can be delivered.
+        service.onEvent("{\"event\":\"SCAR\",\"trackId\":" + TRACK_ID + "}");
+        service.onEvent("{\"event\":\"FLBK\",\"trackId\":" + TRACK_ID + "}");
+        service.onStateUpdate(stateJson(10, 1, 50, 5300, 5, 110f, 240, 0.9f, 0, null));
+
+        assertTrue(messageTexts().stream().noneMatch(t -> t.contains("Safety car deployed")),
+                "Flashback should suppress queued radio; got: " + messageTexts());
+    }
+
     // --- Sanity: race session works without exceptions -----------------------
 
     @Test

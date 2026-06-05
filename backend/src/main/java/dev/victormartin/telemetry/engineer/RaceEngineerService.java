@@ -77,6 +77,10 @@ public class RaceEngineerService {
 
     private static final Logger TRACE = LoggerFactory.getLogger("engineer.trace");
 
+    // After a flashback, the game replays a few seconds of state; detectors would
+    // otherwise fire a burst of spurious messages. Hold radio until things settle.
+    private static final long FLASHBACK_SUPPRESS_MS = 4000;
+
     private final CircuitSafeZoneService safeZoneService;
     private final RaceEngineerWebSocketHandler webSocketHandler;
     private final RadioMessageLog radioMessageLog;
@@ -273,6 +277,13 @@ public class RaceEngineerService {
                 session.queue.enqueue(m);
             });
 
+            // During a flashback replay, drop whatever the detectors just queued
+            // (it reflects rewound/jumpy state) and deliver nothing until stable.
+            if (System.currentTimeMillis() < session.radioSuppressedUntilMs) {
+                session.queue.clear();
+                return;
+            }
+
             EngineerMessage delivered = session.queue.pollForDelivery(
                     lapDist, trackId, currentLap, speedKmh, safeZoneService);
             if (delivered != null) {
@@ -315,6 +326,8 @@ public class RaceEngineerService {
                             name + " has retired.",
                             System.currentTimeMillis(), lap, 2));
                 }
+                case "FLBK" -> session.radioSuppressedUntilMs =
+                        System.currentTimeMillis() + FLASHBACK_SUPPRESS_MS;
                 case "CHQF" -> {
                     session.chequeredFlag = true;
                     raceFinish.notifyChequered(session.sessionUid);
@@ -463,6 +476,7 @@ public class RaceEngineerService {
         PitState lastPitState;        // null until first tick
         int currentLap = 0;
         boolean chequeredFlag = false;
+        long radioSuppressedUntilMs = 0;  // set on flashback; radio held until then
         volatile StrategyEvaluation latestEvaluation;   // null until first strategy push
 
         SessionState(String sessionUid, int trackId, int sessionType, SessionKind kind) {
