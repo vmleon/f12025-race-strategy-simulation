@@ -115,6 +115,7 @@ export interface RaceMessage {
   trackTemp?: number;
   airTemp?: number;
   safetyCarStatus?: number;
+  yellowSectors?: number[];
   trackLength?: number;
   sessionType?: number;
   sessionTimeLeft?: number;

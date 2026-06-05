@@ -36,6 +36,13 @@ public class SessionData {
     public final float sector2LapDistanceStart;
     public final float sector3LapDistanceStart;
 
+    // Marshal zones: per-zone lap-distance fraction (0..1) and flag
+    // (0=none, 1=green, 2=blue, 3=yellow, 4=red; -1=unknown).
+    public final int numMarshalZones;
+    public final float[] marshalZoneStart;
+    public final int[] marshalZoneFlag;
+    private static final int FLAG_YELLOW = 3;
+
     // Weather forecast
     public final int numWeatherForecastSamples;
     public final WeatherForecastSample[] weatherForecastSamples;
@@ -78,8 +85,13 @@ public class SessionData {
         buf.get();      // isSpectating
         buf.get();      // spectatorCarIndex
         buf.get();      // sliProNativeSupport
-        buf.get();      // numMarshalZones
-        buf.position(buf.position() + MAX_MARSHAL_ZONES * MARSHAL_ZONE_SIZE); // skip marshal zones
+        this.numMarshalZones = Byte.toUnsignedInt(buf.get());
+        this.marshalZoneStart = new float[MAX_MARSHAL_ZONES];
+        this.marshalZoneFlag = new int[MAX_MARSHAL_ZONES];
+        for (int i = 0; i < MAX_MARSHAL_ZONES; i++) {
+            this.marshalZoneStart[i] = buf.getFloat();
+            this.marshalZoneFlag[i] = buf.get(); // signed int8 (-1 = unknown)
+        }
         this.safetyCarStatus = Byte.toUnsignedInt(buf.get());
         buf.get(); // networkGame
         this.numWeatherForecastSamples = Byte.toUnsignedInt(buf.get());
@@ -145,6 +157,32 @@ public class SessionData {
         buf.position(buf.position() + MAX_SESSIONS_IN_WEEKEND); // skip weekendStructure
         this.sector2LapDistanceStart = buf.getFloat();
         this.sector3LapDistanceStart = buf.getFloat();
+    }
+
+    /**
+     * Sectors (index 0/1/2) that currently have a yellow marshal zone. Maps each
+     * zone's lap-distance fraction to a sector using the real sector boundaries
+     * when known, falling back to even thirds.
+     */
+    public boolean[] yellowSectors() {
+        boolean[] yellow = new boolean[3];
+        for (int i = 0; i < numMarshalZones && i < MAX_MARSHAL_ZONES; i++) {
+            if (marshalZoneFlag[i] == FLAG_YELLOW) {
+                yellow[sectorOf(marshalZoneStart[i])] = true;
+            }
+        }
+        return yellow;
+    }
+
+    private int sectorOf(float zoneStart) {
+        if (sector2LapDistanceStart > 0 && sector3LapDistanceStart > sector2LapDistanceStart) {
+            float metres = zoneStart * trackLength;
+            if (metres < sector2LapDistanceStart) return 0;
+            if (metres < sector3LapDistanceStart) return 1;
+            return 2;
+        }
+        // Fallback: even thirds of the lap.
+        return Math.min(2, Math.max(0, (int) (zoneStart * 3)));
     }
 
     /**

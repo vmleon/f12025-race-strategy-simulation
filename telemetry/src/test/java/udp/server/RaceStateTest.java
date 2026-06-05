@@ -33,6 +33,40 @@ class RaceStateTest {
     }
 
     @Test
+    void toJsonLineIncludesYellowSectors() {
+        RaceState state = new RaceState();
+        state.updateFromSession(0x1234L, yellowSessionDataSector1());
+
+        String json = state.toJsonLine();
+        assertNotNull(json);
+        assertTrue(json.contains("\"yellowSectors\":[1]"),
+                "state line should carry the yellow sector; got: " + json);
+    }
+
+    /** A SessionData packet with a single yellow marshal zone mapping to sector 1. */
+    private static SessionData yellowSessionDataSector1() {
+        java.nio.ByteBuffer buf = java.nio.ByteBuffer.allocate(753);
+        buf.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        buf.position(PacketHeader.HEADER_SIZE);
+        buf.put((byte) 0);          // weather
+        buf.put((byte) 25);         // trackTemperature
+        buf.put((byte) 20);         // airTemperature
+        buf.put((byte) 50);         // totalLaps
+        buf.putShort((short) 5303); // trackLength
+        buf.put((byte) 10);         // sessionType
+        buf.put((byte) 5);          // trackId
+        buf.put((byte) 0);          // formula
+        buf.putShort((short) 0);    // sessionTimeLeft
+        buf.putShort((short) 0);    // sessionDuration
+        for (int i = 0; i < 5; i++) buf.put((byte) 0); // pit/spectate/sli skips
+        buf.put((byte) 1);          // numMarshalZones
+        buf.putFloat(0.5f); buf.put((byte) 3); // yellow → sector 1 (thirds fallback)
+        for (int i = 1; i < 21; i++) { buf.putFloat(0f); buf.put((byte) 0); }
+        byte[] data = buf.array();
+        return SessionData.parse(data, data.length);
+    }
+
+    @Test
     void driverNameJsonResolvesIndexAndGuardsRange() {
         RaceState state = new RaceState();
         state.fillTestData();

@@ -51,6 +51,7 @@ import dev.victormartin.telemetry.engineer.detectors.SlowLapTrafficWarningDetect
 import dev.victormartin.telemetry.engineer.detectors.TyreConditionDetector;
 import dev.victormartin.telemetry.engineer.detectors.TrackTrafficExitDetector;
 import dev.victormartin.telemetry.engineer.detectors.WeatherDetector;
+import dev.victormartin.telemetry.engineer.detectors.YellowFlagDetector;
 import dev.victormartin.telemetry.engineer.llm.RadioMessageRenderer;
 import dev.victormartin.telemetry.engineer.llm.RadioRenderContext;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
@@ -128,6 +129,7 @@ public class RaceEngineerService {
                 new SessionStartGreetingDetector(),
                 // Always-on
                 new FlagChangesDetector(),
+                new YellowFlagDetector(),
                 new FastestLapByRivalDetector(),
                 new PenaltiesDetector(),
                 new TyreConditionDetector(),

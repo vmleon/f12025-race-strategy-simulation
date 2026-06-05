@@ -67,6 +67,37 @@ class PacketParsersTest {
         assertNull(SessionData.parse(new byte[100], 100));
     }
 
+    @Test
+    void parseSessionDataYellowMarshalZones() {
+        ByteBuffer buf = allocateWithHeader(753, 1);
+        buf.put((byte) 2);          // weather
+        buf.put((byte) 30);         // trackTemperature
+        buf.put((byte) 22);         // airTemperature
+        buf.put((byte) 57);         // totalLaps
+        buf.putShort((short) 5303); // trackLength
+        buf.put((byte) 10);         // sessionType
+        buf.put((byte) 5);          // trackId
+        buf.put((byte) 0);          // formula
+        buf.putShort((short) 0);    // sessionTimeLeft
+        buf.putShort((short) 0);    // sessionDuration
+        buf.put((byte) 0);          // pitSpeedLimit
+        buf.put((byte) 0);          // gamePaused
+        buf.put((byte) 0);          // isSpectating
+        buf.put((byte) 0);          // spectatorCarIndex
+        buf.put((byte) 0);          // sliProNativeSupport
+        buf.put((byte) 3);          // numMarshalZones
+        buf.putFloat(0.1f); buf.put((byte) 0); // zone 0: no flag
+        buf.putFloat(0.5f); buf.put((byte) 3); // zone 1: yellow → sector 1 (thirds)
+        buf.putFloat(0.9f); buf.put((byte) 0); // zone 2: no flag
+        for (int i = 3; i < 21; i++) { buf.putFloat(0f); buf.put((byte) 0); }
+
+        byte[] data = buf.array();
+        SessionData session = SessionData.parse(data, data.length);
+
+        assertNotNull(session);
+        assertArrayEquals(new boolean[] {false, true, false}, session.yellowSectors());
+    }
+
     // ── CarStatusData (packetId=7) ──────────────────────────────────────
 
     @Test

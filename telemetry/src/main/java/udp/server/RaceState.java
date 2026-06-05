@@ -19,6 +19,7 @@ public class RaceState {
     private int trackTemp;
     private int airTemp;
     private int safetyCarStatus;
+    private boolean[] yellowSectors = new boolean[3];
     private int totalLaps;
     private int trackLength;
     private int ersAssist;
@@ -116,6 +117,7 @@ public class RaceState {
         this.trackTemp = session.trackTemperature;
         this.airTemp = session.airTemperature;
         this.safetyCarStatus = session.safetyCarStatus;
+        this.yellowSectors = session.yellowSectors();
         this.totalLaps = session.totalLaps;
         this.trackLength = session.trackLength;
         this.weatherForecast = session.weatherForecastSamples;
@@ -196,6 +198,20 @@ public class RaceState {
         }
     }
 
+    /** Yellow sectors as a JSON array of indices, e.g. "[1]" or "[]". */
+    private String yellowSectorsJson() {
+        StringBuilder sb = new StringBuilder("[");
+        boolean first = true;
+        for (int s = 0; s < yellowSectors.length; s++) {
+            if (yellowSectors[s]) {
+                if (!first) sb.append(',');
+                sb.append(s);
+                first = false;
+            }
+        }
+        return sb.append(']').toString();
+    }
+
     /** JSON-escaped driver name for a car index, or "" if out of range / unknown. */
     public synchronized String driverNameJson(int idx) {
         if (idx < 0 || idx >= NUM_CARS) return "";
@@ -258,6 +274,7 @@ public class RaceState {
           .append(",\"trackTemp\":").append(trackTemp)
           .append(",\"airTemp\":").append(airTemp)
           .append(",\"safetyCarStatus\":").append(safetyCarStatus)
+          .append(",\"yellowSectors\":").append(yellowSectorsJson())
           .append(",\"trackLength\":").append(trackLength)
           .append(",\"ersAssist\":").append(ersAssist)
           .append(",\"drsAssist\":").append(drsAssist)

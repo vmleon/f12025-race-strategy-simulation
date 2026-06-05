@@ -897,6 +897,9 @@ export class RaceComponent implements OnInit, OnDestroy {
         if (msg.trackTemp != null) this.trackTemp.set(msg.trackTemp);
         if (msg.airTemp != null) this.airTemp.set(msg.airTemp);
         if (msg.safetyCarStatus != null) this.safetyCarStatus.set(msg.safetyCarStatus);
+        if (msg.yellowSectors != null) {
+          this.yellowSector.set(msg.yellowSectors.length > 0 ? msg.yellowSectors[0] : null);
+        }
         if (msg.trackLength != null) this.trackLength.set(msg.trackLength);
         if (msg.sessionType != null) this.sessionType.set(msg.sessionType);
         if (msg.sessionTimeLeft != null) this.sessionTimeLeft.set(msg.sessionTimeLeft);
