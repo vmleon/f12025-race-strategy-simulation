@@ -226,6 +226,10 @@ def _fit_sector_baselines(conn: oracledb.Connection, track_id: int) -> None:
     if written == 0:
         print(f"  sector_baseline: no buckets with >= {MIN_SECTOR_BASELINE_SAMPLES} samples")
 
+    # Commit once, after every bucket is written, so a mid-loop failure (e.g. a
+    # bad row) rolls back the whole fit instead of leaving a half-finished one.
+    conn.commit()
+
 
 
 def _mad_filter(times: list[int]) -> list[int]:
@@ -319,7 +323,6 @@ def _upsert_sector_baseline(
                 "sample_count": sample_count, "last_fitted_at": fitted_at,
             },
         )
-    conn.commit()
 
 
 

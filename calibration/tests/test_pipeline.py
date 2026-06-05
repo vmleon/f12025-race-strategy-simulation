@@ -126,14 +126,18 @@ class _FakeCursor:
     same name, so only the distinct names must be supplied.
     """
 
-    def __init__(self):
+    def __init__(self, rows=None):
         self.executed = []
+        self.rows = rows or []
 
     def __enter__(self):
         return self
 
     def __exit__(self, *exc):
         return False
+
+    def fetchall(self):
+        return self.rows
 
     def execute(self, sql, params):
         placeholders = re.findall(r":(\w+)", sql)
@@ -151,14 +155,15 @@ class _FakeCursor:
 
 
 class _FakeConn:
-    def __init__(self):
-        self.cursor_obj = _FakeCursor()
+    def __init__(self, rows=None):
+        self.cursor_obj = _FakeCursor(rows)
+        self.commit_count = 0
 
     def cursor(self):
         return self.cursor_obj
 
     def commit(self):
-        pass
+        self.commit_count += 1
 
 
 class TestFuelEffectPerSector:
@@ -303,3 +308,32 @@ class TestUpsertSectorBaseline:
             fitted_at=datetime(2026, 6, 4, 12, 0, 0),
         )
         assert len(conn.cursor_obj.executed) == 1
+
+    def test_does_not_commit_per_bucket(self):
+        # The caller (_fit_sector_baselines) owns the commit; a per-bucket commit
+        # would persist a half-finished fit if a later bucket raises.
+        from calibration.pipeline import _upsert_sector_baseline
+        conn = _FakeConn()
+        _upsert_sector_baseline(
+            conn, track_id=4, sector_number=1, compound=16, regime="PLAYER",
+            fuel_bucket_kg=40, weather=0, track_temp_bucket_c=30,
+            mean_sector_ms=27_000.0, stddev_sector_ms=80.0,
+            perfect_sector_ms=26_800.0, sample_count=7,
+            fitted_at=datetime(2026, 6, 4, 12, 0, 0),
+        )
+        assert conn.commit_count == 0
+
+
+class TestFitSectorBaselinesAtomicity:
+
+    def test_commits_once_for_all_buckets(self):
+        # Two buckets (compound 16 and 17) → two upserts, but a single commit at
+        # the end so any failure mid-loop rolls back cleanly.
+        from calibration.pipeline import _fit_sector_baselines
+        rows = (
+            [(0, 16, 0, 50.0, 0, 25, 30_000 + i) for i in range(3)]
+            + [(0, 17, 0, 50.0, 0, 25, 31_000 + i) for i in range(3)]
+        )
+        conn = _FakeConn(rows)
+        _fit_sector_baselines(conn, track_id=4)
+        assert conn.commit_count == 1
