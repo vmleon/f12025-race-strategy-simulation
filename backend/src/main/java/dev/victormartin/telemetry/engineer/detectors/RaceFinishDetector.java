@@ -5,6 +5,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import dev.victormartin.telemetry.engineer.EngineerMessage;
 import dev.victormartin.telemetry.engineer.EngineerMessage.Priority;
 import dev.victormartin.telemetry.engineer.EngineerTick;
@@ -59,13 +61,27 @@ public class RaceFinishDetector implements RadioDetector {
         if (rs == 3 || s.chequered) {
             s.finished = true;
             int pos = tick.playerPos();
-            int gridSize = tick.cars().size();
+            int gridSize = activeGridSize(tick.cars());
             return Optional.of(new EngineerMessage(
                     Priority.IMMEDIATE,
                     buildFinishMessage(pos, gridSize),
                     tick.wallClockMs(), tick.currentLap(), 5));
         }
         return Optional.empty();
+    }
+
+    /**
+     * Real grid size: the game sends 22 car slots but only ~20 are a true grid.
+     * Count cars actually in the race (resultStatus >= 2 = active/finished/DNF/
+     * DSQ/retired), excluding invalid (0) and inactive (1) slots.
+     */
+    static int activeGridSize(JsonNode cars) {
+        int n = 0;
+        for (JsonNode c : cars) {
+            int rs = c.has("resultStatus") ? c.get("resultStatus").asInt() : 2;
+            if (rs >= 2) n++;
+        }
+        return n;
     }
 
     static String buildFinishMessage(int pos, int gridSize) {
