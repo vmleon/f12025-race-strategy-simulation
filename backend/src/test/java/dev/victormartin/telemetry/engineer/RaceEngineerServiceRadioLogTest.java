@@ -99,7 +99,7 @@ class RaceEngineerServiceRadioLogTest {
         service.onSessionStarted(SESSION_UID, TRACK_ID, SESSION_TYPE_RACE, 0, 0);
         StrategyEvaluation eval = new StrategyEvaluation(0, List.of(
                 new RankedStrategy(1, new StrategyCandidate("1-stop: Soft->Hard", List.of()),
-                        4.1, 0, 0, 0, 0, 0, 0, 12.0)));
+                        4.1, 0, 0, 0, 0, 0, 0, 12.0)), false);
         service.onStrategyEvaluation(1, eval);
         service.onStateUpdate(stateJson(1));
 

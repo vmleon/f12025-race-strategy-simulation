@@ -8,7 +8,8 @@ import java.util.List;
  */
 public record StrategyEvaluation(
         int playerCarIndex,
-        List<RankedStrategy> strategies
+        List<RankedStrategy> strategies,
+        boolean insufficientCalibration // player pace uncalibrated (circuit default) → ranks not trustworthy
 ) {
 
     public record RankedStrategy(

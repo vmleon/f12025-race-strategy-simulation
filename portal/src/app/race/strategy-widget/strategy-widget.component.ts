@@ -23,7 +23,12 @@ const COMPOUND_NAMES: Record<number, string> = {
         <div class="stale-bar">Updating...</div>
       }
 
-      @if (strategies.length > 0) {
+      @if (insufficientCalibration) {
+        <p class="insufficient">
+          Insufficient calibration — pace is using the circuit default. Run more clean laps for
+          reliable strategy estimates.
+        </p>
+      } @else if (strategies.length > 0) {
         @if (evaluatedAtLap > 0) {
           <div class="meta">Lap {{ evaluatedAtLap }}</div>
         }
@@ -110,10 +115,17 @@ const COMPOUND_NAMES: Record<number, string> = {
       font-size: 0.8rem;
       margin: 0;
     }
+    .insufficient {
+      color: #ffa726;
+      font-size: 0.8rem;
+      line-height: 1.3;
+      margin: 0;
+    }
   `,
 })
 export class StrategyWidgetComponent {
   @Input() strategies: RankedStrategy[] = [];
   @Input() evaluatedAtLap = 0;
   @Input() stale = false;
+  @Input() insufficientCalibration = false;
 }

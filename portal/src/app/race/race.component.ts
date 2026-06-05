@@ -71,6 +71,7 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
                 [strategies]="strategyStrategies()"
                 [evaluatedAtLap]="strategyEvaluatedAtLap()"
                 [stale]="strategyStale()"
+                [insufficientCalibration]="strategyInsufficientCalibration()"
               />
               @if (lastPlayerLaps().length > 0) {
                 <div class="last-laps">
@@ -500,6 +501,7 @@ export class RaceComponent implements OnInit, OnDestroy {
   strategyStrategies = signal<RankedStrategy[]>([]);
   strategyEvaluatedAtLap = signal(0);
   strategyStale = signal(false);
+  strategyInsufficientCalibration = signal(false);
 
   private bestLapMap = new Map<number, number>();
 
@@ -659,6 +661,7 @@ export class RaceComponent implements OnInit, OnDestroy {
     this.strategyStrategies.set([]);
     this.strategyEvaluatedAtLap.set(0);
     this.strategyStale.set(false);
+    this.strategyInsufficientCalibration.set(false);
     this.sectorHistory.clear();
     this.prevSectors.clear();
     this.prevLaps.clear();
@@ -953,6 +956,7 @@ export class RaceComponent implements OnInit, OnDestroy {
           this.strategyStrategies.set(msg.evaluation.strategies);
           this.strategyEvaluatedAtLap.set(msg.evaluatedAtLap ?? 0);
           this.strategyStale.set(msg.stale ?? false);
+          this.strategyInsufficientCalibration.set(msg.evaluation.insufficientCalibration ?? false);
         }
         break;
     }

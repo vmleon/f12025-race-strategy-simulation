@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import dev.victormartin.telemetry.simulation.StrategyEvaluation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StrategyResultConsumerTest {
 
@@ -36,5 +37,23 @@ class StrategyResultConsumerTest {
         assertEquals(1, stops.size());
         assertEquals(20, stops.get(0).onLap());
         assertEquals(18, stops.get(0).newCompound());
+    }
+
+    /**
+     * The simulator flags when the player's pace is uncalibrated (circuit
+     * default). The backend must carry that flag through to the dashboard so the
+     * strategy panel can show "insufficient calibration" instead of fake-precise
+     * numbers.
+     */
+    @Test
+    void carriesInsufficientCalibrationFlag() throws Exception {
+        String result = """
+                {"playerCarIndex":0,"insufficientCalibration":true,"strategies":[]}
+                """;
+
+        ObjectMapper mapper = StrategyResultConsumer.newResultMapper();
+        StrategyEvaluation eval = mapper.treeToValue(mapper.readTree(result), StrategyEvaluation.class);
+
+        assertTrue(eval.insufficientCalibration());
     }
 }

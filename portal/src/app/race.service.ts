@@ -91,6 +91,9 @@ export interface RankedStrategy {
 export interface StrategyEvaluationResult {
   playerCarIndex: number;
   strategies: RankedStrategy[];
+  // Player pace was uncalibrated (circuit default) → the ranked numbers are not
+  // trustworthy and the panel shows an "insufficient calibration" notice instead.
+  insufficientCalibration: boolean;
 }
 
 export interface RaceMessage {
