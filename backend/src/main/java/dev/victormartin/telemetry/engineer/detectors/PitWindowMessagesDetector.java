@@ -5,6 +5,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import dev.victormartin.telemetry.engineer.EngineerMessage;
 import dev.victormartin.telemetry.engineer.EngineerMessage.Priority;
 import dev.victormartin.telemetry.engineer.EngineerMessageHelpers;
@@ -22,6 +24,9 @@ import dev.victormartin.telemetry.engineer.SessionKind;
 public class PitWindowMessagesDetector implements RadioDetector {
 
     private static final float BOX_BOX_LAP_FRACTION = 0.8f;
+    // Matches PerCornerWearDetector's "finished" threshold: at/above this a corner
+    // is past the cliff, so "box window opens in 5 laps" is no longer credible.
+    private static final int HIGH_WEAR_PCT = 37;
     enum Kind { NONE, T_MINUS_5, T_MINUS_1, BOX }
 
     private final Map<String, State> stateByUid = new ConcurrentHashMap<>();
@@ -56,13 +61,20 @@ public class PitWindowMessagesDetector implements RadioDetector {
             // A missed window: the old target was already a live box call, and the
             // new recommendation is for a later lap. Announce the recovery now —
             // delta to the new target is ≥3, so the normal gates would sit silent.
+            boolean pitted = playerPits != s.lastPlayerPits;
             boolean recovery = s.lastAnnouncedTarget > 0
                     && s.lastKind.ordinal() >= Kind.T_MINUS_1.ordinal()
                     && target > s.lastAnnouncedTarget
-                    && playerPits == s.lastPlayerPits;
+                    && !pitted;
             s.lastAnnouncedTarget = target;
             s.lastPlayerPits = playerPits;
-            s.lastKind = Kind.NONE;
+            // Reset the announced-threshold ladder only for a genuinely new window:
+            // a fresh stint after a pit, or a recovery re-plan. On a plain target
+            // drift within the same stint, keep lastKind so we don't re-announce an
+            // already-given threshold (e.g. "opens in 5 laps" twice a few laps apart).
+            if (pitted || recovery) {
+                s.lastKind = Kind.NONE;
+            }
             if (recovery) {
                 return Optional.of(new EngineerMessage(
                         Priority.HIGH,
@@ -74,7 +86,7 @@ public class PitWindowMessagesDetector implements RadioDetector {
 
         int delta = target - tick.currentLap();
 
-        if (delta == 5 && s.lastKind == Kind.NONE) {
+        if (delta == 5 && s.lastKind == Kind.NONE && !tyresFinished(tick.playerCar())) {
             s.lastKind = Kind.T_MINUS_5;
             return Optional.of(new EngineerMessage(
                     Priority.NORMAL,
@@ -98,6 +110,16 @@ public class PitWindowMessagesDetector implements RadioDetector {
             }
         }
         return Optional.empty();
+    }
+
+    /** True when any corner is at/over the "finished" wear threshold. */
+    private static boolean tyresFinished(JsonNode playerCar) {
+        JsonNode wear = playerCar != null ? playerCar.get("tyreWear") : null;
+        if (wear == null || !wear.isArray() || wear.size() < 4) return false;
+        for (int i = 0; i < 4; i++) {
+            if ((int) wear.get(i).asDouble() >= HIGH_WEAR_PCT) return true;
+        }
+        return false;
     }
 
     @Override

@@ -1,6 +1,7 @@
 package dev.victormartin.telemetry.engineer.detectors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,12 +39,28 @@ class PitWindowMessagesDetectorTest {
     }
 
     private EngineerTick tick(int currentLap, float lapDist, int pits) {
+        return tick(currentLap, lapDist, playerCar(pits));
+    }
+
+    /** Player-car node with a per-corner tyre-wear array [RL, RR, FL, FR]. */
+    private static ObjectNode playerCar(int pits, int[] wear) {
+        ObjectNode n = playerCar(pits);
+        ArrayNode w = n.putArray("tyreWear");
+        for (int v : wear) w.add(v);
+        return n;
+    }
+
+    private EngineerTick tickWithWear(int currentLap, float lapDist, int pits, int[] wear) {
+        return tick(currentLap, lapDist, playerCar(pits, wear));
+    }
+
+    private EngineerTick tick(int currentLap, float lapDist, ObjectNode playerCar) {
         return new EngineerTick(
                 1_000L, UID, 10, SessionKind.RACE,
                 0, currentLap, 50, TRACK_LENGTH,
                 PitState.ON_TRACK, PitState.ON_TRACK,
                 MAPPER.createObjectNode(),
-                playerCar(pits),
+                playerCar,
                 MAPPER.createArrayNode(),
                 5, lapDist, 240, 0.9f,
                 0, 0, 0);
@@ -100,6 +117,29 @@ class PitWindowMessagesDetectorTest {
 
         assertTrue(msg.isPresent());
         assertEquals("Box window opens in 5 laps. Softs ready.", msg.get().text());
+    }
+
+    @Test
+    void doesNotReannounceFiveLapWindowWhenTargetDrifts() {
+        detector.setRecommendation(UID, 30, HARD);
+        Optional<EngineerMessage> first = detector.evaluate(tick(25, 100f, 0)); // delta 5
+        assertTrue(first.isPresent());
+        assertEquals("Box window opens in 5 laps. Hards ready.", first.get().text());
+
+        // Strategy drifts the target out by 2 laps within the same stint (no pit).
+        detector.setRecommendation(UID, 32, HARD);
+        assertTrue(detector.evaluate(tick(26, 100f, 0)).isEmpty()); // delta 6, silent
+        // delta hits 5 again for the drifted target — must NOT re-announce.
+        assertTrue(detector.evaluate(tick(27, 100f, 0)).isEmpty());
+    }
+
+    @Test
+    void doesNotAnnounceFiveLapWindowAtHighTyreWear() {
+        detector.setRecommendation(UID, 30, HARD);
+        // A corner already past the cliff (40%): "opens in 5 laps" is nonsense.
+        Optional<EngineerMessage> msg =
+                detector.evaluate(tickWithWear(25, 100f, 0, new int[] {40, 38, 35, 30})); // delta 5
+        assertTrue(msg.isEmpty());
     }
 
     @Test
