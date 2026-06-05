@@ -306,10 +306,11 @@ public class RaceEngineerService {
                         "Safety car deployed. Bunch up, stay within ten car lengths. We'll talk strategy.",
                         System.currentTimeMillis(), lap, 3));
                 case "RTMT" -> {
-                    String name = node.has("driverName") ? node.get("driverName").asText() : "A car";
+                    String rawName = node.has("driverName") ? node.get("driverName").asText() : "";
+                    String name = rawName.isBlank() ? "A car" : rawName;
                     session.queue.enqueue(new EngineerMessage(
                             Priority.NORMAL,
-                            name + " has retired. Watch for debris on track.",
+                            name + " has retired.",
                             System.currentTimeMillis(), lap, 2));
                 }
                 case "CHQF" -> {

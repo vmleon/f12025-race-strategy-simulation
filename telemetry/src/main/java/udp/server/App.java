@@ -158,7 +158,8 @@ public class App {
                                                 + event.safetyCarType + ",\"eventType\":" + event.eventType + "}");
                                         case "RTMT" -> raceState.queueEvent(
                                                 "{\"type\":\"event\",\"event\":\"RTMT\",\"carIndex\":"
-                                                + event.vehicleIdx + "}");
+                                                + event.vehicleIdx + ",\"driverName\":\""
+                                                + raceState.driverNameJson(event.vehicleIdx) + "\"}");
                                         case "COLL" -> raceState.queueEvent(
                                                 "{\"type\":\"event\",\"event\":\"COLL\",\"car1\":"
                                                 + event.vehicle1Idx + ",\"car2\":" + event.vehicle2Idx + "}");

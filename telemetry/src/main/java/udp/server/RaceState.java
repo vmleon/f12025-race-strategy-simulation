@@ -196,6 +196,12 @@ public class RaceState {
         }
     }
 
+    /** JSON-escaped driver name for a car index, or "" if out of range / unknown. */
+    public synchronized String driverNameJson(int idx) {
+        if (idx < 0 || idx >= NUM_CARS) return "";
+        return escapeJson(cars[idx].driverName);
+    }
+
     public synchronized void queueEvent(String eventJson) {
         eventQueue.add(eventJson);
     }

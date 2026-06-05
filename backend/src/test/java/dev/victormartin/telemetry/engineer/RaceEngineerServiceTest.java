@@ -188,6 +188,23 @@ class RaceEngineerServiceTest {
                 "SCAR with currentLap baseline should survive immediate poll; got: " + messageTexts());
     }
 
+    // --- RTMT: name the driver, drop "watch for debris" ----------------------
+
+    @Test
+    void rtmtNamesDriverAndDropsDebris() {
+        service.onSessionStarted(SESSION_UID, TRACK_ID, 10, 0, 0);
+        // Fire RTMT first so it's within the per-zone NORMAL delivery budget,
+        // then one state tick to trigger delivery.
+        service.onEvent("{\"event\":\"RTMT\",\"trackId\":" + TRACK_ID
+                + ",\"driverName\":\"Verstappen\"}");
+        service.onStateUpdate(stateJson(10, 1, 50, 5300, 5, 110f, 240, 0.9f, 0, null));
+
+        assertTrue(messageTexts().stream().anyMatch(t -> t.contains("Verstappen has retired")),
+                "RTMT should name the retiring driver; got: " + messageTexts());
+        assertFalse(messageTexts().stream().anyMatch(t -> t.contains("debris")),
+                "RTMT should not mention debris; got: " + messageTexts());
+    }
+
     // --- Sanity: race session works without exceptions -----------------------
 
     @Test

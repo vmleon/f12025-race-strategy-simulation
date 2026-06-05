@@ -33,6 +33,15 @@ class RaceStateTest {
     }
 
     @Test
+    void driverNameJsonResolvesIndexAndGuardsRange() {
+        RaceState state = new RaceState();
+        state.fillTestData();
+        assertEquals("Player", state.driverNameJson(0));
+        assertEquals("", state.driverNameJson(99));
+        assertEquals("", state.driverNameJson(-1));
+    }
+
+    @Test
     void eventQueuePolling() {
         RaceState state = new RaceState();
         assertNull(state.pollEvent());
