@@ -45,7 +45,7 @@ public class TyreConditionDetector implements RadioDetector {
             s.lastAlert = 0;
             out = Optional.of(new EngineerMessage(
                     Priority.NORMAL,
-                    "Copy, new " + EngineerMessageHelpers.tyreSpokenName(compound) + " tyres on. Take it easy for the out lap.",
+                    "New " + EngineerMessageHelpers.tyreSpokenName(compound) + "s on, easy on the exit.",
                     tick.wallClockMs(), tick.currentLap(), 1));
         } else if (tyreAge >= 30 && s.lastAlert < 30) {
             out = Optional.of(new EngineerMessage(
