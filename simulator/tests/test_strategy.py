@@ -90,6 +90,29 @@ class TestStrategyEvaluator:
         assert strategy.expected_points >= 0
 
 
+class TestInsufficientCalibration:
+    def test_flag_true_when_player_pace_is_circuit_default(self):
+        engine = MonteCarloEngine(Coefficients.defaults(), seed=42)
+        evaluator = StrategyEvaluator(engine)
+        # Default cars carry no observed laps and no fitted baseline → the player
+        # pace falls back to the generic circuit default.
+        candidates = [
+            StrategyCandidate(label="No stop", stops=[]),
+            StrategyCandidate(label="1-stop", stops=[PitStop(on_lap=5, new_compound=18)]),
+        ]
+        result = evaluator.evaluate(_make_snapshot(), player_car_index=0, candidates=candidates)
+        assert result.insufficient_calibration is True
+
+    def test_flag_false_when_player_has_baseline(self):
+        engine = MonteCarloEngine(Coefficients.defaults(), seed=42)
+        evaluator = StrategyEvaluator(engine)
+        snapshot = _make_snapshot()
+        snapshot.cars[0].sector_baseline_ms = [30000, 30000, 30000]
+        candidates = [StrategyCandidate(label="No stop", stops=[])]
+        result = evaluator.evaluate(snapshot, player_car_index=0, candidates=candidates)
+        assert result.insufficient_calibration is False
+
+
 class TestCheckFeasibility:
     def test_feasible_strategy(self):
         sets = [

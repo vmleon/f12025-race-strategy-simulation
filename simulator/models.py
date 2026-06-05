@@ -155,6 +155,10 @@ class RankedStrategy(BaseModel):
 class StrategyEvaluation(BaseModel):
     player_car_index: int = Field(alias="playerCarIndex")
     strategies: list[RankedStrategy]
+    # True when the player's pace fell back to the generic circuit default (no
+    # observed laps, no fitted baseline) — the ranked numbers are not trustworthy
+    # and the panel should show "insufficient calibration" instead.
+    insufficient_calibration: bool = Field(default=False, alias="insufficientCalibration")
 
     model_config = {"populate_by_name": True}
 

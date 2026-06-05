@@ -55,6 +55,7 @@ class StrategyEvaluator:
             (c for c in base_snapshot.cars if c.car_index == player_car_index),
             None,
         )
+        player_pace_src = None
         if player_cs is not None:
             player_pace = _lap_pace_ms(player_cs, base_snapshot.track_id)
             if any(player_cs.sector_history_ms):
@@ -143,6 +144,11 @@ class StrategyEvaluator:
             for i, r in enumerate(results)
         ]
 
+        # Insufficient calibration: the player's pace fell back to the generic
+        # circuit default (no observed laps, no fitted baseline), so the ranked
+        # numbers are fake-precise. The panel surfaces this instead of the strategies.
+        insufficient_calibration = player_pace_src == "circuit_default"
+
         # Anomaly: candidates all collapse to roughly the same outcome AND that
         # outcome doesn't match the player's actual current standing. A dominant
         # leader legitimately sees every strategy converge to P1 — only warn
@@ -156,6 +162,12 @@ class StrategyEvaluator:
                     "(mean ~%.2f) but player is currently P%d — engine output is suspicious",
                     len(ranked), spread, ranked[0].mean_position, player_cs.position,
                 )
+        if insufficient_calibration:
+            logger.info(
+                "strategy.insufficient_calibration: player car=%d pace is circuit "
+                "default — surfacing insufficient-calibration to the panel",
+                player_car_index,
+            )
 
         # Final winner ranking — what the portal will actually show.
         top = ranked[:3]
@@ -168,6 +180,7 @@ class StrategyEvaluator:
         return StrategyEvaluation(
             player_car_index=player_car_index,
             strategies=ranked,
+            insufficient_calibration=insufficient_calibration,
         )
 
     @staticmethod
