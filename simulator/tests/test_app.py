@@ -226,7 +226,10 @@ class TestAutoEvaluateStrategies:
         assert "label" in first["candidate"]
         assert "meanPosition" in first
 
-    def test_auto_evaluate_no_tyre_sets_returns_empty(self):
+    def test_auto_evaluate_no_tyre_sets_uses_fallback_compounds(self):
+        # No tyre-set inventory yet (early laps): the generator falls back to the
+        # standard dry compounds rather than returning nothing, so strategies are
+        # still produced. See _get_available_compounds in candidate_generator.py.
         payload = {
             "snapshot": {
                 "trackId": 0,
@@ -261,4 +264,4 @@ class TestAutoEvaluateStrategies:
         response = client.post("/auto-evaluate-strategies", json=payload)
         assert response.status_code == 200
         data = response.json()
-        assert data["strategies"] == []
+        assert len(data["strategies"]) > 0
