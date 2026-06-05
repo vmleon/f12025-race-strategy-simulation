@@ -474,7 +474,7 @@ This can be a table in Oracle alongside the telemetry data, or a separate config
 
 ## Implementation: Standalone Python Service
 
-Calibration is implemented as a standalone Python service (`python -m calibration service`), a long-running worker that consumes `CALIBRATION_REQUEST` messages from Oracle TxEventQ — mirroring the simulator's architecture (see `06-INTEGRATION.md` §5). The backend only enqueues; the service dequeues and processes in-process. A one-off CLI mode (`python -m calibration run <trackId>`) is also available for manual runs. The pipeline reads from and writes to the same Oracle schema used by telemetry and simulation.
+Calibration is implemented as a standalone Python service (`python -m calibration service`), a long-running worker that consumes `CALIBRATION_REQUEST` messages from Oracle TxEventQ — mirroring the simulator's architecture (see `06-INTEGRATION.md` Flow 4). The backend only enqueues; the service dequeues and processes in-process. A one-off CLI mode (`python -m calibration run <trackId>`) is also available for manual runs. The pipeline reads from and writes to the same Oracle schema used by telemetry and simulation.
 
 ### Pipeline Architecture
 

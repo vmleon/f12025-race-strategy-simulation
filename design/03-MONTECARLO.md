@@ -59,7 +59,7 @@ Candidate strategies are generated automatically by the Simulator's `candidate_g
 - **2-stop:** Only if 15+ laps remain. Cross-product of available compounds for both stops, with lap windows stepped at 5+ lap intervals and a minimum stint length of 5 laps
 - **Pruning:** Compounds with a lap delta time >5 seconds versus the fitted set are excluded. Total candidates are capped at 50, prioritizing 0/1-stop strategies over 2-stop when truncating
 
-This generation logic lives in the Simulator (`candidate_generator.py`) rather than the Backend, keeping strategy knowledge co-located with the evaluation engine. The Backend's `StrategyOrchestrator` assembles the race snapshot (enriched with tyre set availability from the database) and passes it to the Simulator via the `STRATEGY_REQUEST` queue — see `06-INTEGRATION.md` section 6b for the full flow.
+This generation logic lives in the Simulator (`candidate_generator.py`) rather than the Backend, keeping strategy knowledge co-located with the evaluation engine. The Backend's `StrategyOrchestrator` assembles the race snapshot (enriched with tyre set availability from the database) and passes it to the Simulator via the `STRATEGY_REQUEST` queue — see `06-INTEGRATION.md` Flow 6 for the full flow.
 
 The residual variance controls how spread out the outcomes are — tight residuals (well-calibrated model) produce consistent predictions, wide residuals (poor calibration or genuinely noisy game physics) produce uncertain outcomes. The required iteration count depends on convergence — see Convergence and Iteration Count above.
 

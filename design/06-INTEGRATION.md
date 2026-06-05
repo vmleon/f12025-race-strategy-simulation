@@ -1,300 +1,432 @@
-# Integration Points Between Components
+# Integration & End-to-End Data Flows
 
-## System Overview
+This chapter traces how data moves through the system **from collection to feature** — from a
+UDP packet leaving the game to a radio message spoken on the phone, a dashboard panel updating,
+a ranked strategy, or a refitted model. The **end-to-end flows** (§Flows) are the backbone:
+each says what kicks off the processing, which queues are involved, and which component hands
+data to which. The **reference** sections (§Reference) hold the cross-cutting detail — protocol
+table, WebSocket channels, REST API, shared DB, interface versioning, and the TCP-push rationale.
+
+## Actors and transports
+
+| Actor            | Tech             | Role in the flows                                                                   |
+| ---------------- | ---------------- | ----------------------------------------------------------------------------------- |
+| **F1 2025 Game** | —                | Emits UDP telemetry packets at 20 Hz                                                |
+| **Telemetry**    | Plain Java       | Parses UDP, persists to Oracle, pushes live state to Backend over TCP               |
+| **Oracle DB**    | Oracle 26ai      | Shared store + TxEventQ message broker for all async work                           |
+| **Backend**      | Spring Boot      | REST/WebSocket API; orchestrates calibration, simulation, strategy; generates radio |
+| **Calibration**  | Python service   | Fits model coefficients from historical laps (consumes `CALIBRATION_REQUEST`)       |
+| **Simulator**    | Python / FastAPI | Runs Monte Carlo race simulations + strategy evaluation (consumes `*_REQUEST`)      |
+| **Portal**       | Angular          | Live race dashboard + strategy leaderboard (WebSocket `/ws/race`)                   |
+| **iOS Client**   | SwiftUI          | Speaks race engineer messages via TTS (WebSocket `/ws/race-engineer`)               |
+
+**Transports:** UDP (game → telemetry, 20 Hz), JDBC + Oracle UCP ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-ucp))
+(telemetry/backend ↔ Oracle), TCP newline-delimited JSON (telemetry → backend, port 9090, ~1 Hz),
+WebSocket (backend → portal/iOS), Oracle **TxEventQ** ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-txeventq))
+queues (async work between backend and the Python workers).
+
+**Queues (Oracle TxEventQ, `PDBADMIN.*`):** `CALIBRATION_REQUEST`, `SIMULATION_REQUEST`,
+`SIMULATION_RESULT`, `STRATEGY_REQUEST`, `STRATEGY_RESULT`, `SESSION_LIFECYCLE` (multi-consumer).
+
+## System overview
+
+Every feature is one path through this graph. The longest is the **"strategy brain"**: prior
+sessions feed **calibration** (Flow 4) → fitted coefficients → live **strategy evaluation**
+(Flow 6) → ranked strategies → a **radio pit-window message** (Flow 7) and the **portal strategy
+widget**.
 
 ```mermaid
-graph TD
-    Game["F1 2025 Game"] -- "UDP 20Hz" --> Telemetry["Telemetry — Plain Java"]
-    Telemetry -- "JDBC writes" --> DB["Oracle DB 26ai"]
-    Telemetry -- "TCP push ~1Hz" --> Backend["Backend — Spring Boot"]
-    DB -- "JDBC reads" --> Backend
-    DB -- "TxEventQ" --> Backend
-    Backend -- WebSocket --> Portal["Portal — Angular"]
-    Backend -- WebSocket --> iOS["iOS Client — SwiftUI"]
-    Simulator["Simulator — Python"] -- "SIMULATION_REQUEST" --> DB
-    DB -- "SIMULATION_RESULT" --> Backend
-    Backend -- "STRATEGY_REQUEST" --> DB
-    DB -- "STRATEGY_RESULT" --> Backend
-    Simulator -- "STRATEGY_REQUEST" --> DB
-    Simulator -- "reads coefficients" --> DB
+graph LR
+    Game["F1 2025 Game"] -- "UDP 20Hz" --> Tele["Telemetry"]
+
+    Tele -- "JDBC writes\n(sector snapshots)" --> DB[("Oracle DB")]
+    Tele -- "TCP ~1Hz\nlive state + events" --> BE["Backend"]
+
+    BE -- "WebSocket /ws/race" --> Portal["Portal"]
+    BE -- "WebSocket /ws/race-engineer" --> iOS["iOS Client"]
+
+    BE -- "CALIBRATION_REQUEST\n(on session end)" --> DB
+    DB --> Cal["Calibration"]
+    Cal -- "writes coefficients" --> DB
+
+    BE -- "STRATEGY_REQUEST\nSIMULATION_REQUEST\n(live triggers)" --> DB
+    DB --> Sim["Simulator"]
+    Sim -- "reads coefficients" --> DB
+    Sim -- "STRATEGY_RESULT\nSIMULATION_RESULT" --> DB
+    DB --> BE
+
+    classDef store fill:#eee,stroke:#999;
+    class DB store;
 ```
 
-## Use Case: Data Ingestion & Persistence
+---
+
+# Flows
+
+## Flow 1 — Ingestion & persistence (the foundation)
+
+The game streams UDP packets; telemetry keeps a 20-car `RaceState` in memory and writes durable
+rows to Oracle on meaningful boundaries. Everything else builds on this.
+
+- **Kicked off by:** UDP packets from the game (20 Hz).
+- **Queues:** none — direct JDBC write (Oracle thin driver + UCP pool), `config: telemetry/config.properties`.
+- **Path:** Game → Telemetry → Oracle.
+- **What persists when:** `sessions` / `participants` once per session (packets 1, 4);
+  `sector_snapshots` on each sector transition (packet 2, batched via `addBatch()`/`executeBatch()`,
+  20 cars × 3 sectors ≈ 60 rows/lap); `session_events` on events (packet 3 — SCAR, RTMT, PENA, COLL…);
+  `tyre_sets` at session start and each pit stop (packet 12); `final_classifications` once at session
+  end (packet 8). High-frequency telemetry/status/damage packets (6, 7, 10) only update in-memory
+  state and are snapshotted on the next sector boundary.
 
 ```mermaid
 sequenceDiagram
     participant Game as F1 2025 Game
-    participant Telemetry as Telemetry (Java)
+    participant Tele as Telemetry (Java)
     participant DB as Oracle DB
 
-    Game->>Telemetry: UDP packets (20Hz)
-    activate Telemetry
-    Note over Telemetry: Parse packet header<br/>(format, year, packet type)
-
-    alt Packet 1 — Session
-        Telemetry->>DB: INSERT sessions (once per session)
-    else Packet 4 — Participants
-        Telemetry->>DB: INSERT participants (once per session)
-    else Packet 2 — LapData
-        Note over Telemetry: Detect sector transition<br/>(sector field 0→1, 1→2, 2→0)
-        Telemetry->>DB: INSERT sector_snapshots<br/>(batch: 20 cars × 3 sectors)
-    else Packet 3 — Event
-        Telemetry->>DB: INSERT session_events<br/>(SCAR, RTMT, PENA, COLL, etc.)
-    else Packet 12 — TyreSets
-        Telemetry->>DB: INSERT tyre_sets<br/>(session start + on pit stop)
-    else Packet 8 — FinalClassification
-        Telemetry->>DB: INSERT final_classifications<br/>(once at session end)
-    else Packets 6, 7, 10 — Telemetry/Status/Damage
-        Note over Telemetry: Update in-memory state only<br/>(snapshotted on next sector transition)
+    Game->>Tele: UDP packets (20Hz)
+    Note over Tele: Parse header → update in-memory RaceState<br/>(positions, tyres, fuel, damage, weather)
+    alt Sector transition (0→1, 1→2, 2→0)
+        Tele->>DB: INSERT sector_snapshots (batch: 20×3)
+    else Session / Participants packet
+        Tele->>DB: INSERT sessions / participants (once)
+    else Event packet (SCAR, RTMT, PENA, COLL…)
+        Tele->>DB: INSERT session_events
+    else TyreSets / FinalClassification
+        Tele->>DB: INSERT tyre_sets / final_classifications
     end
-    deactivate Telemetry
 ```
 
-## Use Case: Live Race Dashboard
+> Table definitions: `04-DATABASE_DESIGN.md`.
+
+## Flow 2 — Live race dashboard (Portal)
+
+The portal renders a live dashboard without ever querying the DB — it consumes the relayed TCP
+state stream over WebSocket.
+
+- **Kicked off by:** every TCP state frame telemetry pushes (~1 Hz).
+- **Queues:** none — TCP push, then WebSocket broadcast.
+- **Path:** Game → Telemetry → **TCP** → Backend → **WebSocket `/ws/race`** → Portal.
+- **Carried:** current lap, positions, gaps, tyre compound/age, fuel, pit status, damage, weather,
+  `lastLapTimeMs` (used by the portal for sector-3 gap math) — enough to render without the DB.
+  Each message is one JSON object per line with a `type` discriminator and a `version` field
+  (see §Telemetry ↔ Backend interface).
 
 ```mermaid
 sequenceDiagram
     participant Game as F1 2025 Game
-    participant Telemetry as Telemetry (Java)
-    participant Backend as Backend (Spring Boot)
+    participant Tele as Telemetry
+    participant BE as Backend
     participant Portal as Portal (Angular)
 
-    Game->>Telemetry: UDP packets (20Hz)
-    Note over Telemetry: Update in-memory RaceState<br/>(22 cars: position, lap, sector,<br/>tyres, fuel, damage, weather)
-
-    loop ~1Hz (TcpSender thread)
-        Telemetry->>Backend: TCP JSON-line<br/>{"type":"state", cars:[...],<br/>weather, safetyCarStatus, ...}
-        Backend->>Portal: WebSocket broadcast<br/>(type: "state")
-    end
-
-    alt Session lifecycle
-        Telemetry->>Backend: TCP {"type":"sessionStarted", sessionUid, trackId, ersAssist, drsAssist}
-        Backend->>Portal: WebSocket /ws/race (type: "sessionStarted")
-        Backend->>iOS: WebSocket /ws/race-engineer (type: "sessionStarted")
-    else Disruptive event
-        Telemetry->>Backend: TCP {"type":"event", event:"SCAR"|"RTMT"|...}
-        Backend->>Portal: WebSocket (type: "event")
+    Game->>Tele: UDP packets (20Hz)
+    Note over Tele: Coalesce into RaceState
+    loop ~1Hz (TcpSender)
+        Tele->>BE: TCP {"type":"state", cars[], weather, safetyCarStatus…}
+        BE->>Portal: WebSocket broadcast (type: "state")
+        Note over Portal: Signals update circuit map,<br/>gaps, tyres, damage, weather panels
     end
 ```
 
-## 1. Telemetry → Database (JDBC, direct write)
+> Portal component tree: §Portal dashboard.
 
-The telemetry server writes parsed UDP data directly to Oracle via JDBC + Oracle UCP connection pool ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-ucp)). No intermediary.
+## Flow 3 — Disruptive events (Portal + Radio)
 
-- **Protocol:** JDBC (Oracle thin driver)
-- **Direction:** Telemetry → Oracle
-- **Data:** `sessions`, `participants`, `sector_snapshots`, `session_events`, `tyre_sets`, `final_classifications` (all 6 data tables from `04-DATABASE_DESIGN.md`)
-- **Rate:** ~60 rows/lap for sector_snapshots (3 sectors x 20 cars), plus sporadic event/metadata rows
-- **Batching:** JDBC `addBatch()` / `executeBatch()` for sector_snapshots (all 20 cars snapshotted at each sector boundary)
-- **Connection config:** `telemetry/config.properties` — host, port, service name, credentials
+Discrete game events (safety car, retirement, collision, penalty) fan out to both the portal
+dashboard and the race engineer radio.
 
-## 2. Telemetry → Backend (TCP push, JSON-lines)
-
-Live race state and session lifecycle events flow from telemetry to backend over a persistent TCP socket.
-
-- **Protocol:** Plain TCP socket, newline-delimited JSON (`\n`-separated)
-- **Direction:** Telemetry → Backend (telemetry connects to backend's TCP server port)
-- **Data carried:**
-  - **Race state** (~1Hz): current lap, positions, gaps, tyre compound/age, fuel, pit status, damage levels, weather, `lastLapTimeMs` (last lap time per car, used by the portal for gap calculations) — enough for the portal to render a live dashboard without querying the DB
-  - **Session lifecycle events:** `sessionStarted`, `sessionEnded`, `safetyCarDeployed`, `retiredCar`, etc. — backend uses these to update its in-memory session state and notify the portal via WebSocket. `sessionStarted` includes session assist settings (`ersAssist`, `drsAssist`) parsed from the UDP session packet, used by the race engineer to suppress messages for game-managed assists
-- **Format:** Each message is a single JSON object on one line. A `type` field discriminates message kinds (e.g. `{"type":"raceState","data":{...}}`)
-- **Reconnection:** Exponential backoff 3s → 6s → 12s → 24s → cap 30s, resets on success
-- **Backend recovery on restart:** Queries DB for active session state (catch-up), then resumes from TCP stream
-
-## 3. Database → Backend (JDBC, on-demand reads)
-
-The backend reads from Oracle for historical data, calibration results, and simulation outputs. This is the standard request-driven path — not polling.
-
-- **Protocol:** JDBC (Oracle thin driver + Oracle UCP)
-- **Direction:** Backend ← Oracle
-- **When:** In response to REST API requests from the portal (historical session data, calibration status, simulation results)
-- **Tables read:** All tables, but primarily `sessions`, `sector_snapshots`, `calibration_coefficients`, and simulation result data
-- **Connection config:** `backend/src/main/resources/application.properties` — Spring datasource config
-
-## 4. Backend → Portal (WebSocket + REST)
-
-Two channels serving different purposes:
-
-### WebSocket (live push)
-
-Two separate WebSocket endpoints serve different clients:
-
-**`/ws/race` — Portal dashboard**
-
-- **Protocol:** WebSocket over HTTP (Spring WebSocket / STOMP)
-- **Direction:** Backend → Portal (server push)
-- **Data:** Live race state relayed from the TCP stream (positions, gaps, tyres, fuel, weather, events). The backend receives race state via TCP from telemetry and immediately broadcasts it to connected WebSocket clients
-- **Message types:**
-  - `state` — live race state (~1Hz, matching TCP push cadence)
-  - `sessionStarted`, `sessionEnded` — session lifecycle events
-  - `event` — discrete race events (safety car, retirement, penalty, etc.)
-  - `simulationResult` — Monte Carlo simulation results
-  - `calibrationComplete`, `calibrationFailed` — calibration pipeline status
-  - `strategyEvaluation` — ranked strategy leaderboard with `evaluatedAtLap`, `stale` flag, and full `StrategyEvaluation` payload (see section 6b)
-- **Rate:** ~1Hz during a live session for race state; other message types are event-driven
-- **Topic:** `/topic/race-state` (STOMP destination)
-
-**`/ws/race-engineer` — iOS voice client**
-
-- **Protocol:** WebSocket over HTTP (Spring WebSocket)
-- **Direction:** Backend → iOS client (server push)
-- **Data:** Race engineer messages generated by `RaceEngineerService` and session lifecycle events
-- **Message types:**
-  - `raceEngineer` — engineer message with `sessionUid`, `priority` (IMMEDIATE/HIGH/NORMAL), `text`, and `timestamp`
-  - `sessionStarted` — broadcast when a new session begins, carrying the new `sessionUid`. The iOS client uses this to auto-switch to the new session (e.g. qualifying → race transition) without reconnecting
-- **Rate:** Event-driven (message generation depends on race state changes)
-
-### REST (historical / on-demand)
-
-- **Protocol:** HTTP REST (JSON)
-- **Direction:** Portal → Backend → Portal (request/response)
-- **Endpoints (planned):**
-  - `GET /api/sessions/active` — currently live session(s) from in-memory state
-  - `GET /api/sessions/active/state` — latest race state for the active session
-  - `POST /api/simulation/run` — trigger a simulation run
-  - `GET /api/simulation/{id}/results` — fetch simulation results
-  - `GET /api/health` — backend liveness check
-
-### Use Case: Live State & REST API
+- **Kicked off by:** a UDP **Event** packet → telemetry emits a TCP `event` message.
+- **Queues:** none.
+- **Path:** Game → Telemetry → **TCP `event`** → Backend → { WebSocket `/ws/race` → Portal }
+  **and** { `RaceEngineerService.onEvent()` → WebSocket `/ws/race-engineer` → iOS }.
 
 ```mermaid
 sequenceDiagram
-    participant Portal as Portal (Angular)
-    participant Backend as Backend (Spring Boot)
+    participant Tele as Telemetry
+    participant BE as Backend
+    participant Eng as RaceEngineerService
+    participant Portal as Portal
+    participant iOS as iOS Client
 
-    Portal->>Backend: GET /api/sessions/active
-    Backend->>Backend: SessionStateHolder (in-memory)
-    Backend-->>Portal: JSON [{sessionUid, trackId, live, ...}]
-
-    Portal->>Backend: GET /api/sessions/active/state
-    Backend->>Backend: Latest race state for active session
-    Backend-->>Portal: JSON {cars, weather, lap, ...}
-
-    Portal->>Backend: POST /api/simulation/trigger
-    Backend->>Backend: SimulationOrchestrator.triggerNow()
-    Backend-->>Portal: 202 {jobId, status: "started"}
+    Tele->>BE: TCP {"type":"event", event:"SCAR"}
+    BE->>Portal: WebSocket (type: "event")
+    BE->>Eng: onEvent("SCAR")
+    Eng->>iOS: WebSocket raceEngineer<br/>"Safety car deployed. Bunch up." (IMMEDIATE)
+    Note over iOS: IMMEDIATE bypasses safe-zone gate<br/>and interrupts current speech
 ```
 
-## 5. Calibration Trigger (via TxEventQ)
+> Radio event branch: `08-RACE_ENGINEER_VOICE.md` §3.
 
-Calibration is a batch process that refits model coefficients from accumulated historical data. It runs as a standalone long-running Python service that consumes requests from TxEventQ ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-txeventq)), mirroring the simulator's architecture.
+## Flow 4 — Calibration (offline model fitting)
 
-- **Trigger:** Automatic, fired when a session ends. `SessionStateHolder` enqueues to `CALIBRATION_REQUEST` via `QueueService`
-- **Flow:** `sessionEnded` → `CALIBRATION_REQUEST` enqueued → standalone Calibration Service (`python -m calibration service`) dequeues → runs calibration pipeline in-process → reads `sector_snapshots` from Oracle → fits coefficients → writes to `calibration_coefficients` table → WebSocket broadcast
-- **Session lifecycle:** `TelemetryTcpServer` also enqueues session start/end events to `SESSION_LIFECYCLE` (multi-consumer queue) for future consumers
-- **Scope:** Recalibrates all knobs for the track of the just-completed session, both PLAYER and AI regimes
-- **Duration:** Seconds for early data volumes; the async task prevents blocking the main thread
+When a session ends, the backend asks the calibration service to re-fit the physics-model
+coefficients for that track from accumulated lap data. These coefficients feed every later
+simulation and strategy evaluation.
 
-## 6. Simulation Trigger (via TxEventQ)
-
-Simulations are triggered automatically during live races (lap completions, pit stops, safety car changes) and manually via the portal.
-
-- **Automatic trigger:** `SimulationOrchestrator` detects trigger conditions from the TCP state stream, debounces (3s), assembles a `RaceSnapshot`, and enqueues to `SIMULATION_REQUEST` via `QueueService`
-- **Manual trigger:** Portal → `POST /api/simulation/run` or `/api/simulation/trigger` → Backend enqueues to `SIMULATION_REQUEST` → returns `202 Accepted` with jobId
-- **Flow:** `SIMULATION_REQUEST` queue → Python simulator worker dequeues → loads calibration coefficients → `MonteCarloEngine.simulate()` → enqueues result to `SIMULATION_RESULT` → `SimulationResultConsumer` (Java) dequeues → updates job store → broadcasts via WebSocket
-- **Simulator:** Python FastAPI service ([Ramirez, 2025](10-REFERENCES.md#fastapi)) (port 8081). REST endpoints remain available for direct use and testing. A background daemon thread polls the queue when `SIMULATOR_USE_DB=true`
-- **Results:** Cached in-memory in `SimulationOrchestrator` (up to 50 jobs). Portal fetches via `GET /api/simulation/results/{jobId}`
-- **Live re-simulation:** Debounced to at most once per 3 seconds to avoid flooding the queue
-
-## 6b. Strategy Evaluation (via TxEventQ)
-
-Strategy evaluation is an automated pipeline that generates, evaluates, and ranks pit stop strategies during a live race. It builds on the simulation infrastructure (section 6) but adds candidate generation and comparative ranking.
-
-### Use Case: Automated Strategy Evaluation
+- **Kicked off by:** `sessionEnded` (TCP) → `SessionStateHolder` enqueues `CALIBRATION_REQUEST`
+  via `QueueService`. `TelemetryTcpServer` also publishes start/end to `SESSION_LIFECYCLE`
+  (multi-consumer) for future consumers.
+- **Queues:** `CALIBRATION_REQUEST` (in).
+- **Path:** Backend → **`CALIBRATION_REQUEST`** → Calibration service (`python -m calibration service`)
+  → reads `sector_snapshots` → fits → writes `calibration_coefficients` → WebSocket
+  `calibrationComplete` / `calibrationFailed`.
+- **Scope:** recalibrates all knobs for the just-finished track, both PLAYER and AI regimes;
+  seconds at early data volumes, off the main thread.
 
 ```mermaid
 sequenceDiagram
-    participant Telemetry as Telemetry (TCP)
+    participant Tele as Telemetry
+    participant BE as Backend
+    participant Q as CALIBRATION_REQUEST
+    participant Cal as Calibration (Python)
+    participant DB as Oracle DB
+    participant Portal as Portal
+
+    Tele->>BE: TCP {"type":"sessionEnded"}
+    BE->>Q: Enqueue {sessionUid, trackId}
+    Q->>Cal: Dequeue request
+    activate Cal
+    Cal->>DB: Read sector_snapshots (this track)
+    Note over Cal: Outlier removal +<br/>sklearn/numpy fit<br/>(PLAYER & AI regimes)
+    Cal->>DB: Write calibration_coefficients
+    deactivate Cal
+    Cal->>BE: result signalled
+    BE->>Portal: WebSocket calibrationComplete
+```
+
+> Fitting method: `05-CALIBRATION.md`.
+
+## Flow 5 — Monte Carlo simulation
+
+A full-race simulation, triggered automatically during the race or manually from the portal.
+
+- **Kicked off by:** `SimulationOrchestrator` trigger (leader lap completion, any pit stop,
+  safety-car change), debounced 3 s — or `POST /api/simulation/run` (returns `202` + jobId).
+- **Queues:** `SIMULATION_REQUEST` (out), `SIMULATION_RESULT` (in).
+- **Path:** Backend → **`SIMULATION_REQUEST`** → Simulator ([FastAPI](10-REFERENCES.md#fastapi),
+  port 8081; daemon thread polls when `SIMULATOR_USE_DB=true`) loads coefficients, runs
+  `MonteCarloEngine.simulate()` → **`SIMULATION_RESULT`** → Backend `SimulationResultConsumer`
+  → WebSocket `simulationResult` → Portal.
+- **Results:** cached in-memory in `SimulationOrchestrator` (≤50 jobs); fetch via
+  `GET /api/simulation/results/{jobId}`. Live re-sim debounced to ≤1 / 3 s to avoid flooding.
+
+```mermaid
+sequenceDiagram
+    participant Orch as SimulationOrchestrator
+    participant Q1 as SIMULATION_REQUEST
+    participant Sim as Simulator (Python)
+    participant DB as Oracle DB
+    participant Q2 as SIMULATION_RESULT
+    participant BE as Backend (Consumer)
+    participant Portal as Portal
+
+    Note over Orch: Trigger from TCP stream<br/>(lap / pit / safety car) → debounce 3s
+    Orch->>Q1: Enqueue {jobId, raceSnapshot}
+    Q1->>Sim: Dequeue
+    activate Sim
+    Sim->>DB: Load calibration_coefficients (track)
+    Note over Sim: MonteCarloEngine.simulate()
+    Sim->>Q2: Enqueue {jobId, result}
+    deactivate Sim
+    Q2->>BE: Dequeue → update job store
+    BE->>Portal: WebSocket simulationResult
+```
+
+> Engine: `03-MONTECARLO.md`.
+
+## Flow 6 — Automated strategy evaluation → pit-window radio (the "strategy brain")
+
+End to end: live state triggers candidate pit strategies, each is Monte-Carlo evaluated against
+the **calibrated** coefficients (Flow 4), ranked, and the result drives both the portal's strategy
+widget **and** a race-engineer pit-window message to iOS.
+
+- **Kicked off by:** `StrategyOrchestrator.onStateUpdate()` trigger (player lap completion, any
+  pit stop, safety-car change, weather change), debounced 3 s.
+- **Queues:** `STRATEGY_REQUEST` (out), `STRATEGY_RESULT` (in) — both single-consumer TxEventQ.
+- **Path:** Backend enriches the snapshot with `tyre_sets` availability → marks leaderboard
+  `stale=true` (broadcast) → **`STRATEGY_REQUEST`** → Simulator `run_strategy_worker()`:
+  `generate_candidates()` → `StrategyEvaluator.evaluate()` (Monte Carlo batch per candidate, reads
+  coefficients) → **`STRATEGY_RESULT`** (with `evaluatedAtLap` = trigger-time lap) → Backend
+  `StrategyResultConsumer` → `StrategyOrchestrator.completeJob()` → { WebSocket `strategyEvaluation`
+  (`stale=false`, ranked) → Portal } **and** { `RaceEngineerService.onStrategyEvaluation` →
+  `PitWindowMessagesDetector` → WebSocket `/ws/race-engineer` → iOS }.
+- **Candidate generation (`candidate_generator.py`):** 0-stop (if two-compound rule met and tyres
+  last), 1-stop (varying pit lap), 2-stop (if 15+ laps remain); enforces the F1 two-compound rule,
+  prunes compounds whose lap delta exceeds ±5 s vs the fitted set, caps at 50 candidates.
+- **Metrics per candidate:** mean finishing position, std dev, 95% CI, DNF prob, top-3 prob,
+  points-finish prob, expected championship points.
+
+```mermaid
+sequenceDiagram
+    participant Tele as Telemetry (TCP)
     participant Orch as StrategyOrchestrator
     participant DB as Oracle DB
-    participant Q1 as STRATEGY_REQUEST queue
-    participant Sim as Simulator (Python)
-    participant Q2 as STRATEGY_RESULT queue
-    participant Consumer as StrategyResultConsumer
+    participant Q1 as STRATEGY_REQUEST
+    participant Sim as Simulator
+    participant Q2 as STRATEGY_RESULT
+    participant Cons as StrategyResultConsumer
     participant Eng as RaceEngineerService
-    participant Portal as Portal / iOS
+    participant Portal as Portal
+    participant iOS as iOS Client
 
-    Telemetry->>Orch: TCP state update (~1Hz)
-    Note over Orch: Detect trigger:<br/>player lap ✓ | pit stop ✓<br/>safety car ✓ | weather ✓
-    Orch->>Orch: Debounce (3s)
-    Orch->>DB: Load tyre_sets for session
-    DB-->>Orch: Tyre set availability per car
-    Note over Orch: Assemble RaceSnapshot<br/>(cars + tyre sets + weather)
-    Orch->>Portal: WebSocket: stale=true
+    Tele->>Orch: TCP state update (~1Hz)
+    Note over Orch: Trigger: player lap / pit /<br/>safety car / weather → debounce 3s
+    Orch->>DB: Load tyre_sets (availability per car)
+    Orch->>Portal: WebSocket strategyEvaluation (stale=true)
     Orch->>Q1: Enqueue {jobId, playerCarIndex, snapshot}
 
-    Q1->>Sim: Dequeue request
+    Q1->>Sim: Dequeue
     activate Sim
-    Note over Sim: generate_candidates()<br/>0/1/2-stop strategies<br/>(max 50, two-compound rule)
-    Sim->>DB: Load calibration coefficients
-    DB-->>Sim: Fitted coefficients for track
-    loop For each candidate strategy
-        Note over Sim: MonteCarloEngine.simulate()<br/>(1K iterations per candidate)
-    end
-    Note over Sim: Rank by mean position<br/>Compute CI, DNF prob,<br/>top-3 prob, expected points
-    Sim->>Q2: Enqueue {jobId, evaluatedAtLap, result}
+    Note over Sim: generate_candidates()<br/>0/1/2-stop, two-compound rule, ≤50
+    Sim->>DB: Load calibration_coefficients (track)
+    Note over Sim: MonteCarloEngine per candidate<br/>→ rank by mean position, CI,<br/>DNF / top-3 / points probs
+    Sim->>Q2: Enqueue {jobId, evaluatedAtLap, ranked}
     deactivate Sim
 
-    Q2->>Consumer: Dequeue result
-    Consumer->>Orch: completeJob(jobId, evaluation)
-    Orch->>Portal: WebSocket: strategyEvaluation<br/>(stale=false, ranked strategies)
-    Consumer->>Eng: onStrategyEvaluation()
-    Note over Eng: Generate pit window messages<br/>"Box window opens in N laps"
-    Eng->>Portal: WebSocket: raceEngineer message
+    Q2->>Cons: Dequeue
+    Cons->>Orch: completeJob(jobId, evaluation)
+    Orch->>Portal: WebSocket strategyEvaluation (stale=false, ranked)
+    Cons->>Eng: onStrategyEvaluation(lap, evaluation)
+    Note over Eng: PitWindowMessagesDetector.setRecommendation()
+    Eng->>iOS: WebSocket raceEngineer<br/>"Box window opens in N laps. Medium ready."
 ```
 
-- **Trigger:** `StrategyOrchestrator` monitors the TCP state stream and fires on: player lap completion, any car pit stop, safety car status change, or weather change. Debounced at 3 seconds — same as simulation triggers
-- **Flow:**
-  1. `StrategyOrchestrator.onStateUpdate()` detects trigger → assembles `RaceSnapshot` enriched with tyre set availability from `tyre_sets` table → enqueues to `STRATEGY_REQUEST` with `jobId`, `playerCarIndex`, and full snapshot
-  2. When the request is enqueued, the leaderboard is marked `stale=true` and broadcast via WebSocket so the portal shows an "updating" indicator
-  3. `run_strategy_worker()` (Python, daemon thread in simulator) dequeues → calls `generate_candidates()` to produce plausible strategies → calls `StrategyEvaluator.evaluate()` which runs a full Monte Carlo batch per candidate → enqueues result to `STRATEGY_RESULT` with `jobId`, `evaluatedAtLap` (the lap from the race snapshot at trigger time, not at result completion), and ranked strategies
-  4. `StrategyResultConsumer` (Java, daemon thread in backend) dequeues → calls `StrategyOrchestrator.completeJob()` → updates leaderboard (`stale=false`) → broadcasts via WebSocket → notifies `RaceEngineerService` for voice message generation
-- **Candidate generation (`candidate_generator.py`):** Generates 0-stop (if two-compound rule already met and tyres can last), 1-stop (varying pit lap across remaining distance), and 2-stop (if 15+ laps remain) strategies. Enforces F1 two-compound rule, prunes compounds whose lap delta exceeds ±5 s vs the fitted set, caps at 50 candidates
-- **Evaluation metrics per candidate:** mean finishing position, position std dev, 95% CI, DNF probability, top-3 probability, points-finish probability, expected F1 championship points
-- **Queues:** `PDBADMIN.STRATEGY_REQUEST` (single consumer) and `PDBADMIN.STRATEGY_RESULT` (single consumer). Both use Oracle TxEventQ with JSON payloads, same as the simulation queues
+> Pit-window message: `08-RACE_ENGINEER_VOICE.md` row 19.
 
-## 7. Shared Database
+## Flow 7 — Race engineer radio (e.g. "defend your position")
 
-All components that access the database connect to the same Oracle AI Database 26ai instance and the same schema.
+The race engineer evaluates ~30 detectors on **every** TCP state frame; when a condition crosses
+(here: a car closing to within 2.0 s behind the player), it queues a message, gated by a circuit
+safe-zone check before being spoken.
 
-- **Instance:** Single Oracle 26ai container (Podman), exposed on the default port
-- **Schema:** Single schema owner. All tables live in one schema — no cross-schema access needed
-- **Connection config per component:**
-  - `telemetry/config.properties` — JDBC URL, username, password
-  - `backend/src/main/resources/application.properties` — Spring datasource config (same DB, same schema)
-  - `simulator/config.properties` — oracledb pool config (same DB, same schema)
-  - `calibration/config.properties` — oracledb pool config (same DB, same schema)
-- **Config generation:** Each component stores a `.template` file (e.g. `telemetry/src/main/resources/config.properties.template`). `python manage.py local setup` generates the actual config files by injecting the DB password. `python manage.py local clean` removes them. Generated files are git-ignored.
-- **Concurrent access:** Telemetry writes continuously; backend reads on demand; calibration reads/writes after sessions; simulator reads coefficients and communicates via TxEventQ queues. No write conflicts — telemetry owns data ingestion, calibration owns coefficient updates
-- **Schema ownership:** A single DB user owns all tables. No per-component users for the POC
+- **Kicked off by:** each TCP state frame → `RaceEngineerService.onStateUpdate(state)`.
+- **Queues:** none for delivery — an **in-memory priority queue** in the backend, gated by
+  `CircuitSafeZoneService`, TTL, and per-zone budget, then WebSocket.
+- **Path:** Telemetry → **TCP state** → Backend `RaceEngineerService` → detectors
+  (`CarBehindDetector` here) → priority queue → safe-zone + TTL + budget gate → WebSocket
+  `/ws/race-engineer` → iOS ([AVSpeechSynthesizer](10-REFERENCES.md#apple-tts) TTS).
 
-## 8. Build Independence & Interface Versioning
+```mermaid
+sequenceDiagram
+    participant Tele as Telemetry (TCP)
+    participant Eng as RaceEngineerService
+    participant Det as Detectors (~30)
+    participant SZ as CircuitSafeZoneService
+    participant iOS as iOS Client
 
-Backend and telemetry are kept as independent Gradle projects — no root multi-project build, no shared `common` module.
+    Tele->>Eng: TCP state update (~1Hz)
+    Eng->>Det: Build EngineerTick → evaluate all detectors
+    Note over Det: CarBehindDetector:<br/>gap to car behind < 2.0s<br/>(first crossing, 30s cooldown)
+    Det-->>Eng: EngineerMessage<br/>"{name} closing. 1.8s back.<br/>Defend your position." (HIGH)
+    Note over Eng: Enqueue → drop if TTL expired<br/>(lap TTL + 8s wall-clock)
+    Eng->>SZ: In safe zone? (boundary shifted<br/>earlier by speed × 1.5s)
+    SZ-->>Eng: Yes (straight / low-demand)
+    Note over Eng: HIGH bypasses NORMAL budget —<br/>NORMAL capped 2/zone
+    Eng->>iOS: WebSocket raceEngineer {priority, text, timestamp}
+    Note over iOS: TTS — English (GB), rate 0.48
+```
 
-**Rationale:**
+Other detectors share this pipeline, differing only in trigger and priority — e.g. _tyre age > 30
+laps_ (HIGH), _DRS range ahead < 1.0 s_ (HIGH), _penalty received_ (HIGH/IMMEDIATE), _lap countdown
+10/5/1_ (IMMEDIATE), _position gained_ (IMMEDIATE), _fuel critical_ (HIGH), _weather incoming_
+(NORMAL). Full catalogue, priorities, safe-zone offset, and delivery budget: `08-RACE_ENGINEER_VOICE.md` §4.
 
-- They scale differently (telemetry is high-throughput plain Java; backend is Spring Boot)
-- They have different lifecycles (telemetry may be redeployed independently of backend)
-- Sharing compiled code creates coupling that outweighs the convenience for a PoC
+## Flow summary
 
-**Interface between telemetry and backend:**
-The only runtime interface is the TCP push socket (section 2 above). Both sides must agree on the JSON-lines message schema. To allow independent evolution:
+| #   | Flow                    | Kicked off by                     | Queue(s)                                   | Ends at                             |
+| --- | ----------------------- | --------------------------------- | ------------------------------------------ | ----------------------------------- |
+| 1   | Ingestion & persistence | UDP packet (20 Hz)                | —                                          | Oracle tables                       |
+| 2   | Live dashboard          | TCP state frame (~1 Hz)           | —                                          | Portal `/ws/race`                   |
+| 3   | Disruptive events       | UDP Event packet                  | —                                          | Portal + iOS                        |
+| 4   | Calibration             | `sessionEnded`                    | `CALIBRATION_REQUEST`                      | `calibration_coefficients` + Portal |
+| 5   | Simulation              | Live trigger / manual             | `SIMULATION_REQUEST` → `SIMULATION_RESULT` | Portal `simulationResult`           |
+| 6   | Strategy → pit radio    | Live trigger (lap/pit/SC/weather) | `STRATEGY_REQUEST` → `STRATEGY_RESULT`     | Portal widget + iOS pit window      |
+| 7   | Race engineer radio     | TCP state frame (~1 Hz)           | — (in-memory queue)                        | iOS `/ws/race-engineer` (TTS)       |
 
-- **Message versioning:** Each JSON message includes a `version` field (integer, starting at `1`). The producer (telemetry) sets the version; the consumer (backend) must handle all supported versions.
-- **Backward compatibility rule:** New fields may be added without bumping the version. Removing or renaming a field requires a version bump. The consumer ignores unknown fields.
-- **Schema definition:** The canonical message schemas are documented in `design/06-INTEGRATION.md` (this file) and updated when the interface changes. There is no shared code artifact — each side implements its own serialization/deserialization.
+---
 
-**Interface between backend and database:**
-Both telemetry and backend connect to the same Oracle schema (section 7 above). The database schema (managed by Liquibase, see todo 05) is the shared contract. Both sides depend on the table definitions, not on each other's code.
+# Reference
 
-**Duplicate dependencies are accepted:** Both projects independently declare their JDBC driver and other shared dependencies. This is a conscious trade-off for build isolation.
+## Protocol summary
 
-## 9. Portal Live Dashboard (Angular)
+| From      | To          | Protocol   | Direction                | Data Format          | Frequency      | Queue Name              |
+| --------- | ----------- | ---------- | ------------------------ | -------------------- | -------------- | ----------------------- |
+| F1 Game   | Telemetry   | UDP        | Game → Telemetry         | Binary (game spec)   | 20Hz           | —                       |
+| Telemetry | Oracle DB   | JDBC       | Telemetry → DB           | SQL (prepared stmts) | ~60 rows/lap   | —                       |
+| Telemetry | Backend     | TCP socket | Telemetry → Backend      | JSON-lines           | ~1Hz           | —                       |
+| Backend   | Oracle DB   | JDBC       | Backend ↔ DB             | SQL                  | On demand      | —                       |
+| Backend   | Portal      | WebSocket  | Backend → Portal         | JSON                 | ~1Hz (live)    | — (`/ws/race`)          |
+| Portal    | Backend     | HTTP REST  | Portal → Backend         | JSON                 | On demand      | —                       |
+| Backend   | Simulator   | TxEventQ   | Backend → DB → Simulator | JSON (queue)         | On trigger     | SIMULATION_REQUEST      |
+| Simulator | Backend     | TxEventQ   | Simulator → DB → Backend | JSON (queue)         | On completion  | SIMULATION_RESULT       |
+| Backend   | Simulator   | TxEventQ   | Backend → DB → Simulator | JSON (queue)         | On trigger     | STRATEGY_REQUEST        |
+| Simulator | Backend     | TxEventQ   | Simulator → DB → Backend | JSON (queue)         | On completion  | STRATEGY_RESULT         |
+| Backend   | Calibration | TxEventQ   | Backend → DB → Consumer  | JSON (queue)         | On session end | CALIBRATION_REQUEST     |
+| Backend   | iOS Client  | WebSocket  | Backend → iOS            | JSON                 | Event-driven   | — (`/ws/race-engineer`) |
 
-The portal's Race view is a modular Angular component tree that renders live race state received via WebSocket.
+## WebSocket channels & message types
 
-### Architecture
+**`/ws/race` — Portal** (Spring WebSocket / STOMP, destination `/topic/race-state`). Backend relays
+the TCP stream and broadcasts immediately. Types: `state` (~1 Hz), `sessionStarted` / `sessionEnded`,
+`event`, `simulationResult`, `calibrationComplete` / `calibrationFailed`, `strategyEvaluation`
+(ranked leaderboard with `evaluatedAtLap` and `stale` flag).
+
+**`/ws/race-engineer` — iOS** (plain Spring WebSocket). Types: `raceEngineer`
+(`{sessionUid, priority, text, timestamp}`, priority IMMEDIATE/HIGH/NORMAL) and `sessionStarted`
+(carries the new `sessionUid` so the client auto-switches on qualifying → race without reconnecting).
+
+## REST API (Portal → Backend, on-demand)
+
+`GET /api/sessions/active` (live sessions from in-memory `SessionStateHolder`) ·
+`GET /api/sessions/active/state` (latest race state) · `POST /api/simulation/run` |
+`POST /api/simulation/trigger` (enqueue a run, returns `202` + jobId) ·
+`GET /api/simulation/results/{jobId}` · `GET /api/health`. On restart the backend catches up by
+querying the DB for active session state, then resumes from the TCP stream.
+
+## Shared database
+
+All components connect to the **same** Oracle 26ai instance and schema (single Podman container,
+single owning user — no per-component users for the PoC). Each component reads its own config file
+(`telemetry/config.properties`, `backend/.../application.properties`, `simulator/config.properties`,
+`calibration/config.properties`), generated from a `.template` by `python manage.py local setup`
+(injects the DB password; git-ignored; removed by `local clean`). No write conflicts by ownership:
+telemetry owns ingestion, calibration owns coefficient updates, backend reads on demand, simulator
+reads coefficients and communicates via queues. The Liquibase-managed schema (`database/`) is the
+shared contract between telemetry and backend — both depend on the table definitions, not each
+other's code.
+
+## Telemetry ↔ Backend interface (versioning)
+
+The only runtime interface between the two is the TCP push socket. Backend and telemetry are kept
+as **independent Gradle projects** (no root multi-project build, no shared module) because they
+scale and redeploy differently; duplicate dependency declarations (e.g. the JDBC driver) are an
+accepted trade-off for build isolation. To allow independent evolution, each JSON message carries
+an integer `version` (starting at `1`): new fields may be added without bumping it and consumers
+ignore unknown fields; removing or renaming a field bumps the version. The canonical schemas live
+in this file.
+
+## Why TCP push (decision rationale)
+
+A persistent TCP socket carrying newline-delimited JSON is the telemetry → backend data path:
+
+- **Zero new dependencies** — `java.net.Socket` is in the JDK; telemetry stays zero-dependency.
+- **Natural fit for a stream** — reliable ordered bytes, no per-message connection or HTTP framing.
+- **Sub-second latency** — UDP arrival to portal display under 100 ms (memory → socket → WebSocket).
+- **One channel** for both continuous state and discrete lifecycle events; **simple failure model**
+  (drops detected immediately; telemetry reconnects with exponential backoff 3→6→12→24→cap 30 s).
+
+JSON-lines was chosen over binary (Protobuf/MessagePack/length-prefixed) because at ~1 KB / 1 Hz
+bandwidth is irrelevant and `tail -f`-readable output beats compression for debugging.
+**Alternatives rejected:** REST (per-message overhead), WebSocket (needless handshake/masking between
+two JVMs), gRPC (compile step + runtime for a single producer/consumer), DB polling (1–2 s latency,
+extra read load). The design assumes a **single backend instance**; multiple would need a broker
+(Redis/Kafka), fan-out, or shared state — none needed for the PoC.
+
+## Portal dashboard (Angular)
+
+The Race view is a modular component tree bound to [Angular signals](10-REFERENCES.md#angular-signals)
+(`signal()` / `computed()`) — the race service exposes signals child components read directly, no
+manual subscriptions.
 
 ```mermaid
 graph TD
@@ -308,19 +440,19 @@ graph TD
     Race --> Strategy["StrategyWidgetComponent"]
 ```
 
-- **Reactivity:** Angular signals ([Google, 2025](10-REFERENCES.md#angular-signals)) (`signal()`, `computed()`) for granular state tracking. The race service exposes signals that child components bind to directly — no manual subscription management.
-- **Circuit map:** SVG-based rendering with a fixed viewBox. Car positions are mapped to track coordinates using sector progress. Renders DRS zones, yellow flag sectors, pit entry/exit. Team colours from a static lookup table.
-- **Gap indicator:** Displays sector-by-sector time deltas (in milliseconds) between the player car and the car immediately ahead and behind. Sector 3 time is derived from `lastLapTimeMs` on lap transitions.
-- **Strategy widget:** Compact sidebar card showing the top 3 ranked strategies from the latest strategy evaluation — expected finishing position and podium probability for each. Shows the evaluation lap and a stale indicator while a new evaluation is in progress.
-- **Info panels:** Each panel subscribes to a slice of the race state (penalties, damage, tyres, weather) and renders a focused view. Standalone components with no cross-dependencies.
+- **Circuit map:** SVG with fixed viewBox; car positions from sector progress; renders DRS zones,
+  yellow-flag sectors, pit entry/exit; team colours from a static table.
+- **Gap indicator:** sector-by-sector deltas (ms) to the cars ahead/behind; sector-3 derived from
+  `lastLapTimeMs` on lap transitions.
+- **Strategy widget:** top-3 ranked strategies (expected finish position + podium probability),
+  evaluation lap, and a stale indicator while a new evaluation runs.
+- **Info panels:** each subscribes to a slice of race state (penalties, damage, tyres, weather),
+  standalone, no cross-dependencies.
 
-## 10. iOS Voice Client (SwiftUI)
+## iOS voice client (SwiftUI)
 
-A native iOS app that receives race engineer messages via WebSocket and speaks them aloud using text-to-speech. This is the delivery mechanism for the race engineer voice described in `08-RACE_ENGINEER_VOICE.md`.
-
-### Architecture
-
-Three-layer design:
+Receives race engineer messages over WebSocket and speaks them via TTS — the delivery mechanism for
+`08-RACE_ENGINEER_VOICE.md`. Three layers:
 
 ```mermaid
 graph TD
@@ -344,43 +476,12 @@ graph TD
     Speech --> Msg
 ```
 
-- **WebSocketService:** `@Observable` for SwiftUI binding. Connection states: disconnected → connecting → connected (with reconnecting as a transient state). Exponential backoff reconnect: delay = min(2^attempt, 30) seconds, max 10 attempts. Automatically converts HTTP/HTTPS URLs to WS/WSS. Filters incoming messages by `sessionUid` to prevent cross-session contamination. Handles `sessionStarted` events from the backend to auto-switch `sessionUid` on session transitions (e.g. qualifying → race), clearing the message history for the new session.
-- **SpeechService:** `AVSpeechSynthesizer` ([Apple Inc., 2025](10-REFERENCES.md#apple-tts)) with a priority queue. IMMEDIATE-priority messages interrupt current speech; NORMAL-priority messages queue behind active speech. Audio session configured as `.playback` with `.duckOthers` (lowers game audio during speech). Voice: English (GB), rate 0.48, 0.1s inter-message delay. Text containing only non-letter characters (punctuation, symbols) is skipped to avoid zero-byte audio buffer warnings.
-- **Thread safety:** `SpeechService` is `@MainActor`-isolated. `WebSocketService` is `@unchecked Sendable` and hops to the main thread via `DispatchQueue.main.async` + `MainActor.assumeIsolated` for safe access from WebSocket callbacks to UI state updates.
-
-## Decision Rationale: TCP Push Architecture
-
-### Chosen: Plain TCP with newline-delimited JSON
-
-A persistent TCP socket carrying newline-delimited JSON (`\n`-separated) is the data path between telemetry and backend.
-
-- **Zero new dependencies.** `java.net.Socket` and `java.io.OutputStream` are in the JDK. The telemetry server stays zero-dependency
-- **Natural fit for a persistent data stream.** TCP provides reliable, ordered byte stream — no per-message connection overhead, no HTTP framing, no compilation step
-- **Sub-second latency.** Data goes from telemetry memory → socket write → backend socket read → WebSocket broadcast. Full pipeline (UDP arrival to portal display) under 100ms
-- **One channel for everything.** Same TCP connection carries continuous race state and discrete lifecycle events. No protocol splitting
-- **Simple failure model.** Connection drops are detected immediately by both sides. Telemetry reconnects with exponential backoff. Backend accepts new connection and resumes
-
-Newline-delimited JSON was chosen over binary formats because at ~1KB per message at 1Hz bandwidth is irrelevant, and readable output (`tail -f`) is more valuable for debugging than the compression gains of length-prefixed binary, Protobuf, or MessagePack — all of which would add serialization dependencies.
-
-This architecture assumes a single backend instance. If multiple instances were needed, options would include a message broker (Redis Pub/Sub, Kafka), connecting to all instances, or a shared state store. None are needed for the PoC.
-
-### Alternatives considered
-
-**REST** (HTTP POST per message) imposes request/response overhead on a persistent data stream and forces the telemetry server to manage HTTP client concerns (timeouts, retries, connection pooling). **WebSocket** adds an HTTP upgrade handshake and frame masking designed for browser security — unnecessary between two JVM processes — and requires a WebSocket client library. **gRPC** with Protobuf streaming is the right tool for production microservices with multiple consumers and strict API contracts, but for a single-instance PoC with one producer and one consumer, the protobuf compilation step and gRPC runtime add overhead without payoff. **DB polling** (backend polls Oracle for new rows) works but introduces 1–2s latency and extra read load on the database for data that is already available in memory.
-
-## Summary of Protocols
-
-| From      | To          | Protocol   | Direction                | Data Format          | Frequency      | Queue Name              |
-| --------- | ----------- | ---------- | ------------------------ | -------------------- | -------------- | ----------------------- |
-| F1 Game   | Telemetry   | UDP        | Game → Telemetry         | Binary (game spec)   | 20Hz           | —                       |
-| Telemetry | Oracle DB   | JDBC       | Telemetry → DB           | SQL (prepared stmts) | ~60 rows/lap   | —                       |
-| Telemetry | Backend     | TCP socket | Telemetry → Backend      | JSON-lines           | ~1Hz           | —                       |
-| Backend   | Oracle DB   | JDBC       | Backend ↔ DB             | SQL                  | On demand      | —                       |
-| Backend   | Portal      | WebSocket  | Backend → Portal         | JSON                 | ~1Hz (live)    | — (`/ws/race`)          |
-| Portal    | Backend     | HTTP REST  | Portal → Backend         | JSON                 | On demand      | —                       |
-| Backend   | Simulator   | TxEventQ   | Backend → DB → Simulator | JSON (queue)         | On trigger     | SIMULATION_REQUEST      |
-| Simulator | Backend     | TxEventQ   | Simulator → DB → Backend | JSON (queue)         | On completion  | SIMULATION_RESULT       |
-| Backend   | Simulator   | TxEventQ   | Backend → DB → Simulator | JSON (queue)         | On trigger     | STRATEGY_REQUEST        |
-| Simulator | Backend     | TxEventQ   | Simulator → DB → Backend | JSON (queue)         | On completion  | STRATEGY_RESULT         |
-| Backend   | Calibration | TxEventQ   | Backend → DB → Consumer  | JSON (queue)         | On session end | CALIBRATION_REQUEST     |
-| Backend   | iOS Client  | WebSocket  | Backend → iOS            | JSON                 | Event-driven   | — (`/ws/race-engineer`) |
+- **WebSocketService** (`@Observable`): states disconnected → connecting → connected; exponential
+  backoff reconnect (`min(2^attempt, 30) s`, max 10 attempts); auto HTTP→WS upgrade; filters by
+  `sessionUid` and auto-switches on `sessionStarted` (clearing history for the new session).
+- **SpeechService** ([AVSpeechSynthesizer](10-REFERENCES.md#apple-tts), `@MainActor`): priority queue
+  — IMMEDIATE interrupts, NORMAL queues; audio session `.playback` + `.duckOthers`; English (GB),
+  rate 0.48, 0.1 s inter-message delay; punctuation-only text skipped.
+- **Thread safety:** `WebSocketService` is `@unchecked Sendable` and hops to the main thread for UI
+  updates from socket callbacks.
+  </content>
