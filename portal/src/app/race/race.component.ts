@@ -72,6 +72,7 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
                 [evaluatedAtLap]="strategyEvaluatedAtLap()"
                 [stale]="strategyStale()"
                 [insufficientCalibration]="strategyInsufficientCalibration()"
+                [startingCompound]="playerCar()?.tyre ?? ''"
               />
               @if (lastPlayerLaps().length > 0) {
                 <div class="last-laps">
