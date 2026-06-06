@@ -43,9 +43,15 @@ def detect_outliers(entries: list[SectorEntry]) -> list[SectorKey]:
     if not entries:
         return []
 
+    # Group by regime (PLAYER/AI), not by driver_name: fitting pools all AI cars into
+    # one regime, so outlier detection must use the same population. Per-driver grouping
+    # split the AI field into ~19 tiny groups that rarely reached MIN_SAMPLES_FOR_IQR, so
+    # AI outliers were almost never flagged. (No effect on PLAYER — a single human driver
+    # is already one group.) The regime also selects the IQR multiplier below.
     groups: dict[str, list[SectorEntry]] = defaultdict(list)
     for e in entries:
-        key = f"{e.driver_name}|{e.track_id}|{e.sector_number}|{e.tyre_compound_visual}|{weather_category(e.weather)}"
+        regime = "AI" if e.ai_controlled else "PLAYER"
+        key = f"{regime}|{e.track_id}|{e.sector_number}|{e.tyre_compound_visual}|{weather_category(e.weather)}"
         groups[key].append(e)
 
     outliers: list[SectorKey] = []

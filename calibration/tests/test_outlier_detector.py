@@ -37,6 +37,20 @@ class TestIqrDetection:
 
         assert len(ai_outliers) >= len(human_outliers)
 
+    def test_ai_drivers_pool_into_one_regime_group(self):
+        # Different AI driver names (one per car), same regime/sector/compound/weather.
+        # Per-driver this would be 10 groups of 1 (no IQR); pooled by regime it's one
+        # group of 10, so the 45000ms entry becomes flaggable.
+        times = [29500, 29800, 30000, 30100, 30200, 30300, 30400, 30500, 30600, 45000]
+        names = ["VER", "HAM", "LEC", "NOR", "PIA", "RUS", "ALO", "SAI", "OCO", "GAS"]
+        entries = [_entry(1, i, i + 2, 1, t, names[i], 1, 16, True)
+                   for i, t in enumerate(times)]
+
+        outliers = detect_outliers(entries)
+
+        assert len(outliers) == 1
+        assert outliers[0].lap_number == 11  # the 45000ms entry (i=9 -> lap 11)
+
     def test_undersized_group_flags_nothing(self):
         entries = [
             SectorEntry(session_uid=1, car_index=0, lap_number=lap, sector_number=0,
