@@ -2,10 +2,13 @@ package dev.victormartin.telemetry;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -40,6 +43,13 @@ public class ReadinessController {
     public record ReadinessResponse(int trackId, String trackName, String calibrationLastRanAt,
                                     double overallConfidence, boolean fuelEffectFitted,
                                     List<CompoundReadinessDto> compounds) {}
+
+    // ── per-sector degradation scatter ───────────────────────────────────────
+    public record ScatterPoint(int age, long timeMs, boolean used, boolean current) {}
+    public record Regression(double slope, double intercept, int n) {}
+    public record CompoundScatter(int compound, List<ScatterPoint> points, Regression regression) {}
+    public record SectorScatter(int sector, List<CompoundScatter> compounds) {}
+    public record ScatterResponse(int trackId, String currentSessionUid, List<SectorScatter> sectors) {}
 
     @GetMapping("/tracks")
     public List<TrackOption> tracks() {
@@ -85,6 +95,84 @@ public class ReadinessController {
         double overall = ReadinessCalculator.overallConfidence(withData);
         return new ReadinessResponse(
                 resolved, GameMappings.trackName(resolved), lastRan, overall, fuelFitted, compounds);
+    }
+
+    /** Per-sector degradation scatter for the PLAYER car: tyre age (X) vs sector time
+     * (Y), per dry compound, with the calibration-used / current flags and a fitted
+     * line over the used points. Feeds the System-page degradation charts. */
+    @GetMapping("/scatter")
+    public ScatterResponse scatter(@RequestParam(value = "trackId", required = false) Integer trackId) {
+        int resolved = trackId != null ? trackId : mostRecentTrack();
+        if (resolved < 0) return new ScatterResponse(-1, null, List.of());
+
+        String currentUid = latestSessionUid(resolved);
+
+        // sector (0/1/2) -> compound -> points. LinkedHashMap keeps sectors ordered.
+        Map<Integer, Map<Integer, List<ScatterPoint>>> bySector = new LinkedHashMap<>();
+        for (int s = 0; s < 3; s++) bySector.put(s, new LinkedHashMap<>());
+
+        RowCallbackHandler collector = rs -> {
+            int sector = rs.getInt("SECTOR");
+            int compound = rs.getInt("COMPOUND");
+            boolean used = rs.getInt("INVALID") == 0 && rs.getInt("OUTLIER") == 0
+                    && rs.getInt("PIT") == 0 && rs.getInt("SC") == 0;
+            boolean current = currentUid != null && currentUid.equals(rs.getString("SESSION_UID"));
+            bySector.get(sector)
+                    .computeIfAbsent(compound, k -> new ArrayList<>())
+                    .add(new ScatterPoint(rs.getInt("AGE"), rs.getLong("TIME_MS"), used, current));
+        };
+
+        jdbc.query(
+                "SELECT ss.sector_number AS sector, ss.tyre_compound_visual AS compound, "
+                + "ss.tyre_age_laps AS age, ss.sector_time_ms AS time_ms, "
+                + "ss.lap_invalid AS invalid, ss.outlier AS outlier, "
+                + "ss.pit_status AS pit, ss.safety_car_status AS sc, ss.session_uid AS session_uid "
+                + "FROM sector_snapshots ss "
+                + "JOIN sessions s ON s.session_uid = ss.session_uid "
+                + "JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index "
+                + "WHERE s.track_id = ? AND p.ai_controlled = 0 "
+                + "  AND ss.tyre_compound_visual IN (16,17,18) "
+                + "  AND ss.sector_number IN (0,1,2) AND ss.sector_time_ms > 0",
+                collector, resolved);
+
+        List<SectorScatter> sectors = new ArrayList<>();
+        for (int s = 0; s < 3; s++) {
+            List<CompoundScatter> comps = new ArrayList<>();
+            for (int compound : new int[] {16, 17, 18}) {
+                List<ScatterPoint> pts = bySector.get(s).getOrDefault(compound, List.of());
+                comps.add(new CompoundScatter(compound, pts, computeRegression(pts)));
+            }
+            sectors.add(new SectorScatter(s, comps));
+        }
+        return new ScatterResponse(resolved, currentUid, sectors);
+    }
+
+    private String latestSessionUid(int trackId) {
+        List<String> uids = jdbc.queryForList(
+                "SELECT session_uid FROM sessions WHERE track_id = ? "
+                + "ORDER BY created_at DESC FETCH FIRST 1 ROW ONLY",
+                String.class, trackId);
+        return uids.isEmpty() ? null : uids.get(0);
+    }
+
+    /** OLS fit over the calibration-used points only (the filled dots), so the line
+     * mirrors what the deg model fits. Null if < 2 used points or zero x-variance. */
+    private static Regression computeRegression(List<ScatterPoint> points) {
+        List<ScatterPoint> used = points.stream().filter(ScatterPoint::used).toList();
+        int n = used.size();
+        if (n < 2) return null;
+        double sx = 0, sy = 0;
+        for (ScatterPoint p : used) { sx += p.age(); sy += p.timeMs(); }
+        double mx = sx / n, my = sy / n;
+        double sxx = 0, sxy = 0;
+        for (ScatterPoint p : used) {
+            double dx = p.age() - mx;
+            sxx += dx * dx;
+            sxy += dx * (p.timeMs() - my);
+        }
+        if (sxx == 0) return null;
+        double slope = sxy / sxx;
+        return new Regression(slope, my - slope * mx, n);
     }
 
     private int mostRecentTrack() {

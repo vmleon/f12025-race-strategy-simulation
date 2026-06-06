@@ -12,11 +12,12 @@ import {
   LiveStats,
 } from './system.service';
 import { ReadinessSectionComponent } from './readiness-section.component';
+import { ReadinessScatterComponent } from './readiness-scatter.component';
 
 @Component({
   selector: 'app-system',
   standalone: true,
-  imports: [CommonModule, BaseChartDirective, ReadinessSectionComponent],
+  imports: [CommonModule, BaseChartDirective, ReadinessSectionComponent, ReadinessScatterComponent],
   template: `
     <section class="system">
       <header class="system__head">
@@ -79,8 +80,9 @@ import { ReadinessSectionComponent } from './readiness-section.component';
           <canvas baseChart type="line" [data]="calibPerDay" [options]="lineOpts"></canvas>
         </div>
       </div>
-        <app-readiness-section></app-readiness-section>
+        <app-readiness-section (trackChange)="readinessTrackId = $event"></app-readiness-section>
       </div>
+      <app-readiness-scatter [trackId]="readinessTrackId"></app-readiness-scatter>
     </section>
   `,
   styles: [
@@ -105,6 +107,9 @@ export class SystemComponent implements OnInit, OnDestroy {
   radio?: RadioStats;
   calib?: CalibrationStats;
   live?: LiveStats;
+
+  /** Track selected in the readiness section; drives the degradation scatter charts. */
+  readinessTrackId?: number;
 
   get completedRuns(): number { return this.sim?.byStatus?.['completed'] ?? 0; }
   get failedRuns(): number { return this.sim?.byStatus?.['failed'] ?? 0; }

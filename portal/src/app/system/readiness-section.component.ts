@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Subscription, interval } from 'rxjs';
 import {
@@ -105,12 +105,17 @@ export class ReadinessSectionComponent implements OnInit, OnDestroy {
   expanded = new Set<number>();
   private pollSub?: Subscription;
 
+  /** Emits whenever the selected track changes, so the degradation charts below
+   * can follow the same track without a second picker. */
+  @Output() trackChange = new EventEmitter<number | undefined>();
+
   constructor(private svc: ReadinessService) {}
 
   ngOnInit(): void {
     this.svc.tracks().subscribe((ts) => {
       this.tracks = ts;
       this.selectedTrackId = ts.length ? ts[0].trackId : undefined;
+      this.trackChange.emit(this.selectedTrackId);
       this.refresh();
     });
     // Auto-refresh readiness for the selected track while a session runs.
@@ -123,6 +128,7 @@ export class ReadinessSectionComponent implements OnInit, OnDestroy {
 
   onTrackChange(ev: Event): void {
     this.selectedTrackId = Number((ev.target as HTMLSelectElement).value);
+    this.trackChange.emit(this.selectedTrackId);
     this.refresh();
   }
 

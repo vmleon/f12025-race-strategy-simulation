@@ -47,6 +47,36 @@ export interface TrackOption {
   lastSessionAt: string;
 }
 
+export interface ScatterPoint {
+  age: number;
+  timeMs: number;
+  used: boolean;
+  current: boolean;
+}
+
+export interface ScatterRegression {
+  slope: number;
+  intercept: number;
+  n: number;
+}
+
+export interface CompoundScatter {
+  compound: number;
+  points: ScatterPoint[];
+  regression: ScatterRegression | null;
+}
+
+export interface SectorScatter {
+  sector: number;
+  compounds: CompoundScatter[];
+}
+
+export interface ScatterResponse {
+  trackId: number;
+  currentSessionUid: string | null;
+  sectors: SectorScatter[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class ReadinessService {
   constructor(private http: HttpClient) {}
@@ -58,5 +88,10 @@ export class ReadinessService {
   readiness(trackId?: number): Observable<ReadinessResponse> {
     const q = trackId != null ? `?trackId=${trackId}` : '';
     return this.http.get<ReadinessResponse>(`/api/system/readiness${q}`);
+  }
+
+  scatter(trackId?: number): Observable<ScatterResponse> {
+    const q = trackId != null ? `?trackId=${trackId}` : '';
+    return this.http.get<ScatterResponse>(`/api/system/readiness/scatter${q}`);
   }
 }
