@@ -35,6 +35,20 @@ public class RaceState {
     private boolean sessionActive;
     private boolean sessionStartSent;
     private boolean sessionEndSent;
+    // Old session UID that changed without a clean end (0 = none). Emitted as a
+    // sessionEnded so the backend doesn't keep an orphaned session around.
+    private long pendingEndedUid;
+
+    /** Handle a session-UID change: if the old session was announced but never ended,
+     * queue a sessionEnded for it, then reset the lifecycle flags for the new one.
+     * Call BEFORE reassigning {@code this.sessionUid}. */
+    private void onSessionUidChange() {
+        if (sessionStartSent && !sessionEndSent) {
+            pendingEndedUid = this.sessionUid;
+        }
+        sessionStartSent = false;
+        sessionEndSent = false;
+    }
 
     // Event queue for forwarding to backend
     private final Queue<String> eventQueue = new ArrayDeque<>();
@@ -106,11 +120,10 @@ public class RaceState {
 
     public synchronized void updateFromSession(long sessionUid, SessionData session) {
         if (this.sessionUid != 0 && this.sessionUid != sessionUid) {
-            // Session UID changed (e.g. FP → Qualifying) without a FinalClassification
-            // ending the old session first. Reset lifecycle flags so the new session's
-            // start event fires on the next TcpSender tick.
-            sessionStartSent = false;
-            sessionEndSent = false;
+            // Session UID changed (e.g. FP → Qualifying, or a restart) without a
+            // FinalClassification ending the old session first. End the old session
+            // cleanly and reset lifecycle flags so the new session's start fires next.
+            onSessionUidChange();
         }
         this.sessionUid = sessionUid;
         this.trackId = session.trackId;
@@ -254,6 +267,13 @@ public class RaceState {
      * Only returns once per session end.
      */
     public synchronized String pollSessionEnded() {
+        // A superseded session whose UID changed without a clean end — emit its
+        // sessionEnded so the backend drops it instead of orphaning it.
+        if (pendingEndedUid != 0) {
+            long uid = pendingEndedUid;
+            pendingEndedUid = 0;
+            return "{\"type\":\"sessionEnded\",\"sessionUid\":\"" + Long.toHexString(uid) + "\"}";
+        }
         if (!sessionActive && sessionStartSent && !sessionEndSent) {
             sessionEndSent = true;
             sessionStartSent = false;
@@ -392,8 +412,7 @@ public class RaceState {
     public synchronized void fillTestData(long sessionUid, int trackId, int sessionType) {
         // Trigger the same UID-change detection as updateFromSession
         if (this.sessionUid != 0 && this.sessionUid != sessionUid) {
-            sessionStartSent = false;
-            sessionEndSent = false;
+            onSessionUidChange();
         }
         this.sessionUid = sessionUid;
         this.trackId = trackId;

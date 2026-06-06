@@ -43,21 +43,22 @@ public class TcpSender implements Runnable {
                 raceState.resetSessionStartSent(); // re-send sessionStarted to new backend
 
                 while (!Thread.currentThread().isInterrupted()) {
-                    // Send lifecycle events first
-                    String started = raceState.pollSessionStarted();
-                    if (started != null) {
-                        writer.write(started);
-                        writer.newLine();
-                        writer.flush();
-                        log.info("TCP frame sent type=sessionStarted bytes={}", started.length());
-                    }
-
+                    // Send lifecycle events first. Ended before started so a superseded
+                    // session's end reaches the backend before the new session's start.
                     String ended = raceState.pollSessionEnded();
                     if (ended != null) {
                         writer.write(ended);
                         writer.newLine();
                         writer.flush();
                         log.info("TCP frame sent type=sessionEnded bytes={}", ended.length());
+                    }
+
+                    String started = raceState.pollSessionStarted();
+                    if (started != null) {
+                        writer.write(started);
+                        writer.newLine();
+                        writer.flush();
+                        log.info("TCP frame sent type=sessionStarted bytes={}", started.length());
                     }
 
                     // Send queued events

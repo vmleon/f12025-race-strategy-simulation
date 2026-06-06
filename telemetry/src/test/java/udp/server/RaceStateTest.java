@@ -90,6 +90,23 @@ class RaceStateTest {
     }
 
     @Test
+    void uidChangeEmitsSessionEndedForOldSession() {
+        RaceState state = new RaceState();
+        state.fillTestData(0x1111L, 3, 1);            // session A (practice)
+        assertNotNull(state.pollSessionStarted());    // start A announced
+        assertNull(state.pollSessionEnded());
+
+        state.fillTestData(0x2222L, 3, 15);           // session B starts; A never ended cleanly
+        String ended = state.pollSessionEnded();
+        assertNotNull(ended, "old session must be ended on a UID change");
+        assertTrue(ended.contains("\"sessionUid\":\"1111\""), "ended carries the OLD uid");
+
+        String started = state.pollSessionStarted();
+        assertNotNull(started);
+        assertTrue(started.contains("\"sessionUid\":\"2222\""), "then the new session starts");
+    }
+
+    @Test
     void toJsonLineReturnsNullWhenInactive() {
         RaceState state = new RaceState();
         assertNull(state.toJsonLine());
