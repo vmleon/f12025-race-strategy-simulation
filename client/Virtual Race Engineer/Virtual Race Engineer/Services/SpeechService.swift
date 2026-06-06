@@ -18,28 +18,42 @@ final class SpeechService: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func speak(_ text: String, priority: MessagePriority) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              trimmed.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) }) else { return }
+        // The backend marks sentence boundaries with "|" (it inserts it only at real
+        // boundaries, never inside decimals). Speaking each sentence as its own
+        // utterance gives a natural pause between them.
+        let sentences = text
+            .components(separatedBy: EngineerMessage.sentenceSeparator)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { s in
+                !s.isEmpty && s.unicodeScalars.contains { CharacterSet.letters.contains($0) }
+            }
+        guard !sentences.isEmpty else { return }
 
-        let utterance = AVSpeechUtterance(string: trimmed)
+        let utterances = sentences.map(makeUtterance)
+
+        if priority == .IMMEDIATE {
+            // Flush whatever's queued/speaking and start this message now.
+            synthesizer.stopSpeaking(at: .word)
+            pendingUtterances = Array(utterances.dropFirst())
+            synthesizer.speak(utterances[0])
+            isSpeaking = true
+        } else if isSpeaking {
+            pendingUtterances.append(contentsOf: utterances)
+        } else {
+            pendingUtterances.append(contentsOf: utterances.dropFirst())
+            synthesizer.speak(utterances[0])
+            isSpeaking = true
+        }
+    }
+
+    private func makeUtterance(_ sentence: String) -> AVSpeechUtterance {
+        let utterance = AVSpeechUtterance(string: sentence)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-GB")
         utterance.rate = rate
         utterance.volume = volume
         utterance.pitchMultiplier = 1.0
         utterance.preUtteranceDelay = 0.1
-
-        if priority == .IMMEDIATE {
-            synthesizer.stopSpeaking(at: .word)
-            pendingUtterances.removeAll()
-            synthesizer.speak(utterance)
-            isSpeaking = true
-        } else if isSpeaking {
-            pendingUtterances.append(utterance)
-        } else {
-            synthesizer.speak(utterance)
-            isSpeaking = true
-        }
+        return utterance
     }
 
     func stop() {

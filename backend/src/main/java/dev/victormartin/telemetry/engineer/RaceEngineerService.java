@@ -422,13 +422,24 @@ public class RaceEngineerService {
                 tyre, tyreAge, sector, strategies);
     }
 
+    /** Sentence-boundary marker for the iOS client: it splits on this to speak each
+     * sentence as its own utterance (a built-in pause) and swaps it back to a space for
+     * display. Inserted AFTER rendering so the LLM can't drop/move it. The terminator is
+     * kept and the inter-sentence space is replaced, so decimals (no space after the dot)
+     * are never split and `!`/`?` survive. */
+    static final String SENTENCE_SEP = "|";
+
+    static String markSentenceBoundaries(String text) {
+        return text == null ? null : text.replaceAll("([.!?]) +", "$1" + SENTENCE_SEP);
+    }
+
     private void deliver(String sessionUid, EngineerMessage original, String renderedText) {
         try {
             String wireJson = mapper.writeValueAsString(Map.of(
                     "type", "raceEngineer",
                     "sessionUid", sessionUid,
                     "priority", original.priority().name(),
-                    "text", renderedText,
+                    "text", markSentenceBoundaries(renderedText),
                     "timestamp", original.createdAt()));
             webSocketHandler.broadcast(wireJson);
             TRACE.debug("ENGINEER_DELIVER priority={} text=\"{}\"", original.priority(), renderedText);

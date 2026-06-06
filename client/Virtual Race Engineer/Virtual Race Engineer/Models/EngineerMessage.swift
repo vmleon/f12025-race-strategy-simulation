@@ -7,6 +7,11 @@ enum MessagePriority: String, Codable {
 }
 
 struct EngineerMessage: Codable, Identifiable {
+    /// The backend marks sentence boundaries with this character (it inserts it only at
+    /// real boundaries, never inside decimals). The client splits on it for per-sentence
+    /// TTS and swaps it back to a space for display/copy.
+    static let sentenceSeparator = "|"
+
     let type: String
     let sessionUid: String
     let priority: MessagePriority
@@ -18,6 +23,11 @@ struct EngineerMessage: Codable, Identifiable {
 
     var date: Date {
         Date(timeIntervalSince1970: Double(timestamp) / 1000.0)
+    }
+
+    /// Human-readable text with the sentence separator swapped back to a space.
+    var displayText: String {
+        text.replacingOccurrences(of: EngineerMessage.sentenceSeparator, with: " ")
     }
 
     enum CodingKeys: String, CodingKey {

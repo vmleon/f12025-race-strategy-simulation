@@ -95,15 +95,16 @@ private struct MessageRow: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            Text(message.text)
+            Text(message.displayText)
                 .font(.body)
+                .textSelection(.enabled)  // cherry-pick individual sentences/words
         }
         .padding(12)
         .background(Color(.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .contextMenu {
             Button {
-                UIPasteboard.general.string = message.text
+                UIPasteboard.general.string = message.displayText
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
             }
