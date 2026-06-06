@@ -78,12 +78,14 @@ _EXPORT_TABLES = [
     ("sector_pace_baselines",
      ["track_id", "sector_number", "compound", "regime", "fuel_bucket_kg", "weather", "track_temp_bucket_c"]),
     ("radio_messages", ["message_id"]),
+    ("simulation_runs", ["run_id"]),
 ]
 
 _SEQUENCES = [
     ("seq_session_events", "session_events", "event_id"),
     ("seq_calibration_coefficients", "calibration_coefficients", "coefficient_id"),
     ("seq_radio_messages", "radio_messages", "message_id"),
+    ("seq_simulation_runs", "simulation_runs", "run_id"),
 ]
 
 

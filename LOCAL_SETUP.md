@@ -20,6 +20,7 @@ pip install -r requirements.txt      # installs manage.py + podman-compose
 
 ```bash
 python manage.py local setup         # Oracle container + Liquibase + generated configs + Java build (~5-6 min)
+python manage.py local import        # restore the latest backup so the dataset keeps growing (skip on first run — no backup yet)
 podman compose up --build -d         # build + start telemetry, backend, simulator, calibration, portal
 ```
 
@@ -35,7 +36,13 @@ Portal is at http://localhost:4200.
 
 ### Clean up
 
+**Export before cleaning** — `local clean` removes the Oracle container and all its data. The
+backup keeps every session + calibration table (sector snapshots, fitted coefficients, pace
+baselines, sim-run history, …) so the dataset — and the simulation's precision — keeps growing
+across rebuilds. Restore it with `local import` after the next `setup`.
+
 ```bash
+python manage.py local export        # back up all data to database/backups/ (do this BEFORE clean)
 podman compose down                  # stop and remove the 5 service containers
 python manage.py local clean         # stop Oracle + remove container + clear password from .env
 ```
@@ -59,7 +66,15 @@ python manage.py local status   # check it's running
 ```
 
 ```bash
-python manage.py local clean    # tear down
+python manage.py local export   # back up all data to database/backups/
+```
+
+```bash
+python manage.py local import   # restore the latest backup (run after setup, before the stack)
+```
+
+```bash
+python manage.py local clean    # tear down — export first to keep your accumulated data
 ```
 
 ### Telemetry (Plain Java UDP)
