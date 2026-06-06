@@ -203,7 +203,8 @@ _SELECT_CALIBRATION_DATA = """
            ss.tyre_surface_temp_rl, ss.tyre_surface_temp_rr,
            ss.tyre_surface_temp_fl, ss.tyre_surface_temp_fr,
            ss.tyre_inner_temp_rl, ss.tyre_inner_temp_rr,
-           ss.tyre_inner_temp_fl, ss.tyre_inner_temp_fr
+           ss.tyre_inner_temp_fl, ss.tyre_inner_temp_fr,
+           ss.tyre_wear_fl, ss.tyre_wear_fr, ss.tyre_wear_rl, ss.tyre_wear_rr
     FROM sector_snapshots ss
     JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index
     JOIN sessions s ON s.session_uid = ss.session_uid
@@ -241,6 +242,11 @@ _COL_DIFF_DMG = 17
 _COL_SIDE_DMG = 18
 _COL_ENG_DMG = 19
 _COL_GEAR_DMG = 20
+# tyre surface/inner temps occupy 21–28; per-wheel wear % follows.
+_COL_WEAR_FL = 29
+_COL_WEAR_FR = 30
+_COL_WEAR_RL = 31
+_COL_WEAR_RR = 32
 
 
 def get_calibration_data(conn: oracledb.Connection, track_id: int, regime: str) -> list[tuple]:

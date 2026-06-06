@@ -420,12 +420,37 @@ class TestPerSectorPace:
             _make_car(0, tyre_age_laps=10, sector_baseline_ms=[30_000, 30_000, 30_000]),
             current_lap=1, track_id=0,
         )
+        # Deg is applied as a delta from the stint reference age; force the reference
+        # to a fresh tyre so the 10 laps of age translate to 10*100 = 1000 ms in S1.
+        car.age_ref = 0.0
         # Sector 1 carries 10*100 = 1000 ms of deg; sector 0 carries none.
         # Average many draws to cancel the Gaussian noise.
         import statistics
         s0 = statistics.mean(engine._predict_sector_time(car, 0, False, []) for _ in range(400))
         s1 = statistics.mean(engine._predict_sector_time(car, 1, False, []) for _ in range(400))
         assert s1 - s0 == pytest.approx(1000.0, abs=60.0)
+
+    def test_deg_and_fuel_are_zero_at_reference_conditions(self):
+        # At the snapshot's own age/fuel, deg and fuel must add nothing — the base
+        # pace already embeds them. Then aging past the reference accrues deg.
+        import statistics
+        coeffs = Coefficients.defaults()
+        coeffs.put("tyre_deg_medium", "AI", -1, 100.0)  # large, to dwarf noise
+        coeffs.put("fuel_effect", "AI", -1, 30.0)
+        engine = MonteCarloEngine(coeffs, seed=1)
+        car = CarState.from_snapshot(
+            _make_car(0, tyre_age_laps=15, fuel_kg=90.0,
+                      sector_baseline_ms=[30_000, 30_000, 30_000]),
+            current_lap=1, track_id=0,
+        )
+        at_ref = statistics.mean(
+            engine._predict_sector_time(car, 0, False, []) for _ in range(400))
+        assert at_ref == pytest.approx(30_000.0, abs=60.0)  # no double-count
+
+        car.tyre_age_laps = 16  # one lap past the reference -> +100 ms of deg
+        aged = statistics.mean(
+            engine._predict_sector_time(car, 0, False, []) for _ in range(400))
+        assert aged - at_ref == pytest.approx(100.0, abs=60.0)
 
     def test_perfect_sector_is_the_floor(self):
         coeffs = Coefficients.defaults()

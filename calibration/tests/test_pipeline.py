@@ -1,6 +1,8 @@
 import re
 from datetime import datetime
 
+import pytest
+
 from calibration import db
 from calibration.pipeline import (
     _group_pit_stops, _mad_filter,
@@ -322,6 +324,68 @@ class TestUpsertSectorBaseline:
             fitted_at=datetime(2026, 6, 4, 12, 0, 0),
         )
         assert conn.commit_count == 0
+
+
+class TestTyreWearRateFit:
+
+    def _row(self, compound, age, fl, fr, rl, rr):
+        r = [0] * 33
+        r[db._COL_TYRE_COMPOUND] = compound
+        r[db._COL_TYRE_AGE] = age
+        r[db._COL_WEAR_FL] = fl
+        r[db._COL_WEAR_FR] = fr
+        r[db._COL_WEAR_RL] = rl
+        r[db._COL_WEAR_RR] = rr
+        return tuple(r)
+
+    def test_most_worn_picks_max_ignoring_nulls(self):
+        from calibration.pipeline import _most_worn
+        assert _most_worn(self._row(16, 0, 10.0, 20.0, 5.0, 8.0)) == 20.0
+        assert _most_worn(self._row(16, 0, None, None, 12.0, None)) == 12.0
+        assert _most_worn(self._row(16, 0, None, None, None, None)) is None
+
+    def test_fits_wear_rate_on_most_worn_wheel(self, monkeypatch):
+        from calibration.pipeline import _fit_tyre_wear_rate, MIN_WEAR_SAMPLES
+        captured = []
+        monkeypatch.setattr(
+            db, "insert_calibration_coefficient",
+            lambda c, t, knob, reg, sec, method, val, d, now:
+                captured.append((knob, sec, val)),
+        )
+        # Most-worn wheel (RL) climbs 2%/lap; others slower.
+        data = [self._row(16, age, age, age, age * 2.0, age * 1.5)
+                for age in range(MIN_WEAR_SAMPLES + 3)]
+        _fit_tyre_wear_rate(None, data, track_id=4, regime="AI", now=datetime.now())
+
+        assert len(captured) == 1
+        knob, sec, val = captured[0]
+        assert knob == "tyre_wear_rate_soft"
+        assert sec is None  # sector-wide
+        assert val == pytest.approx(2.0, abs=0.01)
+
+    def test_skips_below_min_samples(self, monkeypatch):
+        from calibration.pipeline import _fit_tyre_wear_rate
+        captured = []
+        monkeypatch.setattr(
+            db, "insert_calibration_coefficient",
+            lambda *a, **k: captured.append(a),
+        )
+        data = [self._row(17, age, age, age, age, age) for age in range(3)]
+        _fit_tyre_wear_rate(None, data, track_id=4, regime="AI", now=datetime.now())
+        assert captured == []
+
+    def test_clamps_negative_slope_to_zero(self, monkeypatch):
+        from calibration.pipeline import _fit_tyre_wear_rate, MIN_WEAR_SAMPLES
+        captured = []
+        monkeypatch.setattr(
+            db, "insert_calibration_coefficient",
+            lambda c, t, knob, reg, sec, method, val, d, now: captured.append(val),
+        )
+        # Wear that decreases with age (noise) -> negative slope -> clamp to 0.
+        data = [self._row(18, age, 50 - age, 50 - age, 50 - age, 50 - age)
+                for age in range(MIN_WEAR_SAMPLES + 2)]
+        _fit_tyre_wear_rate(None, data, track_id=4, regime="AI", now=datetime.now())
+        assert captured == [0.0]
 
 
 class TestFitSectorBaselinesAtomicity:

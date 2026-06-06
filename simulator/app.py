@@ -98,12 +98,14 @@ def evaluate_strategies(request: StrategyEvaluationRequest) -> StrategyEvaluatio
 
 @app.post("/auto-evaluate-strategies", response_model_by_alias=True)
 def auto_evaluate_strategies(request: AutoStrategyRequest) -> StrategyEvaluation:
-    candidates = generate_candidates(request.snapshot, request.player_car_index)
+    coefficients = _load_coefficients(request.snapshot.track_id)
+    candidates = generate_candidates(
+        request.snapshot, request.player_car_index, coefficients
+    )
     if not candidates:
         return StrategyEvaluation(
             player_car_index=request.player_car_index, strategies=[]
         )
-    coefficients = _load_coefficients(request.snapshot.track_id)
     engine = MonteCarloEngine(coefficients)
     evaluator = StrategyEvaluator(engine)
     return evaluator.evaluate(

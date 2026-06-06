@@ -86,18 +86,18 @@ def run_strategy_worker(pool: oracledb.ConnectionPool, shutdown_event: threading
 
                     snapshot = RaceSnapshot.model_validate(snapshot_data)
 
-                    candidates = generate_candidates(snapshot, player_car_index)
+                    try:
+                        coefficients = load_coefficients_for_track(snapshot.track_id)
+                    except Exception:
+                        logger.warning("DB coefficients unavailable, using defaults", exc_info=True)
+                        coefficients = Coefficients.defaults()
+
+                    candidates = generate_candidates(snapshot, player_car_index, coefficients)
                     if not candidates:
                         result = StrategyEvaluation(
                             player_car_index=player_car_index, strategies=[]
                         )
                     else:
-                        try:
-                            coefficients = load_coefficients_for_track(snapshot.track_id)
-                        except Exception:
-                            logger.warning("DB coefficients unavailable, using defaults", exc_info=True)
-                            coefficients = Coefficients.defaults()
-
                         engine = MonteCarloEngine(coefficients)
                         evaluator = StrategyEvaluator(engine)
                         result = evaluator.evaluate(snapshot, player_car_index, candidates)

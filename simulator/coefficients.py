@@ -51,4 +51,9 @@ class Coefficients:
             c.put("tyre_deg_wet", regime, -1, 0.04)
             c.put("fuel_effect", regime, -1, 0.01)
             c.put("pit_stop_time_loss", regime, -1, 22_000.0)
+            # Wear-rate %/lap (most-worn wheel). Defaults chosen so laps-to-cliff at
+            # the 40% threshold ≈ the old hardcoded lifespans (S30/M37/H45).
+            c.put("tyre_wear_rate_soft", regime, -1, 1.33)
+            c.put("tyre_wear_rate_medium", regime, -1, 1.08)
+            c.put("tyre_wear_rate_hard", regime, -1, 0.89)
         return c

@@ -9,7 +9,7 @@ import numpy as np
 from simulator.car_state import CarState
 from simulator.coefficients import Coefficients
 from simulator.models import Penalty
-from simulator.tyre_lifespan import compound_lifespan
+from simulator.tyre_lifespan import stint_cap_laps
 from simulator.models import CarResult, RaceSnapshot, SimulationResult
 
 DEFAULT_ITERATIONS = 1_000
@@ -176,7 +176,14 @@ class MonteCarloEngine:
 
         noise = self.rng.gauss(0, NOISE_SIGMA_MS)
         tyre_deg = self._tyre_degradation(car, regime, sector)
-        fuel_effect = self.coefficients.get("fuel_effect", regime, sector) * car.fuel_kg
+        # Fuel effect as a delta from the reference fuel the base pace was measured
+        # at — the base already embeds that fuel load, so applying absolute fuel here
+        # would double-count it. As fuel burns below fuel_ref, this term goes negative
+        # (car gets lighter / faster).
+        fuel_effect = (
+            self.coefficients.get("fuel_effect", regime, sector)
+            * (car.fuel_kg - car.fuel_ref)
+        )
         damage = self._damage_penalty(car)
 
         sector_time = base_sector_pace + tyre_deg + fuel_effect + damage + noise
@@ -208,7 +215,9 @@ class MonteCarloEngine:
             8: "tyre_deg_wet",
         }.get(car.tyre_compound, "tyre_deg_medium")
         deg_per_lap = self.coefficients.get(knob, regime, sector)
-        return deg_per_lap * car.tyre_age_laps
+        # Delta from the stint's reference age (the age the base pace was observed at),
+        # so deg isn't double-counted on top of a base that already embeds it.
+        return deg_per_lap * (car.tyre_age_laps - car.age_ref)
 
     # ── sub-models ───────────────────────────────────────────────────────
 
@@ -238,9 +247,13 @@ class MonteCarloEngine:
                     )
                     return
 
-        # AI heuristic: pit at the game-imposed compound lifespan (the cliff).
+        # AI heuristic: pit at the wear cliff — a data-driven stint cap from the
+        # calibrated wear-rate (cliffPct / wear-rate), falling back to the hardcoded
+        # lifespan when uncalibrated.
         if car.ai_controlled:
-            if car.tyre_age_laps >= compound_lifespan(car.tyre_compound):
+            if car.tyre_age_laps >= stint_cap_laps(
+                car.tyre_compound, self.coefficients, car.regime
+            ):
                 new_compound = 18 if car.tyre_compound == 16 else 17
                 self._execute_pit_stop(car, new_compound)
 
@@ -262,6 +275,7 @@ class MonteCarloEngine:
         car.total_time_ms += pit_time
         car.tyre_compound = new_compound
         car.tyre_age_laps = 0
+        car.age_ref = 0.0  # fresh stint: deg now measured from a brand-new tyre
         car.num_pit_stops += 1
 
     # ── penalty handling ────────────────────────────────────────────────
@@ -372,6 +386,7 @@ class MonteCarloEngine:
         for car in cars:
             if not car.retired:
                 car.tyre_age_laps = 0
+                car.age_ref = 0.0
         self._compress_field(cars)
 
     # ── DNF ──────────────────────────────────────────────────────────────

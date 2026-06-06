@@ -17,6 +17,7 @@ class CarState:
         "num_pit_stops", "retired", "total_time_ms", "current_lap",
         "pending_penalties", "penalty_time_ms",
         "sector_pace_ms", "perfect_sector_ms",
+        "age_ref", "fuel_ref",
     )
 
     def __init__(
@@ -39,6 +40,8 @@ class CarState:
         perfect_sector_ms: list[float],
         pending_penalties: list[Penalty] | None = None,
         penalty_time_ms: float = 0.0,
+        age_ref: float = 0.0,
+        fuel_ref: float = 0.0,
     ) -> None:
         self.car_index = car_index
         self.driver_name = driver_name
@@ -59,6 +62,12 @@ class CarState:
         self.perfect_sector_ms = perfect_sector_ms
         self.pending_penalties = list(pending_penalties) if pending_penalties else []
         self.penalty_time_ms = penalty_time_ms
+        # Reference conditions the base pace was observed/calibrated at. tyre_deg and
+        # fuel_effect are applied as deltas from these so they aren't double-counted
+        # (base_sector_pace already embeds the age/fuel at the reference). age_ref
+        # resets to 0 on a pit stop (fresh stint); fuel_ref is fixed (no refuelling).
+        self.age_ref = age_ref
+        self.fuel_ref = fuel_ref
 
     @property
     def regime(self) -> str:
@@ -92,6 +101,8 @@ class CarState:
             perfect_sector_ms=_perfect_sector_floor_ms(cs.perfect_sector_ms, sector_pace),
             pending_penalties=active_penalties,
             penalty_time_ms=penalty_time_ms,
+            age_ref=float(cs.tyre_age_laps),
+            fuel_ref=cs.fuel_kg,
         )
 
 

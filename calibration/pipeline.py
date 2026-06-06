@@ -14,11 +14,18 @@ from calibration.outlier_detector import detect_outliers
 MIN_TYRE_DEG_SAMPLES = 10
 MIN_FUEL_SAMPLES = 5
 MIN_PIT_STOP_SAMPLES = 3
+MIN_WEAR_SAMPLES = 5   # wear is smooth/monotonic, so it calibrates from few laps
 
 COMPOUND_KNOB_NAMES = {
     16: "tyre_deg_soft",
     17: "tyre_deg_medium",
     18: "tyre_deg_hard",
+}
+
+WEAR_RATE_KNOB_NAMES = {
+    16: "tyre_wear_rate_soft",
+    17: "tyre_wear_rate_medium",
+    18: "tyre_wear_rate_hard",
 }
 
 
@@ -46,6 +53,7 @@ def run(conn: oracledb.Connection, track_id: int) -> None:
         print(f"Regime {regime}: {len(data)} data points")
 
         _fit_tyre_degradation(conn, data, track_id, regime, now)
+        _fit_tyre_wear_rate(conn, data, track_id, regime, now)
         _fit_fuel_effect(conn, data, track_id, regime, now)
         _fit_pit_stop_duration(conn, track_id, regime, now)
 
@@ -85,6 +93,51 @@ def _fit_tyre_degradation(
             reg.slope, 0, now)
 
         print(f"  {knob_name} sector {sector}: slope={reg.slope:.2f} ms/lap, n={reg.n}")
+
+
+# ── tyre wear rate ───────────────────────────────────────────────────
+
+
+def _most_worn(r: tuple) -> float | None:
+    """Highest of the four per-wheel wear %, ignoring NULLs. None if all NULL."""
+    vals = [r[db._COL_WEAR_FL], r[db._COL_WEAR_FR],
+            r[db._COL_WEAR_RL], r[db._COL_WEAR_RR]]
+    vals = [v for v in vals if v is not None]
+    return max(vals) if vals else None
+
+
+def _fit_tyre_wear_rate(
+    conn: oracledb.Connection, data: list[tuple], track_id: int, regime: str,
+    now: datetime,
+) -> None:
+    """Fit wear-rate (%/lap) per compound: slope of the most-worn wheel's wear vs
+    tyre age. Stored sector-wide (sector=None). Feeds the simulator's laps-to-cliff
+    stint cap. Clamped to >= 0 (wear can't fall with age); a 0 slope makes the
+    simulator fall back to the hardcoded lifespan."""
+    groups: dict[str, list[tuple]] = defaultdict(list)
+    for r in data:
+        knob_name = WEAR_RATE_KNOB_NAMES.get(r[db._COL_TYRE_COMPOUND])
+        if knob_name is None:
+            continue
+        groups[knob_name].append(r)
+
+    for knob_name, group in groups.items():
+        pts = [(r[db._COL_TYRE_AGE], _most_worn(r)) for r in group]
+        pts = [(age, wear) for age, wear in pts if wear is not None]
+        if len(pts) < MIN_WEAR_SAMPLES:
+            print(f"  {knob_name}: insufficient data ({len(pts)}), skipping")
+            continue
+
+        x = np.array([age for age, _ in pts], dtype=float)
+        y = np.array([wear for _, wear in pts], dtype=float)
+        reg = linear_regression(x, y)
+        wear_rate = max(reg.slope, 0.0)
+
+        db.insert_calibration_coefficient(
+            conn, track_id, knob_name, regime, None, "linear_regression",
+            wear_rate, 0, now)
+
+        print(f"  {knob_name}: {wear_rate:.3f} %/lap, n={reg.n}")
 
 
 # ── fuel effect ──────────────────────────────────────────────────────

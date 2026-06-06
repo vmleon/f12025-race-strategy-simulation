@@ -9,7 +9,7 @@ from simulator.models import (
     StrategyCandidate,
     TyreSetInfo,
 )
-from simulator.tyre_lifespan import compound_lifespan
+from simulator.tyre_lifespan import stint_cap_laps
 
 logger = logging.getLogger("simulator")
 
@@ -37,9 +37,12 @@ REPAIR_DAMAGE_THRESHOLD = 20    # Front-wing damage % at which repair stops are 
 
 
 def generate_candidates(
-    snapshot: RaceSnapshot, player_car_index: int
+    snapshot: RaceSnapshot, player_car_index: int, coefficients=None
 ) -> list[StrategyCandidate]:
-    """Generate plausible pit strategy candidates based on race state and tyre availability."""
+    """Generate plausible pit strategy candidates based on race state and tyre availability.
+
+    `coefficients` (simulator.coefficients.Coefficients or None) drives the data-driven
+    stint cap used for lifespan pruning; without it the hardcoded lifespan is used."""
     player = _find_player(snapshot.cars, player_car_index)
     if player is None:
         logger.info("candidate_generator: player car %d not found in snapshot", player_car_index)
@@ -166,6 +169,7 @@ def generate_candidates(
             starting_tyre_age=player.tyre_age_laps,
             current_lap=snapshot.current_lap,
             total_laps=snapshot.total_laps,
+            coefficients=coefficients,
         )
     ]
 
@@ -246,6 +250,7 @@ def _candidate_fits_lifespans(
     starting_tyre_age: int,
     current_lap: int,
     total_laps: int,
+    coefficients=None,
 ) -> bool:
     """Return True if every stint in the candidate fits within its compound's lifespan.
 
@@ -261,14 +266,14 @@ def _candidate_fits_lifespans(
 
     for stop in candidate.stops:
         stint_len = (stop.on_lap - stint_start) + age_offset
-        if stint_len > compound_lifespan(stint_compound):
+        if stint_len > stint_cap_laps(stint_compound, coefficients, "PLAYER"):
             return False
         stint_start = stop.on_lap
         stint_compound = stop.new_compound
         age_offset = 0  # fresh tyre after pit
 
     final_stint_len = (total_laps - stint_start + 1) + age_offset
-    if final_stint_len > compound_lifespan(stint_compound):
+    if final_stint_len > stint_cap_laps(stint_compound, coefficients, "PLAYER"):
         return False
 
     return True
