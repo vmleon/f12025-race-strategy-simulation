@@ -13,8 +13,8 @@ import dev.victormartin.telemetry.engineer.RadioDetector;
 import dev.victormartin.telemetry.engineer.SessionKind;
 
 /**
- * "10 laps remaining" / "5 laps to go" / "Last lap". Race only. Fires on the
- * lap-up tick where laps remaining == 10, 5, or 1.
+ * "10 laps remaining" / "3 laps to go" / "Last lap". Race only. Fires on the
+ * lap-up tick where laps remaining == 10, 3, or 1.
  */
 public class LapCountdownDetector implements RadioDetector {
 
@@ -39,7 +39,7 @@ public class LapCountdownDetector implements RadioDetector {
         int remaining = tick.totalLaps() - currentLap + 1;
         String text = switch (remaining) {
             case 10 -> "10 laps remaining. Keep it clean, manage your tyres.";
-            case 5 -> "5 laps to go. Bring it home.";
+            case 3 -> "3 laps to go. Bring it home.";
             case 1 -> "Last lap. Give it everything you've got.";
             default -> null;
         };

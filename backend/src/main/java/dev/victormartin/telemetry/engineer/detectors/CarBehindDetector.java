@@ -44,6 +44,22 @@ public class CarBehindDetector implements RadioDetector {
     public Optional<EngineerMessage> evaluate(EngineerTick tick) {
         State s = stateByUid.computeIfAbsent(tick.sessionUid(), k -> new State());
 
+        // Out-lap suppression: right after a pit stop the field shuffles through
+        // traffic, which otherwise fires contradictory "closing from behind" /
+        // "lost a place" battle messages seconds apart. Suppress until the out-lap
+        // completes (mirrors PositionChangeDetector's pit-exit guard).
+        if (tick.previousPitState() != PitState.ON_TRACK) {
+            s.suppressUntilLap = tick.currentLap() + 1;
+            s.previousGap = -1f;
+            s.previousBehindIdx = -1;
+            s.previousPlayerPos = tick.playerPos();
+            return Optional.empty();
+        }
+        if (tick.currentLap() < s.suppressUntilLap) {
+            s.previousGap = -1f;
+            return Optional.empty();
+        }
+
         JsonNode behind = EngineerMessageHelpers.findCarAtPosition(tick.cars(), tick.playerPos() + 1);
         if (behind == null) {
             s.previousGap = -1f;
@@ -94,11 +110,51 @@ public class CarBehindDetector implements RadioDetector {
         s.cooldownByCar.put(behindIdx, now);
 
         String name = behind.has("name") ? behind.get("name").asText() : "Car behind";
-        return Optional.of(new EngineerMessage(
-                Priority.HIGH,
-                name + " closing from behind. " + EngineerMessageHelpers.formatTenths(gapSec)
-                        + " seconds back. Defend your position.",
-                now, tick.currentLap(), 1));
+        String text;
+        if (gapSec < 1.0f) {
+            // Under a second: an explicit gap rounds to "0 seconds" and reads broken.
+            text = "Defend from " + name + ".";
+        } else {
+            int gapWhole = Math.round(gapSec);
+            String unit = gapWhole == 1 ? "second" : "seconds";
+            text = name + " closing from behind. Gap of " + gapWhole + " " + unit + "."
+                    + tyreComparison(behind, tick);
+        }
+        return Optional.of(new EngineerMessage(Priority.HIGH, text, now, tick.currentLap(), 1));
+    }
+
+    /** Appends "{rival} on {new|worn }{compound}s, you're on {compound}s." when the
+     * rival is on a different compound. Tyre data is already in the per-car state. */
+    private static String tyreComparison(JsonNode behind, EngineerTick tick) {
+        JsonNode player = tick.playerCar();
+        if (player == null) return "";
+        String rivalC = behind.has("tyre") ? behind.get("tyre").asText() : "";
+        String playerC = player.has("tyre") ? player.get("tyre").asText() : "";
+        if (rivalC.isEmpty() || playerC.isEmpty() || rivalC.equals(playerC)) return "";
+
+        String name = behind.has("name") ? behind.get("name").asText() : "They're";
+        int rivalAge = behind.has("tyreAge") ? behind.get("tyreAge").asInt() : -1;
+        String qualifier = "";
+        if (rivalAge >= 0 && rivalAge <= 3) {
+            qualifier = "new ";
+        } else if (behind.has("tyreWear") && behind.get("tyreWear").isArray()) {
+            double maxWear = 0;
+            for (JsonNode w : behind.get("tyreWear")) maxWear = Math.max(maxWear, w.asDouble());
+            if (maxWear >= 50.0) qualifier = "worn ";
+        }
+        return " " + name + " on " + qualifier + compoundPlural(rivalC)
+                + ", you're on " + compoundPlural(playerC) + ".";
+    }
+
+    private static String compoundPlural(String c) {
+        return switch (c) {
+            case "S" -> "softs";
+            case "M" -> "mediums";
+            case "H" -> "hards";
+            case "I" -> "inters";
+            case "W" -> "wets";
+            default -> c;
+        };
     }
 
     @Override
@@ -115,6 +171,7 @@ public class CarBehindDetector implements RadioDetector {
         float previousGap = -1f;
         int previousBehindIdx = -1;
         int previousPlayerPos = -1;
+        int suppressUntilLap = 0;
         final Map<Integer, Long> cooldownByCar = new HashMap<>();
     }
 }

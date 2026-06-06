@@ -30,7 +30,7 @@ import dev.victormartin.telemetry.engineer.detectors.DrsDetector;
 import dev.victormartin.telemetry.engineer.detectors.ErsModeDetector;
 import dev.victormartin.telemetry.engineer.detectors.FastestLapByRivalDetector;
 import dev.victormartin.telemetry.engineer.detectors.FlagChangesDetector;
-import dev.victormartin.telemetry.engineer.detectors.FuelDetector;
+import dev.victormartin.telemetry.engineer.detectors.InvalidLapDetector;
 import dev.victormartin.telemetry.engineer.detectors.LapCountdownDetector;
 import dev.victormartin.telemetry.engineer.detectors.PenaltiesDetector;
 import dev.victormartin.telemetry.engineer.detectors.PerCornerWearDetector;
@@ -142,6 +142,7 @@ public class RaceEngineerService {
                 new DrsDetector(),
                 new ErsModeDetector(),
                 new WeatherDetector(),
+                new InvalidLapDetector(),
                 // Race only
                 new CarBehindDetector(),
                 new CarAheadDetector(),
@@ -149,7 +150,6 @@ public class RaceEngineerService {
                 new PositionChangeDetector(),
                 pitStopCompleted,
                 pitWindow,
-                new FuelDetector(),
                 new PeriodicSituationalAwarenessDetector(),
                 new RaceLapCompleteDetector(),
                 raceFinish,

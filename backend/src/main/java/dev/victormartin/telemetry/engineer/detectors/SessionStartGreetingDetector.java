@@ -44,14 +44,13 @@ public class SessionStartGreetingDetector implements RadioDetector {
         String compound = p.has("tyre") ? p.get("tyre").asText() : "";
         String compoundPlural = compoundLabel(compound);
         String handling = compoundHandlingNote(compound);
-        double fuelLaps = p.has("fuelLaps") ? p.get("fuelLaps").asDouble() : 0.0;
 
         String text = switch (tick.sessionKind()) {
-            case PRACTICE -> practiceGreeting(tick.sessionType(), compoundPlural, handling, fuelLaps);
+            case PRACTICE -> practiceGreeting(tick.sessionType(), compoundPlural, handling);
             case QUALIFYING, SPRINT_QUALIFYING ->
-                    qualifyingGreeting(tick.sessionType(), compoundPlural, handling, fuelLaps);
-            case RACE, SPRINT_RACE -> "Lights out. " + compoundPlural
-                    + " on. Settle in, we'll talk strategy.";
+                    qualifyingGreeting(tick.sessionType(), compoundPlural, handling);
+            case RACE, SPRINT_RACE -> "Clutch paddle in position. You start on "
+                    + compoundPlural.toLowerCase() + ". Settle in, we'll talk strategy.";
             case TIME_TRIAL -> "Time trial. " + compoundPlural + " on. Push for a clean lap.";
             default -> "Radio check. All systems go.";
         };
@@ -62,7 +61,7 @@ public class SessionStartGreetingDetector implements RadioDetector {
     }
 
     private static String practiceGreeting(int sessionType, String compoundPlural,
-                                            String handling, double fuelLaps) {
+                                            String handling) {
         String label = switch (sessionType) {
             case 1 -> "P1";
             case 2 -> "P2";
@@ -71,15 +70,11 @@ public class SessionStartGreetingDetector implements RadioDetector {
         };
         String compoundClause = compoundPlural + " fitted"
                 + (handling.isEmpty() ? "" : " — " + handling);
-        String fuelClause = fuelLaps > 0.0
-                ? " Fuel for " + (int) Math.round(fuelLaps) + " laps in the tank."
-                : "";
-        return label + " underway. " + compoundClause + "." + fuelClause
-                + " Push when you have a window.";
+        return label + " underway. " + compoundClause + ". Push when you have a window.";
     }
 
     private static String qualifyingGreeting(int sessionType, String compoundPlural,
-                                              String handling, double fuelLaps) {
+                                              String handling) {
         String label = switch (sessionType) {
             case 5 -> "Q1";
             case 6 -> "Q2";
@@ -91,11 +86,7 @@ public class SessionStartGreetingDetector implements RadioDetector {
         };
         String compoundClause = compoundPlural + " fitted"
                 + (handling.isEmpty() ? "" : " — " + handling);
-        String fuelClause = fuelLaps > 0.0
-                ? " Fuel for " + (int) Math.round(fuelLaps) + " laps."
-                : "";
-        return label + " underway. " + compoundClause + "." + fuelClause
-                + " Send it on a clear lap.";
+        return label + " underway. " + compoundClause + ". Send it on a clear lap.";
     }
 
     /** One-line handling tip per compound. Returns empty string if unknown. */

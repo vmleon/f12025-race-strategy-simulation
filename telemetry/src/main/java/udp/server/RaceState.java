@@ -95,6 +95,7 @@ public class RaceState {
         int numUnservedStopGoPens;
         int totalWarnings;
         int cornerCuttingWarnings;
+        int currentLapInvalid;
         String driverName = "";
         boolean aiControlled = true;
         int resultStatus;
@@ -152,6 +153,7 @@ public class RaceState {
             cars[i].numUnservedStopGoPens = lap.numUnservedStopGoPens;
             cars[i].totalWarnings = lap.totalWarnings;
             cars[i].cornerCuttingWarnings = lap.cornerCuttingWarnings;
+            cars[i].currentLapInvalid = lap.currentLapInvalid;
             cars[i].speedTrapKmh = lap.speedTrapFastestSpeed;
         }
     }
@@ -337,6 +339,8 @@ public class RaceState {
               .append(",\"unservedDT\":").append(c.numUnservedDriveThroughPens)
               .append(",\"unservedSG\":").append(c.numUnservedStopGoPens)
               .append(",\"warnings\":").append(c.totalWarnings)
+              .append(",\"cornerCutting\":").append(c.cornerCuttingWarnings)
+              .append(",\"lapInvalid\":").append(c.currentLapInvalid)
               .append(",\"name\":\"").append(escapeJson(c.driverName))
               .append("\",\"ai\":").append(c.aiControlled)
               .append(",\"drsAllowed\":").append(c.drsAllowed)
@@ -352,12 +356,17 @@ public class RaceState {
 
         sb.append(']');
 
-        // Weather forecast
+        // Weather forecast — only samples for the CURRENT session. The game's array
+        // spans multiple session types, each restarting timeOffset at 0; without this
+        // filter the portal's +Nm labels loop (+0,+5,+10,+0,+5).
         if (weatherForecast != null && numWeatherForecastSamples > 0) {
             sb.append(",\"forecast\":[");
+            boolean firstForecast = true;
             for (int i = 0; i < numWeatherForecastSamples; i++) {
-                if (i > 0) sb.append(',');
                 var f = weatherForecast[i];
+                if (f.sessionType != sessionType) continue;
+                if (!firstForecast) sb.append(',');
+                firstForecast = false;
                 sb.append("{\"offset\":").append(f.timeOffset)
                   .append(",\"weather\":").append(f.weather)
                   .append(",\"trackTemp\":").append(f.trackTemperature)
@@ -434,6 +443,7 @@ public class RaceState {
             cars[i].numUnservedStopGoPens = 0;
             cars[i].totalWarnings = 0;
             cars[i].cornerCuttingWarnings = 0;
+            cars[i].currentLapInvalid = 0;
             cars[i].driverName = names[i];
             cars[i].aiControlled = i > 0;
             cars[i].drsAllowed = 0;

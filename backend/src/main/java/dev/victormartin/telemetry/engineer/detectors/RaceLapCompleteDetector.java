@@ -71,62 +71,34 @@ public class RaceLapCompleteDetector implements RadioDetector {
         }
         byPos.sort(Comparator.comparingInt(c -> c.has("pos") ? c.get("pos").asInt() : 99));
 
-        String aheadName = null;
-        long gapAheadMs = -1;
-        long gapToLeaderMs = 0;
-        boolean leaderGapKnown = true;
-        for (JsonNode car : byPos) {
-            int pos = car.has("pos") ? car.get("pos").asInt() : 0;
-            if (pos <= 0 || pos > playerPos) break;
-            long deltaMs = car.has("deltaToFrontMs") ? car.get("deltaToFrontMs").asLong() : 0;
-            if (pos == 1) {
-                // Leader has no car in front; deltaToFrontMs typically 0.
-                continue;
-            }
-            if (deltaMs <= 0) leaderGapKnown = false;
-            gapToLeaderMs += Math.max(deltaMs, 0);
-            if (pos == playerPos) {
-                gapAheadMs = deltaMs;
-                JsonNode ahead = findCarAtPosition(byPos, playerPos - 1);
-                if (ahead != null && ahead.has("name")) aheadName = ahead.get("name").asText();
-            }
-        }
+        // Gap to the car ahead = the player's own deltaToFrontMs; gap to the car behind
+        // = that car's deltaToFrontMs (its gap to the player).
+        JsonNode playerCarNode = findCarAtPosition(byPos, playerPos);
+        long gapAheadMs = (playerCarNode != null && playerCarNode.has("deltaToFrontMs"))
+                ? playerCarNode.get("deltaToFrontMs").asLong() : -1;
+        JsonNode aheadCar = findCarAtPosition(byPos, playerPos - 1);
+        String aheadName = (aheadCar != null && aheadCar.has("name")) ? aheadCar.get("name").asText() : null;
+
+        JsonNode behindCar = findCarAtPosition(byPos, playerPos + 1);
+        long gapBehindMs = (behindCar != null && behindCar.has("deltaToFrontMs"))
+                ? behindCar.get("deltaToFrontMs").asLong() : -1;
+        String behindName = (behindCar != null && behindCar.has("name")) ? behindCar.get("name").asText() : null;
 
         StringBuilder text = new StringBuilder("Lap ").append(lap - 1).append(" done. ");
-        if (playerPos == 1) {
-            text.append("Leading the race");
-        } else {
-            text.append("P").append(playerPos);
-        }
-        if (remaining > 0) {
-            if (remaining == 1) text.append(", last lap");
-            else text.append(", ").append(remaining).append(" laps to go");
-        }
-        text.append(".");
+        if (playerPos == 1) text.append("Leading the race.");
+        else text.append("You are P").append(playerPos).append(".");
+        if (remaining == 1) text.append(" Last lap.");
+        else if (remaining > 0) text.append(" ").append(remaining).append(" laps to go.");
 
-        if (playerPos == 1) {
-            // For the leader, report gap to P2 instead of "gap ahead".
-            JsonNode p2 = findCarAtPosition(byPos, 2);
-            if (p2 != null) {
-                long p2Delta = p2.has("deltaToFrontMs") ? p2.get("deltaToFrontMs").asLong() : 0;
-                if (p2Delta > 0) {
-                    String name = p2.has("name") ? p2.get("name").asText() : "the chasing car";
-                    text.append(" ")
-                        .append(EngineerMessageHelpers.formatSecondsPhrase(p2Delta / 1000.0))
-                        .append(" clear of ").append(name).append(".");
-                }
-            }
-        } else {
-            if (gapAheadMs > 0 && aheadName != null) {
-                text.append(" ")
-                    .append(EngineerMessageHelpers.formatSecondsPhrase(gapAheadMs / 1000.0))
-                    .append(" back on ").append(aheadName).append(".");
-            }
-            if (playerPos > 2 && leaderGapKnown && gapToLeaderMs > 0) {
-                text.append(" ")
-                    .append(EngineerMessageHelpers.formatSecondsPhrase(gapToLeaderMs / 1000.0))
-                    .append(" from the lead.");
-            }
+        // Car ahead (skip when leading) then car behind (skip when last). Gap to the
+        // lead is dropped — the immediate battles either side are what matter.
+        if (playerPos > 1 && gapAheadMs > 0 && aheadName != null) {
+            text.append(" ").append(aheadName).append(" ahead at ")
+                .append(EngineerMessageHelpers.formatSecondsPhrase(gapAheadMs / 1000.0)).append(".");
+        }
+        if (gapBehindMs > 0 && behindName != null) {
+            text.append(" ").append(behindName).append(" behind at ")
+                .append(EngineerMessageHelpers.formatSecondsPhrase(gapBehindMs / 1000.0)).append(".");
         }
 
         lastFiredLapByUid.put(tick.sessionUid(), lap);
