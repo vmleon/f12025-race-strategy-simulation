@@ -103,7 +103,7 @@ public class ReadinessController {
                 + "CASE WHEN ss.front_wing_damage_l > 0 OR ss.front_wing_damage_r > 0 "
                 + "  OR ss.rear_wing_damage > 0 OR ss.floor_damage > 0 OR ss.diffuser_damage > 0 "
                 + "  OR ss.sidepod_damage > 0 OR ss.engine_damage > 0 OR ss.gearbox_damage > 0 "
-                + "  THEN 1 ELSE 0 END AS damaged "
+                + "  THEN 1 ELSE 0 END AS damaged, s.session_type AS session_type "
                 + "FROM sector_snapshots ss JOIN sessions s ON s.session_uid = ss.session_uid "
                 + "WHERE s.track_id = ? AND ss.tyre_compound_visual IN (7,8,16,17,18) "
                 + "  AND ss.sector_number IN (0,1,2)",
@@ -112,7 +112,7 @@ public class ReadinessController {
                         rs.getInt("SC"), rs.getInt("INVALID"), rs.getInt("CUT"),
                         rs.getInt("LAP"), rs.getInt("OUTLIER"),
                         rs.getObject("TIME_MS") == null ? null : rs.getLong("TIME_MS"),
-                        rs.getInt("DAMAGED") == 1),
+                        rs.getInt("DAMAGED") == 1, rs.getInt("SESSION_TYPE")),
                 trackId);
     }
 

@@ -28,7 +28,14 @@ public final class ReadinessCalculator {
     public record SectorRow(
             int compound, int sector, int pitStatus, int safetyCarStatus,
             int lapInvalid, int cornerCuttingWarnings, int lapNumber, int outlier,
-            Long sectorTimeMs, boolean damaged) {}
+            Long sectorTimeMs, boolean damaged, int sessionType) {}
+
+    /** Race session types (F1 25: 10-12 and 15-17). Used to scope the standing-start
+     * exclusion — in launch sessions (FP/Qualy) lap 1 / sector 0 is a clean flying
+     * sector, not a standing start. */
+    private static boolean isRaceType(int sessionType) {
+        return (sessionType >= 10 && sessionType <= 12) || (sessionType >= 15 && sessionType <= 17);
+    }
 
     public record Reasons(int outlier, int invalid, int cornerCut, int pit,
                           int safetyCar, int damage, int standingStart) {}
@@ -57,7 +64,7 @@ public final class ReadinessCalculator {
         if (r.lapInvalid() != 0) return Reason.INVALID;
         if (r.cornerCuttingWarnings() != 0) return Reason.CORNER_CUT;
         if (r.damaged()) return Reason.DAMAGE;
-        if (r.lapNumber() == 1 && r.sector() == 0) return Reason.STANDING_START;
+        if (r.lapNumber() == 1 && r.sector() == 0 && isRaceType(r.sessionType())) return Reason.STANDING_START;
         if (r.outlier() != 0) return Reason.OUTLIER;
         if (r.sectorTimeMs() == null || r.sectorTimeMs() <= 0) return Reason.INVALID;
         return Reason.GOOD;

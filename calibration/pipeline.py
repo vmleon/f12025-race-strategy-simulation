@@ -240,7 +240,8 @@ _SELECT_SECTOR_BASELINE_DATA = """
       AND ss.safety_car_status = 0
       AND ss.outlier = 0
       AND ss.sector_time_ms > 0
-      AND NOT (ss.lap_number = 1 AND ss.sector_number = 0)
+      AND NOT (ss.lap_number = 1 AND ss.sector_number = 0
+               AND ss.session_type IN (10, 11, 12, 15, 16, 17))
       AND ss.session_type NOT IN (5, 6, 7, 8, 9)
 """
 

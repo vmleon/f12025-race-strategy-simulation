@@ -15,7 +15,8 @@ class ReadinessCalculatorTest {
 
     private SectorRow row(int compound, int sector, int pit, int sc, int invalid,
                           int cut, int lap, int outlier, Long timeMs, boolean dmg) {
-        return new SectorRow(compound, sector, pit, sc, invalid, cut, lap, outlier, timeMs, dmg);
+        // Default to a race session (15) so the standing-start cases below still apply.
+        return new SectorRow(compound, sector, pit, sc, invalid, cut, lap, outlier, timeMs, dmg, 15);
     }
 
     private SectorRow clean(int compound, int sector) {
@@ -45,6 +46,18 @@ class ReadinessCalculatorTest {
     void standingStartOnlyLap1Sector0() {
         assertEquals(Reason.STANDING_START, ReadinessCalculator.classify(row(16, 0, 0, 0, 0, 0, 1, 0, 30_000L, false)));
         assertEquals(Reason.GOOD, ReadinessCalculator.classify(row(16, 1, 0, 0, 0, 0, 1, 0, 30_000L, false)));
+    }
+
+    @Test
+    void standingStartOnlyInRaceSessions() {
+        // Launch sessions (FP/Qualy): lap 1 / sector 0 is a clean warmed-up sector.
+        SectorRow practice = new SectorRow(16, 0, 0, 0, 0, 0, 1, 0, 30_000L, false, 1);
+        assertEquals(Reason.GOOD, ReadinessCalculator.classify(practice));
+        SectorRow qualy = new SectorRow(16, 0, 0, 0, 0, 0, 1, 0, 30_000L, false, 9);
+        assertEquals(Reason.GOOD, ReadinessCalculator.classify(qualy));
+        // Race: it's the standing start.
+        SectorRow race = new SectorRow(16, 0, 0, 0, 0, 0, 1, 0, 30_000L, false, 15);
+        assertEquals(Reason.STANDING_START, ReadinessCalculator.classify(race));
     }
 
     @Test
