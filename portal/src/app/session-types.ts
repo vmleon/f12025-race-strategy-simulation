@@ -13,6 +13,12 @@ const SESSION_TYPES: Record<number, string> = {
   11: 'Race 2',
   12: 'Race 3',
   13: 'Time Trial',
+  // F1 25 emits the 14-17 band too (15 = Race confirmed empirically). The bundled
+  // appendix only documents 0-13; keep in sync with backend SessionKind.
+  14: 'Sprint Qualifying',
+  15: 'Race',
+  16: 'Race 2',
+  17: 'Race 3',
 };
 
 export function sessionTypeName(code: number): string {

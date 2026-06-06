@@ -39,7 +39,7 @@ public class SessionCatchUp implements ApplicationRunner {
                 String uid = String.valueOf(row.get("SESSION_UID"));
                 int trackId = ((Number) row.get("TRACK_ID")).intValue();
                 int sessionType = ((Number) row.get("SESSION_TYPE")).intValue();
-                sessionStateHolder.onSessionStarted(uid, trackId);
+                sessionStateHolder.onSessionStarted(uid, trackId, sessionType);
                 raceEngineerService.onSessionStarted(uid, trackId, sessionType, 0, 0);
                 System.out.println("Session catch-up: restored active session uid=" + uid);
             } else {

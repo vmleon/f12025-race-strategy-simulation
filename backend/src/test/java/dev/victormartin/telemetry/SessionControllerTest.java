@@ -45,8 +45,8 @@ class SessionControllerTest {
     void activeReturnsEnrichedSessions() throws Exception {
         when(sessionStateHolder.getActiveSessions())
                 .thenReturn(List.of(
-                        new SessionStateHolder.SessionInfo("abc123", 5),
-                        new SessionStateHolder.SessionInfo("def456", 3)));
+                        new SessionStateHolder.SessionInfo("abc123", 5, 0),
+                        new SessionStateHolder.SessionInfo("def456", 3, 0)));
 
         when(jdbc.queryForObject(contains("session_type"), eq(Integer.class), eq("abc123")))
                 .thenReturn(10);
@@ -72,8 +72,8 @@ class SessionControllerTest {
         long now = System.currentTimeMillis();
         when(sessionStateHolder.getActiveSessions())
                 .thenReturn(List.of(
-                        new SessionStateHolder.SessionInfo("stale1", 5, now - 60_000),
-                        new SessionStateHolder.SessionInfo("live1", 3, now)));
+                        new SessionStateHolder.SessionInfo("stale1", 5, 0, now - 60_000),
+                        new SessionStateHolder.SessionInfo("live1", 3, 0, now)));
 
         mockMvc.perform(get("/api/sessions/active"))
                 .andExpect(status().isOk())
@@ -87,7 +87,7 @@ class SessionControllerTest {
     @Test
     void activeReturnsFallbackWhenDbUnavailable() throws Exception {
         when(sessionStateHolder.getActiveSessions())
-                .thenReturn(List.of(new SessionStateHolder.SessionInfo("abc123", 5)));
+                .thenReturn(List.of(new SessionStateHolder.SessionInfo("abc123", 5, 0)));
 
         when(jdbc.queryForObject(contains("session_type"), eq(Integer.class), eq("abc123")))
                 .thenThrow(new org.springframework.dao.EmptyResultDataAccessException(1));
@@ -111,7 +111,7 @@ class SessionControllerTest {
     @Test
     void activeStateReturns404WhenNoStateYet() throws Exception {
         when(sessionStateHolder.getActiveSessions())
-                .thenReturn(List.of(new SessionStateHolder.SessionInfo("abc123", 5)));
+                .thenReturn(List.of(new SessionStateHolder.SessionInfo("abc123", 5, 0)));
         when(raceWebSocketHandler.getLatestState()).thenReturn(null);
 
         mockMvc.perform(get("/api/sessions/active/state"))
@@ -121,7 +121,7 @@ class SessionControllerTest {
     @Test
     void activeStateReturnsLatestState() throws Exception {
         when(sessionStateHolder.getActiveSessions())
-                .thenReturn(List.of(new SessionStateHolder.SessionInfo("abc123", 5)));
+                .thenReturn(List.of(new SessionStateHolder.SessionInfo("abc123", 5, 0)));
         when(raceWebSocketHandler.getLatestState()).thenReturn("{\"cars\":[]}");
 
         mockMvc.perform(get("/api/sessions/active/state"))

@@ -1,5 +1,8 @@
 package dev.victormartin.telemetry;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -9,12 +12,21 @@ class SessionStateHolderTest {
 
     private SessionStateHolder holder;
     private RaceWebSocketHandler handler;
-    private QueueService queueService;
+    private CapturingQueueService queueService;
+
+    /** Captures enqueued queue names so we can assert the calibration gate. */
+    static class CapturingQueueService extends QueueService {
+        final List<String> enqueuedQueues = new ArrayList<>();
+        CapturingQueueService() { super(null); }
+        @Override public void enqueue(String queueName, String jsonPayload) {
+            enqueuedQueues.add(queueName);
+        }
+    }
 
     @BeforeEach
     void setUp() {
         handler = new RaceWebSocketHandler();
-        queueService = new QueueService(null);
+        queueService = new CapturingQueueService();
         holder = new SessionStateHolder(handler, queueService);
     }
 
@@ -26,7 +38,7 @@ class SessionStateHolderTest {
 
     @Test
     void sessionStartedAddsToActiveSessions() {
-        holder.onSessionStarted("abc123", 5);
+        holder.onSessionStarted("abc123", 5, 1);
 
         var sessions = holder.getActiveSessions();
         assertEquals(1, sessions.size());
@@ -37,7 +49,7 @@ class SessionStateHolderTest {
 
     @Test
     void sessionEndedRemovesFromActiveSessions() {
-        holder.onSessionStarted("abc123", 5);
+        holder.onSessionStarted("abc123", 5, 1);
         holder.onSessionEnded("abc123");
 
         assertTrue(holder.getActiveSessions().isEmpty());
@@ -46,8 +58,8 @@ class SessionStateHolderTest {
 
     @Test
     void multipleConcurrentSessions() {
-        holder.onSessionStarted("session1", 1);
-        holder.onSessionStarted("session2", 3);
+        holder.onSessionStarted("session1", 1, 1);
+        holder.onSessionStarted("session2", 3, 5);
 
         var sessions = holder.getActiveSessions();
         assertEquals(2, sessions.size());
@@ -57,8 +69,8 @@ class SessionStateHolderTest {
 
     @Test
     void endingOneSessionKeepsOthers() {
-        holder.onSessionStarted("session1", 1);
-        holder.onSessionStarted("session2", 3);
+        holder.onSessionStarted("session1", 1, 1);
+        holder.onSessionStarted("session2", 3, 5);
         holder.onSessionEnded("session1");
 
         var sessions = holder.getActiveSessions();
@@ -66,5 +78,23 @@ class SessionStateHolderTest {
         assertEquals("session2", sessions.getFirst().sessionUid());
         assertFalse(holder.isSessionActive("session1"));
         assertTrue(holder.isSessionActive("session2"));
+    }
+
+    @Test
+    void practiceSessionEndEnqueuesCalibration() {
+        holder.onSessionStarted("fp1", 4, 1); // sessionType 1 = Practice 1
+        holder.onSessionEnded("fp1");
+        assertTrue(queueService.enqueuedQueues.contains("PDBADMIN.CALIBRATION_REQUEST"));
+    }
+
+    @Test
+    void nonPracticeSessionEndDoesNotCalibrate() {
+        holder.onSessionStarted("race1", 4, 15); // sessionType 15 = Race
+        holder.onSessionEnded("race1");
+        assertFalse(queueService.enqueuedQueues.contains("PDBADMIN.CALIBRATION_REQUEST"));
+
+        holder.onSessionStarted("q1", 4, 9); // One-Shot Qualifying
+        holder.onSessionEnded("q1");
+        assertFalse(queueService.enqueuedQueues.contains("PDBADMIN.CALIBRATION_REQUEST"));
     }
 }

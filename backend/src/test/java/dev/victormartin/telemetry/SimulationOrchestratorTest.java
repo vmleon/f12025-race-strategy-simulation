@@ -42,8 +42,13 @@ class SimulationOrchestratorTest {
     }
 
     private String buildStateJson(int leaderLap, int safetyCarStatus, int car0PitStatus) {
+        return buildStateJson(leaderLap, safetyCarStatus, car0PitStatus, 15); // 15 = Race
+    }
+
+    private String buildStateJson(int leaderLap, int safetyCarStatus, int car0PitStatus,
+                                  int sessionType) {
         return """
-                {"type":"state","trackId":3,"totalLaps":50,"weather":0,"trackTemp":32,"airTemp":24,
+                {"type":"state","trackId":3,"totalLaps":50,"sessionType":%d,"weather":0,"trackTemp":32,"airTemp":24,
                  "safetyCarStatus":%d,"cars":[
                    {"idx":0,"pos":1,"lap":%d,"sector":0,"lastSectorMs":[28000,33000,0],
                     "tyre":"M","tyreAge":7,"pitStatus":%d,"fuel":40.0,"pits":0,
@@ -51,7 +56,7 @@ class SimulationOrchestratorTest {
                    {"idx":1,"pos":2,"lap":%d,"sector":1,"lastSectorMs":[28100,33100,0],
                     "tyre":"S","tyreAge":7,"pitStatus":0,"fuel":38.0,"pits":0,
                     "fwDmg":0,"flDmg":0,"engDmg":0,"name":"AI Driver","ai":true,"resultStatus":2}
-                ]}""".formatted(safetyCarStatus, leaderLap, car0PitStatus, leaderLap);
+                ]}""".formatted(sessionType, safetyCarStatus, leaderLap, car0PitStatus, leaderLap);
     }
 
     @Test
@@ -88,6 +93,16 @@ class SimulationOrchestratorTest {
 
         JsonNode state2 = objectMapper.readTree(buildStateJson(5, 0, 0));
         assertFalse(orchestrator.detectTrigger(state2), "Same state should not trigger");
+    }
+
+    @Test
+    void noTriggerOutsideRace() throws Exception {
+        // Qualifying (sessionType 9) must never trigger a simulation, even on a lap
+        // increase / pit / safety car — only the race produces actionable strategy.
+        JsonNode q1 = objectMapper.readTree(buildStateJson(5, 0, 0, 9));
+        orchestrator.detectTrigger(q1); // baseline
+        JsonNode q2 = objectMapper.readTree(buildStateJson(6, 1, 1, 9));
+        assertFalse(orchestrator.detectTrigger(q2), "Qualy must not trigger a simulation");
     }
 
     @Test

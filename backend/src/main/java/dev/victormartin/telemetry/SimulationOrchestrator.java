@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import dev.victormartin.telemetry.engineer.SessionKind;
 import dev.victormartin.telemetry.simulation.SectorHistoryLookup;
 import dev.victormartin.telemetry.simulation.SectorBaselineLookup;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
@@ -94,8 +95,10 @@ public class SimulationOrchestrator {
 
             switch (event) {
                 case "SCAR", "RTMT", "COLL" -> {
-                    log.info("SimulationOrchestrator: disruptive event {}", event);
-                    scheduleDebouncedRun();
+                    if (isRace(latestState)) {
+                        log.info("SimulationOrchestrator: disruptive event {}", event);
+                        scheduleDebouncedRun();
+                    }
                 }
             }
         } catch (Exception e) {
@@ -150,7 +153,16 @@ public class SimulationOrchestrator {
 
     // ── trigger detection ─────────────────────────────────────────────
 
+    /** Only the race produces actionable pit strategy — FP/Qualy have nothing to
+     * simulate. Gate via the shared SessionKind classifier (race = 10-12 or 15-17). */
+    private static boolean isRace(JsonNode state) {
+        if (state == null) return false;
+        int sessionType = state.has("sessionType") ? state.get("sessionType").asInt() : 0;
+        return SessionKind.fromSessionType(sessionType) == SessionKind.RACE;
+    }
+
     boolean detectTrigger(JsonNode state) {
+        if (!isRace(state)) return false;
         boolean triggered = false;
 
         // 1. Lap completion: leader's lap number increased

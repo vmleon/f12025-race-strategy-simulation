@@ -55,7 +55,13 @@ public final class GameMappings {
             Map.entry(10, "Race"),
             Map.entry(11, "Race 2"),
             Map.entry(12, "Race 3"),
-            Map.entry(13, "Time Trial")
+            Map.entry(13, "Time Trial"),
+            // F1 25 emits the 14-17 band too (15 = Race confirmed empirically; see
+            // SessionKind). The bundled appendix only documents 0-13.
+            Map.entry(14, "Sprint Qualifying"),
+            Map.entry(15, "Race"),
+            Map.entry(16, "Race 2"),
+            Map.entry(17, "Race 3")
     );
 
     private GameMappings() {}
