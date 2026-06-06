@@ -25,7 +25,7 @@ def _apply_session_context(payload: dict) -> object:
     return session_uid.set(uid)
 
 
-def _run_calibration(conn: oracledb.Connection, track_id: object) -> None:
+def run_calibration(conn: oracledb.Connection, track_id: object) -> None:
     """Run the pipeline for one request in a single transaction.
 
     Commits once on success; rolls back on any failure so a half-finished fit is
@@ -62,7 +62,7 @@ def run_worker(pool: oracledb.ConnectionPool, shutdown_event: threading.Event):
                     trigger = request.get("trigger", "unknown")
                     logger.info("Processing calibration request for track %s (trigger: %s)", track_id, trigger)
 
-                    _run_calibration(conn, track_id)
+                    run_calibration(conn, track_id)
                     logger.info("Calibration complete for track %s", track_id)
                 finally:
                     session_uid.reset(token)

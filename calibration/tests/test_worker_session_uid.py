@@ -2,7 +2,7 @@ import pytest
 
 from calibration import worker
 from calibration.log_config import session_uid
-from calibration.worker import _apply_session_context, _run_calibration
+from calibration.worker import _apply_session_context, run_calibration
 
 
 class _FakeConn:
@@ -21,7 +21,7 @@ class _FakeConn:
 def test_run_calibration_commits_on_success(monkeypatch):
     monkeypatch.setattr(worker, "run", lambda conn, track_id: None)
     conn = _FakeConn()
-    _run_calibration(conn, 4)
+    run_calibration(conn, 4)
     assert conn.autocommit is False
     assert conn.committed is True
     assert conn.rolled_back is False
@@ -34,7 +34,7 @@ def test_run_calibration_rolls_back_on_failure(monkeypatch):
     monkeypatch.setattr(worker, "run", boom)
     conn = _FakeConn()
     with pytest.raises(RuntimeError):
-        _run_calibration(conn, 4)
+        run_calibration(conn, 4)
     assert conn.rolled_back is True
     assert conn.committed is False
 
