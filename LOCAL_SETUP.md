@@ -5,10 +5,46 @@
 - Java 23+ (telemetry and backend)
 - Node 22+ (portal)
 - Python 3.12+ (manage.py, simulator, calibration)
-- Podman (database container)
+- Podman (database container + compose stack)
 - Liquibase CLI (database migrations)
 
-## Database (Oracle in Podman)
+## Quick start (everything in one go)
+
+From a clean clone, get the whole system up with the Oracle DB first, then the compose stack.
+
+```bash
+python -m venv venv                  # one-time: create virtualenv at project root
+source venv/bin/activate             # Windows: venv\Scripts\activate
+pip install -r requirements.txt      # installs manage.py + podman-compose
+```
+
+```bash
+python manage.py local setup         # Oracle container + Liquibase + generated configs + Java build (~5-6 min)
+podman compose up --build -d         # build + start telemetry, backend, simulator, calibration, portal
+```
+
+Check endpoints and container status:
+
+```bash
+python manage.py info                # consolidated endpoints + game setup info
+podman compose ps                    # container status
+podman compose logs -f <service>     # follow one service's log (e.g. backend)
+```
+
+Portal is at http://localhost:4200.
+
+### Clean up
+
+```bash
+podman compose down                  # stop and remove the 5 service containers
+python manage.py local clean         # stop Oracle + remove container + clear password from .env
+```
+
+## Running services one by one (manual)
+
+When iterating on a single service it's often faster to run it directly on the host than rebuild the container. Start Oracle first, then run each service in its own terminal.
+
+### Database (Oracle in Podman)
 
 ```bash
 pip install -r requirements.txt
@@ -26,7 +62,7 @@ python manage.py local status   # check it's running
 python manage.py local clean    # tear down
 ```
 
-## Telemetry (Plain Java UDP)
+### Telemetry (Plain Java UDP)
 
 **Native:**
 
@@ -55,7 +91,7 @@ podman build -f Containerfile -t f1strategy-telemetry telemetry/
 podman run --network host f1strategy-telemetry
 ```
 
-## Backend (Spring Boot)
+### Backend (Spring Boot)
 
 **Native:**
 
@@ -80,7 +116,7 @@ podman build -f Containerfile -t f1strategy-backend backend/
 podman run --network host -e F1STRATEGY_DB_PASSWORD=<pw> f1strategy-backend
 ```
 
-## Portal (Angular)
+### Portal (Angular)
 
 **Native:**
 
@@ -99,7 +135,7 @@ podman build -f Containerfile -t f1strategy-portal portal/
 podman run -p 4200:4200 f1strategy-portal
 ```
 
-## Simulator (FastAPI)
+### Simulator (FastAPI)
 
 **Native:**
 
@@ -121,7 +157,7 @@ podman build -f simulator/Containerfile -t f1strategy-simulator .
 podman run --network host f1strategy-simulator
 ```
 
-## Calibration (batch CLI, native only)
+### Calibration (batch CLI, native only)
 
 ```bash
 python -m calibration run <trackId>          # run calibration pipeline
