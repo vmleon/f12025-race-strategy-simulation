@@ -880,6 +880,22 @@ export class RaceComponent implements OnInit, OnDestroy {
   }
 
   private onMessage(msg: RaceMessage) {
+    // Live-follow: a session-defining message (state / sessionStarted) for a
+    // different session than the one selected means the game has moved on (e.g.
+    // Qualy -> Race). Adopt it immediately and reset, instead of dropping it.
+    // Only the live game streams state, so its sessionUid is unambiguous — this
+    // sidesteps the active-sessions poll lagging, a missed sessionStarted across a
+    // WebSocket reconnect, and a lingering/orphaned previous session keeping the
+    // old selection pinned (which froze the live view on stale qualy data).
+    if (
+      msg.sessionUid &&
+      msg.sessionUid !== this.selectedSessionUid() &&
+      (msg.type === 'state' || msg.type === 'sessionStarted')
+    ) {
+      this.selectedSessionUid.set(msg.sessionUid);
+      this.resetState();
+    }
+
     if (
       msg.sessionUid &&
       this.selectedSessionUid() &&
