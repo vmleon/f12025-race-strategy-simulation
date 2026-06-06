@@ -54,7 +54,7 @@ The chapters are ordered to build understanding progressively:
 | ------- | ----------------------------- | ----------------------------------------------------------------------------------- |
 | 2       | `02-F1.md`                    | The data source: F1 25 UDP packet format, event codes, byte layouts                 |
 | 3       | `03-MONTECARLO.md`            | The simulation model: what data is needed, how iterations work, strategy evaluation |
-| 4       | `04-DATABASE_DESIGN.md`       | Schema design: 9 tables, denormalization rationale, indexes, query patterns         |
+| 4       | `04-DATABASE_DESIGN.md`       | Schema design: 10 tables, denormalization rationale, indexes, query patterns        |
 | 5       | `05-CALIBRATION.md`           | Model fitting: lap time model, fitted knobs, outlier detection, fitting methodology |
 | 6       | `06-INTEGRATION.md`           | System architecture: how components connect, protocols, portal and iOS client       |
 | 7       | `07-ARCHITECTURE_ANALYSIS.md` | Technical decisions: Spring Boot vs plain Java, JDBC vs ORM, Gradle structure       |

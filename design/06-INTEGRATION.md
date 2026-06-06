@@ -174,7 +174,7 @@ simulation and strategy evaluation.
   don't trigger calibration. `TelemetryTcpServer` also publishes start/end to `SESSION_LIFECYCLE`
   (multi-consumer) for future consumers.
 - **Queues:** `CALIBRATION_REQUEST` (in).
-- **Path:** Backend → **`CALIBRATION_REQUEST`** → Calibration service (`python -m calibration service`)
+- **Path:** Backend → **`CALIBRATION_REQUEST`** → Calibration service (`python -m calibration`)
   → reads `sector_snapshots` → fits → writes `calibration_coefficients` → WebSocket
   `calibrationComplete` / `calibrationFailed`.
 - **Scope:** recalibrates all knobs for the just-finished track, both PLAYER and AI regimes;

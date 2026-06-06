@@ -8,14 +8,14 @@ A proof-of-concept system that ingests real-time telemetry from the F1 2025 game
 graph LR
     Game["F1 2025 Game<br/><i>UDP @ 20777</i>"]
     Ingest["Telemetry Server<br/><i>Plain Java 23</i>"]
-    DB[("Oracle AI DB 26ai<br/><i>9 tables + TxEventQ</i>")]
+    DB[("Oracle AI DB 26ai<br/><i>10 tables + TxEventQ</i>")]
     Backend["Backend API<br/><i>Spring Boot 3.5.3</i>"]
     Calibration["Calibration<br/><i>Python service worker</i>"]
     Simulator["Simulator<br/><i>FastAPI, port 8081</i>"]
     Portal["Web Portal<br/><i>Angular 21</i>"]
     Client["iOS Client<br/><i>SwiftUI</i>"]
 
-    Game -- "UDP packets<br/>~100 Hz" --> Ingest
+    Game -- "UDP packets<br/>~20 Hz" --> Ingest
     Ingest -- "sector snapshots<br/>events, sessions" --> DB
     Ingest -- "TCP push<br/>port 9090" --> Backend
     DB -- "historical data" --> Ingest
@@ -30,7 +30,7 @@ graph LR
 
 The system operates as five connected pipelines:
 
-**1. Ingestion** — The telemetry server listens for UDP packets from the F1 2025 game (~80–100 packets/sec). It maintains an in-memory snapshot of all 20 cars and writes to the database only on **sector transitions** (3 per lap × 20 cars ≈ 60 rows/lap). Discrete events (safety car, penalties, retirements, collisions) are captured immediately. Live race state is pushed to the backend via **TCP (port 9090)** at ~1 Hz.
+**1. Ingestion** — The telemetry server listens for UDP packets from the F1 2025 game (20 Hz send rate, ~80–100 packets/sec across all packet types). It maintains an in-memory snapshot of all 20 cars and writes to the database only on **sector transitions** (3 per lap × 20 cars ≈ 60 rows/lap). Discrete events (safety car, penalties, retirements, collisions) are captured immediately. Live race state is pushed to the backend via **TCP (port 9090)** at ~1 Hz.
 
 **2. Calibration** — After a **Free Practice** session ends (Qualifying and Race are excluded — push-mode and traffic/fuel-saving pace are contaminated baselines), the backend enqueues a calibration request via **Oracle TxEventQ**. A Python service worker (`calibration/`) reads all accumulated sector snapshots for the track and fits per-sector pace baselines plus the model knobs: tyre degradation (per compound), tyre wear-rate (per compound), fuel effect, and pit-stop duration. Coefficients are fitted **separately for Player and AI cars** because the game uses different physics models for each.
 
@@ -101,7 +101,7 @@ graph TD
 | `calibration/` | Always-on worker: consumes `CALIBRATION_REQUEST` from TxEventQ, runs outlier detection + sklearn/numpy fitting of physics model coefficients per track | Python 3.12+, sklearn, numpy            |
 | `simulator/`   | Monte Carlo race strategy simulation service, consumes TxEventQ requests                                                                               | Python 3.12+, FastAPI                   |
 | `portal/`      | Web UI: live Race dashboard (table, tyres, weather, damage, penalties, strategy widget) + System (WIP) placeholder                                     | Angular 21                              |
-| `database/`    | Oracle AI Database 26ai schema (9 tables + TxEventQ queues), Liquibase migrations                                                                      | Liquibase, SQL                          |
+| `database/`    | Oracle AI Database 26ai schema (10 tables + TxEventQ queues), Liquibase migrations                                                                     | Liquibase, SQL                          |
 | `client/`      | iOS app: real-time race engineer voice assistant for the driver                                                                                        | SwiftUI, WebSocket, AVSpeechSynthesizer |
 
 ### Key Design Choices

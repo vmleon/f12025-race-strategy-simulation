@@ -23,7 +23,7 @@ sequenceDiagram
     participant Telemetry as Telemetry (TCP)
     participant Backend as Backend (Spring Boot)
     participant Q as CALIBRATION_REQUEST queue
-    participant Service as Calibration Service<br/>(python -m calibration service)
+    participant Service as Calibration Service<br/>(python -m calibration)
     participant DB as Oracle DB
 
     Telemetry->>Backend: TCP {"type":"sessionEnded"}
@@ -189,9 +189,11 @@ Within a single stint, `fuelInTank` and `tyresAgeLaps` are almost perfectly line
 
 **Why this matters for strategy:** The simulation uses tyre degradation coefficients to evaluate pit stop timing ("pit now or push 5 more laps?"). If the tyre deg curve includes hidden fuel effects, the model thinks old tyres are slower than they actually are — because it attributes fuel-related slowness to tyre age — making strategy predictions unreliable.
 
-**Chosen approach: fuel burn rate subtraction.** Measure the fuel consumption rate from `fuelInTank` deltas between consecutive laps. Since F1 25 appears to enforce a near-constant burn rate, subtract the estimated fuel effect analytically, then fit tyre degradation on the residual. A two-stage process: (1) measure burn rate, (2) compute expected fuel penalty per lap, (3) subtract from sector times, (4) fit tyre deg on the residual. This approach requires the least data and can be applied within individual stints.
+**As built: direct regression, fuel not subtracted.** The implemented `_fit_tyre_degradation` (`pipeline.py`) does a **plain linear regression** of `sector_time_ms` against `tyre_age_laps`, grouped by compound and sector — with **no fuel pre-correction**. Fuel is fitted separately as its own knob (Knob 3, `_fit_fuel_effect`), but that fuel coefficient is **not** used to pre-correct the degradation data. As a consequence the fitted deg slope **conflates** the (small) fuel-burn change that occurs over a stint with the genuine tyre-age effect. This is a **known PoC limitation**: it slightly overstates how much old tyres slow the car, because some fuel-related slowness is attributed to tyre age.
 
-Two alternatives were considered. **Cross-stint comparison** — comparing sector times at the same tyre age but different fuel loads across stints — isolates the variables cleanly but requires enough sessions with varied pit strategies to have comparable data points; it serves as a validation method once data accumulates. **Pit stop resets** — comparing pre/post pit sector times where tyre age resets to 0 but fuel stays constant (no refueling in F1 25) — also isolates the factors but depends on having enough pit stop events with similar conditions.
+**Considered refinement (roadmap, not applied): fuel burn rate subtraction.** Measure the fuel consumption rate from `fuelInTank` deltas between consecutive laps. Since F1 25 appears to enforce a near-constant burn rate, the estimated fuel effect could be subtracted analytically before fitting tyre degradation on the residual — a two-stage process: (1) measure burn rate, (2) compute expected fuel penalty per lap, (3) subtract from sector times, (4) fit tyre deg on the residual. This would require the least data and can be applied within individual stints, but it is **not currently implemented**.
+
+Two further alternatives were considered. **Cross-stint comparison** — comparing sector times at the same tyre age but different fuel loads across stints — isolates the variables cleanly but requires enough sessions with varied pit strategies to have comparable data points; it serves as a validation method once data accumulates. **Pit stop resets** — comparing pre/post pit sector times where tyre age resets to 0 but fuel stays constant (no refueling in F1 25) — also isolates the factors but depends on having enough pit stop events with similar conditions.
 
 ### 3. Fuel Effect (per track)
 
@@ -492,7 +494,7 @@ This can be a table in Oracle alongside the telemetry data, or a separate config
 
 ## Implementation: Standalone Python Service
 
-Calibration is implemented as a standalone Python service (`python -m calibration service`), a long-running worker that consumes `CALIBRATION_REQUEST` messages from Oracle TxEventQ — mirroring the simulator's architecture (see `06-INTEGRATION.md` Flow 4). The backend only enqueues; the service dequeues and processes in-process. A one-off CLI mode (`python -m calibration run <trackId>`) is also available for manual runs. The pipeline reads from and writes to the same Oracle schema used by telemetry and simulation.
+Calibration is implemented as a standalone Python service (`python -m calibration`, no arguments), a long-running worker that consumes `CALIBRATION_REQUEST` messages from Oracle TxEventQ — mirroring the simulator's architecture (see `06-INTEGRATION.md` Flow 4). The backend only enqueues; the service dequeues and processes in-process. A one-off CLI mode (`python -m calibration run <trackId>`) is also available for manual runs. The pipeline reads from and writes to the same Oracle schema used by telemetry and simulation.
 
 ### Pipeline Architecture
 

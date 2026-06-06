@@ -2,7 +2,7 @@
 
 ## Overview
 
-Seven tables: six mapping 1:1 to the data categories defined in `03-MONTECARLO.md` (session metadata, participants, per-sector snapshots, events, tyre sets inventory, final classifications), and a `calibration_coefficients` table for fitted model values from `05-CALIBRATION.md`. Stints are derivable from sector data. Weather transitions are visible in per-sector snapshots.
+Ten tables. Six map 1:1 to the data categories defined in `03-MONTECARLO.md` (session metadata, participants, per-sector snapshots, events, tyre sets inventory, final classifications); a `calibration_coefficients` table holds fitted model values from `05-CALIBRATION.md`; `radio_messages` records race-engineer messages sent to the driver (changelog `008`); `simulation_runs` tracks Monte Carlo simulation jobs (changelog `010`); and `sector_pace_baselines` holds bucketed per-sector pace lookups (changelog `011`). Two earlier tables — `lap_pace_observations` (changelog `006`) and `lap_pace_baselines` (changelog `007`) — were superseded by the sector-level `sector_pace_baselines` and dropped in changelog `012`. Stints are derivable from sector data. Weather transitions are visible in per-sector snapshots.
 
 In addition to tables, the schema includes six Oracle TxEventQ queues for asynchronous inter-component messaging: `SESSION_LIFECYCLE` (multi-consumer), `CALIBRATION_REQUEST`, `SIMULATION_REQUEST`, `SIMULATION_RESULT`, `STRATEGY_REQUEST`, and `STRATEGY_RESULT` (all single-consumer). Queue definitions are managed via Liquibase (`005-txeventq.yaml`). See `06-INTEGRATION.md` for queue usage and data flow.
 
@@ -63,7 +63,7 @@ Tempting — the most common analytical pattern is "all data for track X." But `
 
 The calibration pipeline applies hard filters (invalid laps, pit laps, safety car, lap 1) but these miss **performance anomalies** — lock-ups, spins, and traffic incidents that produce valid but statistically unusual sector times. An `outlier NUMBER(1) DEFAULT 0` column marks these rows so calibration excludes them (`AND outlier = 0`) while driver feedback views retain them with the flag highlighted.
 
-The flag is recomputed each calibration run via per-driver IQR analysis (see `05-CALIBRATION.md` — Outlier Detection). It is not set during ingestion — the ingestion pipeline writes `outlier = 0` (the default) and calibration updates it in batch.
+The flag is recomputed each calibration run via per-regime IQR analysis (see `05-CALIBRATION.md` — Outlier Detection). It is not set during ingestion — the ingestion pipeline writes `outlier = 0` (the default) and calibration updates it in batch.
 
 ## DDL
 
@@ -246,6 +246,8 @@ CREATE TABLE session_events (
     penalty_seconds  NUMBER(3),               -- for PENA events
     other_car_index  NUMBER(2),               -- for COLL/PENA events (other car involved)
     lap_number       NUMBER(3),               -- lap where the event occurred
+    flashback_frame_id      NUMBER(10),        -- frame restored to (FLBK events)
+    flashback_session_time  NUMBER(10,3),      -- session time restored to (FLBK events)
     created_at       TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
 
     CONSTRAINT pk_session_events PRIMARY KEY (event_id),
@@ -352,6 +354,81 @@ CREATE TABLE calibration_coefficients (
     CONSTRAINT chk_calib_regime CHECK (calibration_regime IN ('PLAYER', 'AI')),
     CONSTRAINT chk_calib_sector CHECK (sector_number IS NULL OR sector_number IN (0, 1, 2)),
     CONSTRAINT chk_calib_default CHECK (is_default IN (0, 1))
+);
+
+-- =============================================================
+-- 8. RADIO_MESSAGES — race-engineer messages sent to the driver
+--    (changelog 008; rendered_text added in 009)
+-- =============================================================
+CREATE SEQUENCE seq_radio_messages START WITH 1 INCREMENT BY 1;
+
+CREATE TABLE radio_messages (
+    message_id       NUMBER(12)    NOT NULL,
+    session_uid      NUMBER(20)    NOT NULL,
+    track_id         NUMBER(3),
+    session_type     NUMBER(2),
+    lap_number       NUMBER(3),
+    total_laps       NUMBER(3),
+    player_position  NUMBER(2),
+    lap_distance_m   NUMBER(10,2),
+    sector           NUMBER(3),
+    pit_state        VARCHAR2(16),
+    tyre_compound    VARCHAR2(16),
+    tyre_age_laps    NUMBER(3),
+    priority         VARCHAR2(16),
+    message_text     VARCHAR2(512),
+    best_strategies  VARCHAR2(4000),
+    rendered_text    VARCHAR2(512),            -- added in changelog 009
+    sent_at          TIMESTAMP     NOT NULL,
+
+    CONSTRAINT pk_radio_messages PRIMARY KEY (message_id),
+    CONSTRAINT fk_radio_session FOREIGN KEY (session_uid)
+        REFERENCES sessions (session_uid)
+);
+
+-- =============================================================
+-- 9. SIMULATION_RUNS — one row per Monte Carlo simulation job
+--    (changelog 010)
+-- =============================================================
+CREATE SEQUENCE seq_simulation_runs START WITH 1 INCREMENT BY 1;
+
+CREATE TABLE simulation_runs (
+    run_id          NUMBER(12)    NOT NULL,
+    job_id          VARCHAR2(16)  NOT NULL,
+    session_uid     NUMBER(20),
+    started_at      TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+    completed_at    TIMESTAMP,
+    duration_ms     NUMBER(10),
+    iterations      NUMBER(8),
+    status          VARCHAR2(12)  NOT NULL,
+
+    CONSTRAINT pk_simulation_runs PRIMARY KEY (run_id),
+    CONSTRAINT uq_simulation_runs_job UNIQUE (job_id)
+);
+
+-- =============================================================
+-- 10. SECTOR_PACE_BASELINES — bucketed per-sector pace lookups
+--     (changelog 011; supersedes the dropped lap_pace_* tables)
+-- =============================================================
+CREATE TABLE sector_pace_baselines (
+    track_id              NUMBER(3)     NOT NULL,
+    sector_number         NUMBER(1)     NOT NULL,
+    compound              NUMBER(2)     NOT NULL,
+    regime                VARCHAR2(8)   NOT NULL,  -- 'PLAYER' or 'AI'
+    fuel_bucket_kg        NUMBER(3)     NOT NULL,
+    weather               NUMBER(2)     NOT NULL,
+    track_temp_bucket_c   NUMBER(3)     NOT NULL,
+    mean_sector_ms        NUMBER(8)     NOT NULL,
+    stddev_sector_ms      NUMBER(8),
+    perfect_sector_ms     NUMBER(8)     NOT NULL,
+    sample_count          NUMBER(6)     NOT NULL,
+    last_fitted_at        TIMESTAMP     NOT NULL,
+
+    CONSTRAINT pk_sector_pace_baselines
+        PRIMARY KEY (track_id, sector_number, compound, regime, fuel_bucket_kg, weather, track_temp_bucket_c),
+    CONSTRAINT chk_sector_baseline_regime CHECK (regime IN ('PLAYER', 'AI')),
+    CONSTRAINT chk_sector_baseline_compound CHECK (compound IN (7, 8, 16, 17, 18)),
+    CONSTRAINT chk_sector_baseline_sector CHECK (sector_number IN (0, 1, 2))
 );
 
 -- =============================================================

@@ -60,9 +60,10 @@ After all candidates have been simulated, results are ranked by mean finishing p
 
 Candidate strategies are generated automatically by the Simulator's `candidate_generator` module. Given the current race state (remaining laps, tyre set availability, current compound, pit history), the generator produces plausible strategies:
 
-- **0-stop:** Only if the two-compound rule is already satisfied (at least one prior pit stop with a different compound) and the fitted set's usable life exceeds the remaining laps
+- **0-stop:** Requires the fitted set's usable life to exceed the remaining laps, plus _any one_ of: the two-compound rule is already satisfied (at least one prior pit stop with a different compound), wet conditions waive the rule, or there is no pit window left (a sprint / very short race where no 1-stop slot fits between the minimum first stint of 3 laps and the minimum final stint of 3 laps)
 - **1-stop:** Varies pit lap across the remaining race distance in steps of 2–5 laps (depending on distance). Each available compound is tried. Compounds that are fitted or would violate the two-compound rule are excluded
-- **2-stop:** Only if 15+ laps remain. Cross-product of available compounds for both stops, with lap windows stepped at 5+ lap intervals and a minimum stint length of 5 laps
+- **2-stop:** Only if 15+ laps remain. Cross-product of available compounds for both stops, with lap windows stepped at 5+ lap intervals and a minimum stint length of 3 laps (first/middle and final stints)
+- **Two-compound rule in the wet:** The two-compound-rule pruning applied to 1-stop and 2-stop candidates is waived in wet conditions (`weather` at or above the wet threshold) — when running wet tyres the simulation allows staying on the same compound across stints
 - **Pruning:** Compounds with a lap delta time >5 seconds versus the fitted set are excluded. Total candidates are capped at 50, prioritizing 0/1-stop strategies over 2-stop when truncating
 
 This generation logic lives in the Simulator (`candidate_generator.py`) rather than the Backend, keeping strategy knowledge co-located with the evaluation engine. The Backend's `StrategyOrchestrator` assembles the race snapshot (enriched with tyre set availability from the database) and passes it to the Simulator via the `STRATEGY_REQUEST` queue — see `06-INTEGRATION.md` Flow 6 for the full flow.
