@@ -37,8 +37,11 @@ import {
             <tr class="row" (click)="toggle(c.compound)">
               <td class="exp">{{ expanded.has(c.compound) ? '▾' : '▸' }}</td>
               <td class="name">{{ c.name }}</td>
-              <td class="count">good {{ c.good }} / {{ c.total }}</td>
-              <td class="conf">
+              <td class="ready" [class.on]="c.wearFitted">
+                {{ c.wearFitted ? '✓ cliff' : '— cliff' }}
+              </td>
+              <td class="count secondary">good {{ c.good }} / {{ c.total }}</td>
+              <td class="conf secondary">
                 <span class="bar"><i [style.width.%]="c.confidence * 100"></i></span>
                 {{ c.confidence * 100 | number: '1.0-0' }}%
               </td>
@@ -50,7 +53,7 @@ import {
             </tr>
             <tr class="sectors" *ngIf="expanded.has(c.compound)">
               <td></td>
-              <td colspan="5">
+              <td colspan="6">
                 <span *ngFor="let s of c.sectors" class="sector">
                   S{{ s.sector + 1 }} {{ s.good }}/{{ s.total }}
                   ({{ s.confidence * 100 | number: '1.0-0' }}%)
@@ -80,6 +83,9 @@ import {
       .exp { width: 1rem; color: var(--gray-500, #999); }
       .name { font-weight: 600; }
       .conf { white-space: nowrap; }
+      .ready { font-weight: 600; font-size: 0.8rem; white-space: nowrap; color: var(--gray-500, #999); }
+      .ready.on { color: #4caf50; }
+      .secondary { opacity: 0.55; }
       .bar { display: inline-block; width: 80px; height: 8px; background: #2a2a2a; border-radius: 4px; vertical-align: middle; margin-right: 0.4rem; overflow: hidden; }
       .bar i { display: block; height: 100%; background: #4caf50; }
       .fit span { font-size: 0.7rem; color: #555; margin-right: 0.4rem; }

@@ -26,6 +26,7 @@ export interface CompoundReadiness {
   good: number;
   reasons: ReadinessReasons;
   confidence: number;
+  wearFitted: boolean;
   baselineFitted: boolean;
   degFitted: boolean;
   sectors: SectorReadiness[];

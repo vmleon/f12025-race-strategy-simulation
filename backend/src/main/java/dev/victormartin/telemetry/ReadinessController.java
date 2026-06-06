@@ -34,7 +34,7 @@ public class ReadinessController {
 
     public record CompoundReadinessDto(int compound, String name, int total, int good,
                                        ReadinessCalculator.Reasons reasons, double confidence,
-                                       boolean baselineFitted, boolean degFitted,
+                                       boolean wearFitted, boolean baselineFitted, boolean degFitted,
                                        List<ReadinessCalculator.SectorReadiness> sectors) {}
 
     public record ReadinessResponse(int trackId, String trackName, String calibrationLastRanAt,
@@ -66,6 +66,7 @@ public class ReadinessController {
         List<SectorRow> rows = projectRows(resolved);
         List<CompoundReadiness> base = ReadinessCalculator.aggregate(rows);
 
+        Set<Integer> wearCompounds = wearFittedCompounds(resolved);
         Set<Integer> baselineCompounds = baselineFittedCompounds(resolved);
         Set<Integer> degCompounds = degFittedCompounds(resolved);
         boolean fuelFitted = fuelEffectFitted(resolved);
@@ -77,6 +78,7 @@ public class ReadinessController {
             if (c.total() > 0) withData.add(c.confidence());
             compounds.add(new CompoundReadinessDto(
                     c.compound(), c.name(), c.total(), c.good(), c.reasons(), c.confidence(),
+                    wearCompounds.contains(c.compound()),
                     baselineCompounds.contains(c.compound()), degCompounds.contains(c.compound()),
                     c.sectors()));
         }
@@ -112,6 +114,24 @@ public class ReadinessController {
                         rs.getObject("TIME_MS") == null ? null : rs.getLong("TIME_MS"),
                         rs.getInt("DAMAGED") == 1),
                 trackId);
+    }
+
+    /** Compounds with a calibrated (non-default) wear-rate — the primary readiness
+     * signal: it yields the cliff-based stint cap the simulator depends on. */
+    private Set<Integer> wearFittedCompounds(int trackId) {
+        Set<Integer> out = new HashSet<>();
+        for (String knob : jdbc.queryForList(
+                "SELECT DISTINCT knob_name FROM calibration_coefficients "
+                + "WHERE track_id = ? AND is_default = 0 AND knob_name LIKE 'tyre_wear_rate_%'",
+                String.class, trackId)) {
+            switch (knob) {
+                case "tyre_wear_rate_soft" -> out.add(16);
+                case "tyre_wear_rate_medium" -> out.add(17);
+                case "tyre_wear_rate_hard" -> out.add(18);
+                default -> { }
+            }
+        }
+        return out;
     }
 
     private Set<Integer> baselineFittedCompounds(int trackId) {
