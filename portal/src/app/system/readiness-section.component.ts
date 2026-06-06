@@ -1,5 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Subscription, interval } from 'rxjs';
 import {
   ReadinessService,
   ReadinessResponse,
@@ -97,11 +98,12 @@ import {
     `,
   ],
 })
-export class ReadinessSectionComponent implements OnInit {
+export class ReadinessSectionComponent implements OnInit, OnDestroy {
   tracks: TrackOption[] = [];
   selectedTrackId?: number;
   data?: ReadinessResponse;
   expanded = new Set<number>();
+  private pollSub?: Subscription;
 
   constructor(private svc: ReadinessService) {}
 
@@ -111,6 +113,12 @@ export class ReadinessSectionComponent implements OnInit {
       this.selectedTrackId = ts.length ? ts[0].trackId : undefined;
       this.refresh();
     });
+    // Auto-refresh readiness for the selected track while a session runs.
+    this.pollSub = interval(15_000).subscribe(() => this.refresh());
+  }
+
+  ngOnDestroy(): void {
+    this.pollSub?.unsubscribe();
   }
 
   onTrackChange(ev: Event): void {

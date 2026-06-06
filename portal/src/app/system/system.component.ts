@@ -1,7 +1,8 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BaseChartDirective } from 'ng2-charts';
 import { ChartConfiguration } from 'chart.js';
+import { Subscription, interval } from 'rxjs';
 import {
   SystemService,
   SimulationStats,
@@ -29,6 +30,7 @@ import { ReadinessSectionComponent } from './readiness-section.component';
         <div class="tile"><span>{{ live?.today?.radioMessages ?? 0 }}</span>radio today</div>
       </div>
 
+      <div class="layout">
       <div class="cards">
         <!-- Simulations -->
         <div class="card">
@@ -44,7 +46,10 @@ import { ReadinessSectionComponent } from './readiness-section.component';
         <!-- Simulation status -->
         <div class="card">
           <h3>Run status</h3>
-          <canvas baseChart type="doughnut" [data]="simStatus" [options]="pieOpts"></canvas>
+          <div class="tiles">
+            <div class="tile"><span>{{ completedRuns }}</span>completed</div>
+            <div class="tile"><span>{{ failedRuns }}</span>failed</div>
+          </div>
         </div>
 
         <!-- Radio -->
@@ -74,8 +79,8 @@ import { ReadinessSectionComponent } from './readiness-section.component';
           <canvas baseChart type="line" [data]="calibPerDay" [options]="lineOpts"></canvas>
         </div>
       </div>
-
-      <app-readiness-section></app-readiness-section>
+        <app-readiness-section></app-readiness-section>
+      </div>
     </section>
   `,
   styles: [
@@ -83,7 +88,9 @@ import { ReadinessSectionComponent } from './readiness-section.component';
       .system { padding: 1.5rem; }
       .system__head { display: flex; justify-content: space-between; align-items: center; }
       .live-strip { display: flex; gap: 1.5rem; margin: 1rem 0; padding: 0.75rem 1rem; background: var(--surface, #1b1b1b); border-radius: 8px; }
-      .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; margin-top: 1rem; }
+      .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; margin-top: 1rem; }
+      @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+      .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
       .card { background: var(--surface, #1b1b1b); border-radius: 8px; padding: 1rem; }
       .card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
       .tiles { display: flex; gap: 1rem; margin-bottom: 0.5rem; }
@@ -93,14 +100,19 @@ import { ReadinessSectionComponent } from './readiness-section.component';
     `,
   ],
 })
-export class SystemComponent implements OnInit {
+export class SystemComponent implements OnInit, OnDestroy {
   sim?: SimulationStats;
   radio?: RadioStats;
   calib?: CalibrationStats;
   live?: LiveStats;
 
+  get completedRuns(): number { return this.sim?.byStatus?.['completed'] ?? 0; }
+  get failedRuns(): number { return this.sim?.byStatus?.['failed'] ?? 0; }
+
+  private liveSub?: Subscription;
+  private pollSub?: Subscription;
+
   simPerDay = this.emptyDataset('Simulations');
-  simStatus = this.emptyDataset('Status');
   radioPerDay = this.emptyDataset('Radio');
   radioPriority = this.emptyDataset('Priority');
   radioRendered = this.emptyDataset('Rendered');
@@ -114,14 +126,20 @@ export class SystemComponent implements OnInit {
 
   ngOnInit(): void {
     this.refresh();
-    this.svc.live$().subscribe((l) => (this.live = l));
+    this.liveSub = this.svc.live$().subscribe((l) => (this.live = l));
+    // Auto-refresh the stat cards while a session runs (the live strip polls 5s itself).
+    this.pollSub = interval(15_000).subscribe(() => this.refresh());
+  }
+
+  ngOnDestroy(): void {
+    this.liveSub?.unsubscribe();
+    this.pollSub?.unsubscribe();
   }
 
   refresh(): void {
     this.svc.simulations().subscribe((s) => {
       this.sim = s;
       this.simPerDay = this.fromDayCounts('Simulations', s.perDay);
-      this.simStatus = this.fromRecord(s.byStatus);
     });
     this.svc.radio().subscribe((r) => {
       this.radio = r;
