@@ -263,6 +263,17 @@ public class RaceState {
     /**
      * Serialize the current race state as a JSON line (no trailing newline).
      */
+    /** Current race lap = the leader's lap (car at position 1), or the max lap seen if
+     * there's no clear leader yet. The portal header reads this as "Lap X / Y". */
+    private int currentLap() {
+        int maxLap = 0;
+        for (CarState c : cars) {
+            if (c.position == 1) return c.lap;
+            if (c.lap > maxLap) maxLap = c.lap;
+        }
+        return maxLap;
+    }
+
     public synchronized String toJsonLine() {
         if (!sessionActive) return null;
 
@@ -270,6 +281,7 @@ public class RaceState {
         sb.append("{\"type\":\"state\",\"sessionUid\":\"").append(Long.toHexString(sessionUid))
           .append("\",\"trackId\":").append(trackId)
           .append(",\"totalLaps\":").append(totalLaps)
+          .append(",\"currentLap\":").append(currentLap())
           .append(",\"weather\":").append(weather)
           .append(",\"trackTemp\":").append(trackTemp)
           .append(",\"airTemp\":").append(airTemp)

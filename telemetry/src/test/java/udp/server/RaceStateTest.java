@@ -16,6 +16,7 @@ class RaceStateTest {
 
         // Session-level fields
         assertTrue(json.contains("\"totalLaps\":50"));
+        assertTrue(json.contains("\"currentLap\":"));
         assertTrue(json.contains("\"trackId\":3"));
         assertTrue(json.contains("\"safetyCarStatus\":0"));
 
