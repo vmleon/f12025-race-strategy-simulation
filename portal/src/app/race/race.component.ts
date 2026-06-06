@@ -209,7 +209,7 @@ import { GapIndicatorComponent, GapRow } from './gap-indicator/gap-indicator.com
           />
           <app-tyres-panel [car]="playerCar()" />
           <app-damage-panel [car]="playerCar()" />
-          <app-penalties-panel [car]="playerCar()" [events]="penaltyEvents()" />
+          <app-penalties-panel [car]="playerCar()" [events]="penaltyEvents()" [cars]="cars()" />
         </div>
       </div>
     } @else {

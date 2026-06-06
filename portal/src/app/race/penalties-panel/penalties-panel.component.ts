@@ -61,11 +61,11 @@ const PENALTY_TYPES: Record<number, string> = {
         <div class="event-list">
           @for (ev of events; track $index) {
             <div class="penalty-event">
-              <span class="type">{{ penaltyLabel(ev) }}</span>
+              <span class="type">{{ driverName(ev) }} — {{ penaltyLabel(ev) }}</span>
               <span class="detail"
                 >Lap {{ ev.lap ?? '?' }}
-                @if (ev.time) {
-                  — {{ ev.time }}s
+                @if (penaltyTimeSec(ev) != null) {
+                  — {{ penaltyTimeSec(ev) }}s
                 }
               </span>
             </div>
@@ -134,9 +134,26 @@ const PENALTY_TYPES: Record<number, string> = {
 export class PenaltiesPanelComponent {
   @Input() car: CarSnapshot | null = null;
   @Input() events: RaceMessage[] = [];
+  @Input() cars: CarSnapshot[] = [];
 
   penaltyLabel(ev: RaceMessage): string {
     const pt = ev.penaltyType;
     return pt != null ? (PENALTY_TYPES[pt] ?? `Penalty ${pt}`) : 'Penalty';
+  }
+
+  /** Resolve the event's car index to a driver name so the player can tell whose
+   * penalty/retirement it is (and that it isn't theirs). */
+  driverName(ev: RaceMessage): string {
+    if (ev.carIndex == null) return 'Car';
+    const match = this.cars.find((c) => c.idx === ev.carIndex);
+    return match?.name ?? `Car ${ev.carIndex}`;
+  }
+
+  /** Penalty time in seconds, or null when there's no meaningful value — 255 is the
+   * unset-byte sentinel (0xFF) and retirements carry no penalty time. */
+  penaltyTimeSec(ev: RaceMessage): number | null {
+    const t = ev.time;
+    if (t == null || t <= 0 || t === 255) return null;
+    return t;
   }
 }
