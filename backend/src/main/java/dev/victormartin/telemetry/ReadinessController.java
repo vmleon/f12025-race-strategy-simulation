@@ -192,8 +192,11 @@ public class ReadinessController {
                 + "  OR ss.rear_wing_damage > 0 OR ss.floor_damage > 0 OR ss.diffuser_damage > 0 "
                 + "  OR ss.sidepod_damage > 0 OR ss.engine_damage > 0 OR ss.gearbox_damage > 0 "
                 + "  THEN 1 ELSE 0 END AS damaged, s.session_type AS session_type "
-                + "FROM sector_snapshots ss JOIN sessions s ON s.session_uid = ss.session_uid "
-                + "WHERE s.track_id = ? AND ss.tyre_compound_visual IN (7,8,16,17,18) "
+                + "FROM sector_snapshots ss "
+                + "JOIN sessions s ON s.session_uid = ss.session_uid "
+                + "JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index "
+                + "WHERE s.track_id = ? AND p.ai_controlled = 0 "  // PLAYER only — mirrors the player calibration regime
+                + "  AND ss.tyre_compound_visual IN (7,8,16,17,18) "
                 + "  AND ss.sector_number IN (0,1,2)",
                 (rs, i) -> new SectorRow(
                         rs.getInt("COMPOUND"), rs.getInt("SECTOR"), rs.getInt("PIT"),
@@ -210,7 +213,8 @@ public class ReadinessController {
         Set<Integer> out = new HashSet<>();
         for (String knob : jdbc.queryForList(
                 "SELECT DISTINCT knob_name FROM calibration_coefficients "
-                + "WHERE track_id = ? AND is_default = 0 AND knob_name LIKE 'tyre_wear_rate_%'",
+                + "WHERE track_id = ? AND is_default = 0 AND calibration_regime = 'PLAYER' "
+                + "  AND knob_name LIKE 'tyre_wear_rate_%'",
                 String.class, trackId)) {
             switch (knob) {
                 case "tyre_wear_rate_soft" -> out.add(16);
@@ -224,7 +228,8 @@ public class ReadinessController {
 
     private Set<Integer> baselineFittedCompounds(int trackId) {
         return new HashSet<>(jdbc.queryForList(
-                "SELECT DISTINCT compound FROM sector_pace_baselines WHERE track_id = ?",
+                "SELECT DISTINCT compound FROM sector_pace_baselines "
+                + "WHERE track_id = ? AND regime = 'PLAYER'",
                 Integer.class, trackId));
     }
 
@@ -232,7 +237,8 @@ public class ReadinessController {
         Set<Integer> out = new HashSet<>();
         for (String knob : jdbc.queryForList(
                 "SELECT DISTINCT knob_name FROM calibration_coefficients "
-                + "WHERE track_id = ? AND is_default = 0 AND knob_name LIKE 'tyre_deg_%'",
+                + "WHERE track_id = ? AND is_default = 0 AND calibration_regime = 'PLAYER' "
+                + "  AND knob_name LIKE 'tyre_deg_%'",
                 String.class, trackId)) {
             switch (knob) {
                 case "tyre_deg_soft" -> out.add(16);
@@ -249,7 +255,8 @@ public class ReadinessController {
     private boolean fuelEffectFitted(int trackId) {
         Long n = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM calibration_coefficients "
-                + "WHERE track_id = ? AND knob_name = 'fuel_effect' AND is_default = 0",
+                + "WHERE track_id = ? AND knob_name = 'fuel_effect' AND is_default = 0 "
+                + "  AND calibration_regime = 'PLAYER'",
                 Long.class, trackId);
         return n != null && n > 0;
     }
@@ -257,7 +264,7 @@ public class ReadinessController {
     private String calibrationLastRanAt(int trackId) {
         List<String> ts = jdbc.queryForList(
                 "SELECT TO_CHAR(MAX(last_fitted_at), 'YYYY-MM-DD\"T\"HH24:MI:SS') "
-                + "FROM sector_pace_baselines WHERE track_id = ?",
+                + "FROM sector_pace_baselines WHERE track_id = ? AND regime = 'PLAYER'",
                 String.class, trackId);
         return ts.isEmpty() ? null : ts.get(0);
     }
