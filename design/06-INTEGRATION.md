@@ -107,9 +107,13 @@ state stream over WebSocket.
 - **Kicked off by:** every TCP state frame telemetry pushes (~1 Hz).
 - **Queues:** none — TCP push, then WebSocket broadcast.
 - **Path:** Game → Telemetry → **TCP** → Backend → **WebSocket `/ws/race`** → Portal.
-- **Carried:** current lap, positions, gaps, tyre compound/age, fuel, pit status, damage, weather,
-  `lastLapTimeMs` (used by the portal for sector-3 gap math) — enough to render without the DB.
-  Each message is one JSON object per line with a `type` discriminator and a `version` field
+- **Carried:** a top-level `currentLap` (leader's lap, for the "Lap X / Y" header), positions,
+  gaps, tyre compound/age, fuel, pit status, per-car `cornerCutting` and `lapInvalid`, damage,
+  weather, `lastLapTimeMs` (used by the portal for sector-3 gap math) — enough to render without
+  the DB. The weather `forecast` array carries **only the current session's samples**: the game's
+  forecast array spans multiple session types, each restarting `timeOffset` at 0, which previously
+  looped the `+Nm` labels; filtering to the active session fixes that. Each message is one JSON
+  object per line with a `type` discriminator and a `version` field
   (see §Telemetry ↔ Backend interface).
 
 ```mermaid
@@ -163,8 +167,11 @@ When a session ends, the backend asks the calibration service to re-fit the phys
 coefficients for that track from accumulated lap data. These coefficients feed every later
 simulation and strategy evaluation.
 
-- **Kicked off by:** `sessionEnded` (TCP) → `SessionStateHolder` enqueues `CALIBRATION_REQUEST`
-  via `QueueService`. `TelemetryTcpServer` also publishes start/end to `SESSION_LIFECYCLE`
+- **Kicked off by:** `sessionEnded` (TCP) → `SessionStateHolder.onSessionEnded` enqueues
+  `CALIBRATION_REQUEST` via `QueueService` **only when the ended session is Free Practice**
+  (`SessionKind.fromSessionType` == `PRACTICE`, sessionType 1–4). Qualy ends (push-mode ERS,
+  low fuel) and Race ends (traffic, dirty air, fuel saving) aren't clean baselines, so they
+  don't trigger calibration. `TelemetryTcpServer` also publishes start/end to `SESSION_LIFECYCLE`
   (multi-consumer) for future consumers.
 - **Queues:** `CALIBRATION_REQUEST` (in).
 - **Path:** Backend → **`CALIBRATION_REQUEST`** → Calibration service (`python -m calibration service`)
@@ -172,6 +179,10 @@ simulation and strategy evaluation.
   `calibrationComplete` / `calibrationFailed`.
 - **Scope:** recalibrates all knobs for the just-finished track, both PLAYER and AI regimes;
   seconds at early data volumes, off the main thread.
+- **Session classification (`SessionKind`):** the gates above (and Flow 5's) share one mapping
+  from the F1 25 raw `sessionType`: 1–4 → PRACTICE, 5–9 & 14 → QUALIFYING, 10–12 & 15–17 → RACE,
+  13 → TIME_TRIAL. F1 25's actual Race session reports type **15** (not just 10–12), so the RACE
+  band is deliberately widened to keep race-only triggers from being silenced on sprint weekends.
 
 ```mermaid
 sequenceDiagram
@@ -183,6 +194,7 @@ sequenceDiagram
     participant Portal as Portal
 
     Tele->>BE: TCP {"type":"sessionEnded"}
+    Note over BE: Gate: only Free Practice<br/>(SessionKind PRACTICE, type 1-4)
     BE->>Q: Enqueue {sessionUid, trackId}
     Q->>Cal: Dequeue request
     activate Cal
@@ -201,7 +213,9 @@ sequenceDiagram
 A full-race simulation, triggered automatically during the race or manually from the portal.
 
 - **Kicked off by:** `SimulationOrchestrator` trigger (leader lap completion, any pit stop,
-  safety-car change), debounced 3 s — or `POST /api/simulation/run` (returns `202` + jobId).
+  safety-car change), debounced 3 s — **gated to the Race only** (`SessionKind.fromSessionType`
+  == `RACE`); FP/Qualy never auto-trigger a simulation. The manual `POST /api/simulation/run`
+  (returns `202` + jobId) is unaffected by the gate.
 - **Queues:** `SIMULATION_REQUEST` (out), `SIMULATION_RESULT` (in).
 - **Path:** Backend → **`SIMULATION_REQUEST`** → Simulator ([FastAPI](10-REFERENCES.md#fastapi),
   port 8081; daemon thread polls when `SIMULATOR_USE_DB=true`) loads coefficients, runs
@@ -220,7 +234,7 @@ sequenceDiagram
     participant BE as Backend (Consumer)
     participant Portal as Portal
 
-    Note over Orch: Trigger from TCP stream<br/>(lap / pit / safety car) → debounce 3s
+    Note over Orch: Trigger from TCP stream<br/>(lap / pit / safety car) → debounce 3s<br/>RACE sessions only (type 10-12 / 15-17)
     Orch->>Q1: Enqueue {jobId, raceSnapshot}
     Q1->>Sim: Dequeue
     activate Sim
@@ -380,7 +394,11 @@ the TCP stream and broadcasts immediately. Types: `state` (~1 Hz), `sessionStart
 `GET /api/sessions/active` (live sessions from in-memory `SessionStateHolder`) ·
 `GET /api/sessions/active/state` (latest race state) · `POST /api/simulation/run` |
 `POST /api/simulation/trigger` (enqueue a run, returns `202` + jobId) ·
-`GET /api/simulation/results/{jobId}` · `GET /api/health`. On restart the backend catches up by
+`GET /api/simulation/results/{jobId}` ·
+`GET /api/system/readiness/scatter` (per-sector PLAYER degradation scatter — tyre age vs sector
+time per dry compound, each point flagged calibration-used / current-session, plus a fitted
+regression line over the used points; feeds the System-page degradation charts) ·
+`GET /api/health`. On restart the backend catches up by
 querying the DB for active session state, then resumes from the TCP stream.
 
 ## Shared database
@@ -404,6 +422,13 @@ accepted trade-off for build isolation. To allow independent evolution, each JSO
 an integer `version` (starting at `1`): new fields may be added without bumping it and consumers
 ignore unknown fields; removing or renaming a field bumps the version. The canonical schemas live
 in this file.
+
+**Session lifecycle ordering / orphan cleanup.** When the session UID changes without a clean
+`FinalClassification` end (e.g. switching directly from qualifying to race), telemetry would
+otherwise leave the old session orphaned in the backend's `SessionStateHolder`. To prevent this,
+`RaceState.onSessionUidChange` records the superseded UID in `pendingEndedUid` if it was announced
+but never ended; `TcpSender` then emits the `sessionEnded` for that old UID **before** the
+`sessionStarted` for the new one, so the backend drops the old session instead of orphaning it.
 
 ## Why TCP push (decision rationale)
 

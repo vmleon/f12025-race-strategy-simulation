@@ -43,6 +43,18 @@ Same reasoning as tyre wear (decision #3). 8 damage columns (one per car compone
 
 Multiple fitting methods can produce coefficients for the same knob on the same track. There is no natural unique key — `(track_id, knob_name, calibration_regime, method_name)` could still have multiple runs with different `trained_at` timestamps. A sequence-based PK is the pragmatic choice, same reasoning as events (decision #4).
 
+The same `calibration_coefficients` table holds several knob families, distinguished by `knob_name` (and, where relevant, `sector_number`). Each row is fitted per regime (`PLAYER` / `AI`):
+
+| `knob_name`                                           | Scope       | Meaning                                                                                         |
+| ----------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------- |
+| `tyre_deg_soft` / `tyre_deg_medium` / `tyre_deg_hard` | per sector  | Tyre degradation: sector-time slope (ms/lap) vs tyre age, per compound                          |
+| `tyre_wear_rate_soft` / `_medium` / `_hard`           | sector-wide | Tyre wear rate (%/lap) of the most-worn wheel; drives the wear-cliff stint cap in the simulator |
+| `fuel_effect`                                         | per sector  | Sector-time slope (ms/kg) vs fuel mass                                                          |
+| `pit_stop_time_loss`                                  | sector-wide | Mean pit-stop time loss (ms)                                                                    |
+| `pit_stop_time_loss_stddev`                           | sector-wide | Stddev of the pit-stop time loss (ms)                                                           |
+
+Per-sector knobs store `sector_number` 0/1/2; sector-wide knobs leave it `NULL`. Per-sector **pace baselines** are kept separately in the `sector_pace_baselines` table (changelog `011`), bucketed by `(track, sector, compound, regime, fuel, weather, temp)`, because they are a multi-dimensional lookup rather than a single fitted value per knob.
+
 ### 9. No `track_id` denormalized into `sector_snapshots`
 
 Tempting — the most common analytical pattern is "all data for track X." But `sessions` will have hundreds of rows, not millions. The join `sector_snapshots JOIN sessions USING (session_uid) WHERE track_id = ?` hits the sessions PK, resolves to a set of session_uids, then scans sector_snapshots by PK prefix. Oracle's optimizer handles this trivially. The denormalization would save one cheap join at the cost of an extra column on every row of the highest-volume table, plus an update path if you ever correct a track_id.

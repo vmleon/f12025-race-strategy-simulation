@@ -14,7 +14,7 @@ graph LR
     D --> E["Monte Carlo Simulation"]
 ```
 
-> **Implementation status (PoC).** The pipeline fits a reduced subset of the full lap-time model described in this chapter: a per-car **pace baseline**, **tyre degradation** (per compound, per sector), **fuel effect**, and **pit stop duration** — each fitted separately for PLAYER and AI. The remaining knobs catalogued below are **not fitted by calibration**: **car damage** is now applied by the simulator as a **hardcoded** penalty (with front-wing repair stops — see Knob 4), while dirty air, DRS, weather and temperature, tyre temperature, overtake probability, and event probabilities remain **design roadmap**. The additive model and full knob catalogue describe where the system is headed; the [implemented fitting steps](#implementation-standalone-python-service) are at the end of this chapter.
+> **Implementation status (PoC).** The pipeline fits a reduced subset of the full lap-time model described in this chapter: a per-car **pace baseline**, **tyre degradation** (per compound, per sector), **tyre wear rate** (per compound, sector-wide — feeds the simulator's stint cap), **fuel effect**, and **pit stop duration** — each fitted separately for PLAYER and AI. The remaining knobs catalogued below are **not fitted by calibration**: **car damage** is now applied by the simulator as a **hardcoded** penalty (with front-wing repair stops — see Knob 4), while dirty air, DRS, weather and temperature, tyre temperature, overtake probability, and event probabilities remain **design roadmap**. The additive model and full knob catalogue describe where the system is headed; the [implemented fitting steps](#implementation-standalone-python-service) are at the end of this chapter.
 
 ### Use Case: Calibration Pipeline
 
@@ -27,6 +27,7 @@ sequenceDiagram
     participant DB as Oracle DB
 
     Telemetry->>Backend: TCP {"type":"sessionEnded"}
+    Note over Backend: Gate: enqueue only if<br/>SessionKind == PRACTICE
     Backend->>Q: Enqueue {trackId, sessionUid}
 
     Service->>Q: Dequeue calibration request
@@ -35,16 +36,18 @@ sequenceDiagram
     Service->>DB: SELECT sector_snapshots<br/>+ participants<br/>WHERE track_id = ?
     DB-->>Service: Historical telemetry data
 
-    Note over Service: Step 1: Outlier detection<br/>(per-driver IQR analysis)
+    Note over Service: Step 1: Outlier detection<br/>(per-regime IQR analysis)
     Service->>DB: UPDATE sector_snapshots<br/>SET outlier = 1 WHERE ...
 
     Note over Service: Step 2: Fit base pace<br/>(mean + variance per sector,<br/>PLAYER and AI regimes)
 
     Note over Service: Step 3: Fit tyre degradation<br/>(linear regression per compound:<br/>sector_time vs tyre_age)
 
-    Note over Service: Step 4: Fit fuel effect<br/>(linear regression:<br/>sector_time vs fuel_in_tank_kg)
+    Note over Service: Step 4: Fit tyre wear rate<br/>(linear regression per compound:<br/>most-worn wheel wear % vs tyre_age)
 
-    Note over Service: Step 5: Fit pit stop duration<br/>(time loss vs baseline)
+    Note over Service: Step 5: Fit fuel effect<br/>(linear regression:<br/>sector_time vs fuel_in_tank_kg)
+
+    Note over Service: Step 6: Fit pit stop duration<br/>(time loss vs baseline)
 
     Service->>DB: INSERT calibration_coefficients<br/>(per knob × regime × sector)
     deactivate Service
@@ -159,7 +162,7 @@ The `Session` packet includes `aiDifficulty`. Other settings may need to be reco
 
 Each knob below is fitted **twice** — once for player data, once for AI data — unless noted otherwise.
 
-> **Status.** Knobs **1** (base pace), **2** (tyre degradation), and **3** (fuel effect) are implemented, plus **pit stop duration** (covered under [Implementation](#implementation-standalone-python-service), not listed as a separate knob below). Knobs **4–10** are documented as the design roadmap but are **not yet fitted** — each is tagged below.
+> **Status.** Knobs **1** (base pace), **2** (tyre degradation), **3** (fuel effect), and **3a** (tyre wear rate) are implemented, plus **pit stop duration** (covered under [Implementation](#implementation-standalone-python-service), not listed as a separate knob below). Knobs **4–10** are documented as the design roadmap but are **not yet fitted** — each is tagged below.
 
 ### 1. Base Pace (per driver/team, per track, per sector)
 
@@ -197,6 +200,16 @@ How carrying more fuel slows the car.
 - **Fit from:** Sector time vs `fuelInTank`, using cross-stint comparisons to avoid multicollinearity with tyre age
 - **Form:** Linear. Real F1 is ~0.03–0.04s/kg/lap ([Wright, 2001](10-REFERENCES.md#wright2001)); the game may use a similar constant per track, but this must be verified empirically
 - **Output:** `fuel_penalty_per_kg` per sector per track
+
+### 3a. Tyre Wear Rate (per compound)
+
+How fast the tyre physically wears, in **wear-% per lap** — distinct from tyre degradation (Knob 2), which measures the resulting time loss. This knob does not enter the additive lap-time model; it feeds the simulator's stint-length cap.
+
+- **Fit from:** `_fit_tyre_wear_rate` (`pipeline.py`) regresses the **most-worn wheel's** wear % (max of the four per-wheel values) against `tyre_age`, grouped by compound and regime
+- **Gate:** `MIN_WEAR_SAMPLES = 5` — lower than the time-slope's 10, because wear is smooth and monotonic, so it calibrates from few laps
+- **Form:** Linear regression, slope clamped to ≥ 0 (wear can't fall with age); a 0 slope makes the simulator fall back to the hardcoded lifespan
+- **Output:** `tyre_wear_rate_{soft,medium,hard}`, stored **sector-wide** (no per-sector value)
+- **Used by:** the simulator's wear-cliff stint cap (`simulator/tyre_lifespan.py`): `laps_to_cliff = cliffPct / wear_rate`, where `cliffPct` is hardcoded at 40% (`CLIFF_WEAR_PCT`)
 
 ### 4. Car Damage Effects _(hardcoded in the simulator — not calibrated)_
 
@@ -290,9 +303,9 @@ Probability of discrete disruptive events per unit of race distance.
 
 ### Tier 1: Historical Baseline (offline, batch)
 
-The primary calibration approach. After each completed session, recompute all knob coefficients from the full accumulated dataset, **separately for player and AI**.
+The primary calibration approach. After each completed **Free Practice** session, recompute all knob coefficients from the full accumulated dataset, **separately for player and AI**.
 
-- **When:** After each session ends (triggered by `SEND` event or FinalClassification packet)
+- **When:** After a **Free Practice** session ends. `SessionStateHolder.onSessionEnded` (backend) gates the `CALIBRATION_REQUEST` enqueue to `SessionKind.PRACTICE` — other session kinds end without triggering calibration. Rationale: Qualifying pace is push-mode ERS on low fuel, and race pace is contaminated by traffic, dirty air, and fuel saving — neither is a clean baseline for fitting, whereas Free Practice runs representative long stints
 - **How:** Query all sector_snapshots from Oracle, split by `aiControlled`, run regression/curve-fitting per knob per regime, store resulting coefficients
 - **Storage:** A coefficients table, keyed by `(track_id, knob_name, calibration_regime)` where `calibration_regime` is `PLAYER` or `AI`, with fitted values and confidence intervals
 - **Minimum data:** Each knob needs a minimum number of data points before its fitted value is trusted. Below that threshold, fall back to reasonable defaults (see Initial Values below). See Initial Values section below for sample size estimates
@@ -340,22 +353,25 @@ Before enough data is accumulated, the simulation needs reasonable defaults. The
 
 Two sets of defaults are maintained — one for player, one for AI. Initially identical, they diverge as data reveals differences.
 
-| Knob                 | Initial Default            | Confidence | Notes                                   |
-| -------------------- | -------------------------- | ---------- | --------------------------------------- |
-| Tyre deg (soft)      | +0.05s/lap/sector          | Low        | Highly track-dependent; AI likely lower |
-| Tyre deg (medium)    | +0.03s/lap/sector          | Low        | Highly track-dependent; AI likely lower |
-| Tyre deg (hard)      | +0.02s/lap/sector          | Low        | Highly track-dependent; AI likely lower |
-| Fuel effect          | +0.01s/kg/sector           | Medium     | May be similar for player and AI        |
-| Pit stop time loss   | 22 000 ms                  | Low        | Mean pit-lane time loss per stop        |
-| Front wing damage    | +0.02s/percent/sector      | Low        | _Superseded — hardcoded in `engine.py`_ |
-| Floor damage         | +0.04s/percent/sector      | Low        | _Superseded — hardcoded in `engine.py`_ |
-| Engine damage        | +0.01s/percent/sector      | Low        | _Superseded — hardcoded in `engine.py`_ |
-| Dirty air (< 1s gap) | +0.3s/sector               | Low        | _Design only — not yet fitted_          |
-| DRS advantage        | -0.2s/sector (DRS sectors) | Medium     | _Design only — not yet fitted_          |
-| Overtake probability | 0.15 per sector boundary   | Low        | _Design only — not yet fitted_          |
-| Safety car rate      | 0.01 per lap               | Low        | _Design only — not yet fitted_          |
+| Knob                    | Initial Default            | Confidence | Notes                                   |
+| ----------------------- | -------------------------- | ---------- | --------------------------------------- |
+| Tyre deg (soft)         | +0.05s/lap/sector          | Low        | Highly track-dependent; AI likely lower |
+| Tyre deg (medium)       | +0.03s/lap/sector          | Low        | Highly track-dependent; AI likely lower |
+| Tyre deg (hard)         | +0.02s/lap/sector          | Low        | Highly track-dependent; AI likely lower |
+| Fuel effect             | +0.01s/kg/sector           | Medium     | May be similar for player and AI        |
+| Pit stop time loss      | 22 000 ms                  | Low        | Mean pit-lane time loss per stop        |
+| Tyre wear rate (soft)   | 1.33 %/lap                 | Low        | Laps-to-cliff at 40% ≈ old S30 lifespan |
+| Tyre wear rate (medium) | 1.08 %/lap                 | Low        | Laps-to-cliff at 40% ≈ old M37 lifespan |
+| Tyre wear rate (hard)   | 0.89 %/lap                 | Low        | Laps-to-cliff at 40% ≈ old H45 lifespan |
+| Front wing damage       | +0.02s/percent/sector      | Low        | _Superseded — hardcoded in `engine.py`_ |
+| Floor damage            | +0.04s/percent/sector      | Low        | _Superseded — hardcoded in `engine.py`_ |
+| Engine damage           | +0.01s/percent/sector      | Low        | _Superseded — hardcoded in `engine.py`_ |
+| Dirty air (< 1s gap)    | +0.3s/sector               | Low        | _Design only — not yet fitted_          |
+| DRS advantage           | -0.2s/sector (DRS sectors) | Medium     | _Design only — not yet fitted_          |
+| Overtake probability    | 0.15 per sector boundary   | Low        | _Design only — not yet fitted_          |
+| Safety car rate         | 0.01 per lap               | Low        | _Design only — not yet fitted_          |
 
-The implemented cold-start defaults (`calibration/cold_start.py`) cover only the first five rows — the three tyre-degradation compounds, fuel effect, and pit stop time loss. The three **damage** rows are superseded by the simulator's hardcoded damage model (`simulator/engine.py`), not produced by calibration. The remaining rows are placeholders for design-roadmap knobs that have no value yet.
+The implemented cold-start defaults (`calibration/cold_start.py`) cover the first eight rows — the three tyre-degradation compounds, fuel effect, pit stop time loss, and the three tyre wear-rate compounds. The wear-rate defaults (1.33 / 1.08 / 0.89 %/lap for soft/medium/hard) are chosen so that laps-to-cliff at 40% ≈ the old hardcoded lifespans (S30 / M37 / H45). The three **damage** rows are superseded by the simulator's hardcoded damage model (`simulator/engine.py`), not produced by calibration. The remaining rows are placeholders for design-roadmap knobs that have no value yet.
 
 These defaults should be stored alongside fitted values, with a flag indicating whether the knob is using the default or a fitted value. The simulation can weight its confidence accordingly — wider variance when using defaults, tighter when using fitted values with sufficient data.
 
@@ -387,30 +403,32 @@ Before fitting any knob, filter the sector_snapshots dataset:
 - **Exclude invalid laps** — `currentLapInvalid = 1` or `cornerCuttingWarnings > 0`
 - **Exclude in/out laps** — `pitStatus != 0` (pit lane distorts sector times)
 - **Exclude safety car laps** — `safetyCarStatus != 0` (artificially slow)
-- **Exclude lap 1** — first lap is an outlier (standing start, cold tyres, contact)
+- **Exclude the standing-start sector (races only)** — `NOT (lap_number = 1 AND sector_number = 0 AND session_type IN (10, 11, 12, 15, 16, 17))`. Only races drop lap 1 / sector 0 (the standing start, cold tyres, first-corner contact). Launch sessions (FP, Qualifying) keep that sector because the car is released onto an out-lap and crosses the line already warmed up
 - **Filter by game settings** — only include sessions with matching AI difficulty, damage mode, tyre wear mode
 
-### Outlier Detection (Per-Driver IQR) ([Tukey, 1977](10-REFERENCES.md#tukey1977))
+### Outlier Detection (Per-Regime IQR) ([Tukey, 1977](10-REFERENCES.md#tukey1977))
 
 After applying the hard filters above, the dataset still contains **performance anomalies** — sectors that are technically valid but statistically unusual. A driver locking up into turn 1, getting punted, or encountering unexpected traffic can produce sector times that don't trigger `currentLapInvalid` but would distort calibration coefficients if included.
 
 These anomalous sectors must be **marked, not deleted**. They're excluded from calibration (`WHERE outlier = 0`) but remain visible in driver feedback views — a 1.8s loss in sector 2 on lap 14 is valuable feedback even if it shouldn't train the model.
 
-#### Why Per-Driver, Not Global
+#### Why Per-Regime, Not Per-Driver or Global
 
-Drivers have fundamentally different pace. A 25.1s sector for a top AI car is normal; for a backmarker, it's a personal best. A global IQR across all drivers would either miss slow-driver outliers or flag fast-driver normal laps. The IQR must be computed **per driver**.
+Outlier detection must group by the **same population that fitting uses**. Fitting pools all AI cars into one AI regime (and the player into a PLAYER regime), so the IQR must be computed over that same regime. An earlier version grouped per `driver_name`, but that split the AI field into ~19 tiny groups that rarely reached `MIN_SAMPLES_FOR_IQR` (10) — so AI outliers were almost never flagged. PLAYER is a single human driver, so it is one group either way and is unaffected.
+
+A global IQR across both regimes would be wrong for the opposite reason: AI and player physics differ, so a sector that is normal for one regime can look anomalous against the other. Grouping by regime keeps the AI/HUMAN IQR multipliers (1.5 / 2.0 — see below) meaningful per regime.
 
 #### Grouping Key
 
-`(driver_name, track_id, sector_number, tyre_compound_actual, weather_category)`
+`(regime, track_id, sector_number, tyre_compound_visual, weather_category)`
 
-Grouping by compound is essential — a sector on worn softs vs fresh hards would inflate the IQR and mask real outliers. `weather_category` is `dry` or `wet`, derived from the F1 2025 weather codes (0–5) captured on each snapshot — wet and dry baselines differ by several seconds per sector, so mixing them would inflate the IQR fences and mask genuine outliers. Tyre age and fuel load are **not** part of the grouping key because they are continuous variables that would fragment the data into too-small groups. The calibration regression handles those factors separately.
+`regime` is `PLAYER` or `AI` (derived from `ai_controlled`). Grouping by compound is essential — a sector on worn softs vs fresh hards would inflate the IQR and mask real outliers. `weather_category` is `dry` or `wet`, derived from the F1 2025 weather codes (0–5) captured on each snapshot — wet and dry baselines differ by several seconds per sector, so mixing them would inflate the IQR fences and mask genuine outliers. Tyre age and fuel load are **not** part of the grouping key because they are continuous variables that would fragment the data into too-small groups. The calibration regression handles those factors separately.
 
 #### Algorithm
 
 The outlier detection runs as **Step 0 of Tier 1 batch calibration**, after hard filters but before any knob fitting. It is recomputed each calibration run — the `outlier` column is overwritten, not append-only. As more data accumulates, the IQR boundaries refine.
 
-1. **Group** the hard-filtered working set by `(driver_name, track_id, sector_number, tyre_compound_actual)`
+1. **Group** the hard-filtered working set by `(regime, track_id, sector_number, tyre_compound_visual, weather_category)`
 2. **Check sample size** per group:
    - N ≥ 10 → IQR path (step 3)
    - N < 10 → skipped (no outlier flagging — without enough samples there is no reliable basis to judge an outlier)
@@ -478,24 +496,26 @@ Calibration is implemented as a standalone Python service (`python -m calibratio
 
 ### Pipeline Architecture
 
-The pipeline runs as a single atomic transaction per track:
+The pipeline (`calibration/pipeline.py` `run()`) commits in **two stages**, not one atomic transaction:
 
 ```
-connect → set autocommit=False → outlier detection → 4 fitting steps → commit (or rollback on failure)
+connect → cold-start defaults + outlier flags → COMMIT
+        → per-regime fits (deg, wear-rate, fuel, pit) + sector baselines → COMMIT
 ```
 
-All four fitting steps execute within one transaction to ensure coefficients are never partially updated. If any step fails, the entire run rolls back.
+Cold-start defaults and recomputed outlier flags are committed first, so they persist regardless of what follows. The coefficient fits and `sector_pace_baselines` are then written and committed together at the end (the commit lives in `_fit_sector_baselines`), so a failure mid-fit rolls back the uncommitted coefficients and baselines — but **not** the already-committed outlier flags. The fits are therefore not wrapped in a single all-or-nothing transaction.
 
 ### Fitting Steps
 
 Each step has a minimum sample threshold — if insufficient data exists, the step is skipped and existing coefficients (or cold-start defaults) remain in place.
 
-| Step | Knob                                        | Min samples | Data filter                                                         |
-| ---- | ------------------------------------------- | ----------- | ------------------------------------------------------------------- |
-| 1    | Base pace (per sector)                      | 5           | "Clean data": tyre age ≤5 laps, gap ahead >2s or leading, no damage |
-| 2    | Tyre degradation (per compound, per sector) | 10          | Linear regression: `time_ms = baseline + slope × tyre_age`          |
-| 3    | Fuel effect (per track)                     | 5           | Linear regression: `time_ms = baseline + slope × fuel_kg`           |
-| 4    | Pit stop duration (per regime)              | 3           | Mean/variance of time loss vs baseline sector times                 |
+| Step | Knob                                        | Min samples | Data filter                                                                                  |
+| ---- | ------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------- |
+| 1    | Base pace (per sector)                      | 5           | "Clean data": tyre age ≤5 laps, gap ahead >2s or leading, no damage                          |
+| 2    | Tyre degradation (per compound, per sector) | 10          | Linear regression: `time_ms = baseline + slope × tyre_age`                                   |
+| 3    | Tyre wear rate (per compound, sector-wide)  | 5           | Linear regression: `most-worn wheel wear % = baseline + slope × tyre_age`, slope clamped ≥ 0 |
+| 4    | Fuel effect (per track)                     | 5           | Linear regression: `time_ms = baseline + slope × fuel_kg`                                    |
+| 5    | Pit stop duration (per regime)              | 3           | Mean/variance of time loss vs baseline sector times                                          |
 
 All steps filter by `ai_controlled` to produce separate PLAYER and AI coefficients (see Dual Calibration above).
 

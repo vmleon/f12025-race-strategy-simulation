@@ -29,11 +29,15 @@ For each remaining lap:
   For each sector (0, 1, 2):
     For each car:
       sector_time = base_pace + tyre_deg + fuel_effect + damage + residual_noise
-      where damage = hardcoded per-component penalty (front wing / floor / engine)
+      where tyre_deg  = deg_per_lap * (tyre_age_laps - age_ref)   # delta from reference age
+            fuel_effect = fuel_coef * (fuel_kg - fuel_ref)        # delta from reference fuel
+            damage = hardcoded per-component penalty (front wing / floor / engine)
             residual_noise = gauss(0, 150ms)  # ([Rubinstein & Kroese, 2017](10-REFERENCES.md#rubinstein2017))
     Resolve interactions (overtakes, position changes)
     Update car states (tyre_age++, fuel--, DRS eligibility, gaps)
 ```
+
+The tyre-degradation and fuel terms are applied as **deltas from a reference**, not as absolute quantities. The per-sector base pace is captured from the snapshot and already embeds the tyre age (`age_ref`) and fuel load (`fuel_ref`) the car was running at, so the engine adds only the change since then: `deg_per_lap × (tyre_age_laps − age_ref)` and `fuel_coef × (fuel_kg − fuel_ref)`. Applying absolute degradation/fuel on top of a base that already includes them would double-count. `age_ref` resets to 0 on a pit stop (fresh stint) and on a red flag; `fuel_ref` is fixed (no refuelling in F1). As fuel burns below `fuel_ref` the fuel term goes negative — the car gets lighter and faster.
 
 Every sector step draws a fresh residual noise value per car. This noise represents the unexplained variance from calibration — the gap between the model's prediction and observed sector times. Stochastic events (mechanical DNF, overtake success/failure, red flags, and the end of an in-progress safety-car period) are also sampled independently each iteration; the mechanical-DNF rate is raised by engine damage (up to 4× at 100%). The engine does not randomly _deploy_ safety cars — it honours the safety-car flag from the current race snapshot.
 
@@ -49,6 +53,8 @@ The simulation runs thousands of iterations (1,000–10,000), each producing a d
 ### Strategy Evaluation
 
 To compare strategies, the simulation runs a full Monte Carlo batch for each candidate strategy independently. Each candidate defines a pit stop plan (which lap to pit, which compound to switch to). The simulation injects the candidate's pit plan for the player car while AI cars follow their own heuristic pit logic.
+
+**Data-driven stint length.** Both the AI pit heuristic and the candidate generator's pruning derive the maximum stint length per compound from `stint_cap_laps`, which is no longer a hardcoded number of laps. It computes `laps-to-cliff = cliffPct[compound] / wear_rate`, where `cliffPct` is a hardcoded per-compound wear-% cliff (~40%, `CLIFF_WEAR_PCT`) and `wear_rate` is the calibrated `tyre_wear_rate_{soft,medium,hard}` coefficient (%/lap). This makes stint length data-driven per circuit. The old hardcoded compound-lifespan table (Soft 30 / Medium 37 / Hard 45) survives only as the **fallback** used when the wear-rate is uncalibrated. The AI heuristic pits a car once `tyre_age_laps` reaches this cap; the candidate generator uses it to prune infeasible stints.
 
 After all candidates have been simulated, results are ranked by mean finishing position and expected championship points ([Brawn & Parr, 2016](10-REFERENCES.md#brawn2016)). Each ranked strategy includes position distribution, confidence intervals, DNF probability, and top-3 / points-finish probabilities — giving the player a complete picture of each option's risk/reward profile.
 
@@ -162,7 +168,7 @@ The simulation needs a `HistoricalContext` data structure containing pre-compute
 - Inter-car interaction parameters (dirty air effect magnitude, DRS advantage — derived from historical gap and sector time data rather than hardcoded constants)
 - Overtake probability model per sector (logistic regression or similar, fitted from historical position changes)
 
-These values are computed offline from accumulated historical data and updated after each new session. See `05-CALIBRATION.md` for the full calibration pipeline: how each coefficient is fitted, the two-tier approach (historical baseline + optional in-session dynamic adjustment), initial default values for cold start, and validation methodology.
+These values are computed offline from accumulated historical data and updated after each new session. See `05-CALIBRATION.md` for the full calibration pipeline: how each coefficient is fitted, the two-tier approach (historical baseline + optional in-session dynamic adjustment), initial default values for cold start, and validation methodology. The Simulator's own cold-start defaults live in `simulator/coefficients.py` (`Coefficients.defaults`) — including the per-compound wear-rate defaults `tyre_wear_rate_soft/medium/hard` (1.33 / 1.08 / 0.89 %/lap), chosen so that laps-to-cliff at the ~40% wear threshold reproduces the old hardcoded lifespans (≈30 / 37 / 45 laps).
 
 ## Data to Capture
 
