@@ -66,6 +66,21 @@ class PitWindowMessagesDetectorTest {
                 0, 0, 0);
     }
 
+    /** Tick on a given lap/sector with an explicit pit state (for the box-this-lap call). */
+    private EngineerTick tickSector(int currentLap, int sector, int pits, PitState pitState) {
+        ObjectNode player = playerCar(pits);
+        player.put("sector", sector);
+        return new EngineerTick(
+                1_000L, UID, 10, SessionKind.RACE,
+                0, currentLap, 50, TRACK_LENGTH,
+                pitState, PitState.ON_TRACK,
+                MAPPER.createObjectNode(),
+                player,
+                MAPPER.createArrayNode(),
+                5, 100f, 240, 0.9f,
+                0, 0, 0);
+    }
+
     @Test
     void recoveryFiresWhenDriverMissesTheWindow() {
         // Strategy recommends boxing on lap 20 (Hards).
@@ -146,5 +161,27 @@ class PitWindowMessagesDetectorTest {
     void clearedRecommendationIsSilent() {
         detector.setRecommendation(UID, -1, 0);
         assertTrue(detector.evaluate(tick(10, 100f, 0)).isEmpty());
+    }
+
+    @Test
+    void boxThisLapFiresOnFinalSectorOfStopLap() {
+        detector.setRecommendation(UID, 20, MEDIUM);
+        // Earlier sectors of the stop lap: not yet the commit point.
+        assertTrue(detector.evaluate(tickSector(20, 0, 0, PitState.ON_TRACK)).isEmpty());
+        assertTrue(detector.evaluate(tickSector(20, 1, 0, PitState.ON_TRACK)).isEmpty());
+        // Entering the final sector → commit.
+        Optional<EngineerMessage> msg = detector.evaluate(tickSector(20, 2, 0, PitState.ON_TRACK));
+        assertTrue(msg.isPresent());
+        assertEquals(EngineerMessage.Priority.IMMEDIATE, msg.get().priority());
+        assertEquals("Box this lap. Mediums ready.", msg.get().text());
+        // Once per stop: a later final-sector tick stays silent.
+        assertTrue(detector.evaluate(tickSector(20, 2, 0, PitState.ON_TRACK)).isEmpty());
+    }
+
+    @Test
+    void boxThisLapSuppressedWhenAlreadyInPitLane() {
+        detector.setRecommendation(UID, 20, MEDIUM);
+        // Final sector but already in the pit lane → no commit call.
+        assertTrue(detector.evaluate(tickSector(20, 2, 0, PitState.PIT_EXIT)).isEmpty());
     }
 }

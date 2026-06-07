@@ -23,7 +23,9 @@ import dev.victormartin.telemetry.engineer.SessionKind;
  */
 public class PitWindowMessagesDetector implements RadioDetector {
 
-    private static final float BOX_BOX_LAP_FRACTION = 0.8f;
+    // Pit entry is late in the lap at most circuits, so the final sector is the
+    // "commit now" point on the planned stop lap.
+    private static final int FINAL_SECTOR = 2;
     // Matches PerCornerWearDetector's "finished" threshold: at/above this a corner
     // is past the cliff, so "box window opens in 5 laps" is no longer credible.
     private static final int HIGH_WEAR_PCT = 37;
@@ -101,15 +103,22 @@ public class PitWindowMessagesDetector implements RadioDetector {
                     tick.wallClockMs(), tick.currentLap(), 1));
         }
         if (delta == 0 && s.lastKind.ordinal() < Kind.BOX.ordinal()) {
-            if (tick.trackLength() > 0 && tick.playerLapDist() >= tick.trackLength() * BOX_BOX_LAP_FRACTION) {
+            // Commit call on the planned stop lap, on entering the final sector —
+            // unless we're already in the pit lane. Fires once per stop (Kind.BOX).
+            if (tick.pitState() == PitState.ON_TRACK && playerSector(tick) >= FINAL_SECTOR) {
                 s.lastKind = Kind.BOX;
                 return Optional.of(new EngineerMessage(
                         Priority.IMMEDIATE,
-                        "Box, box, box.",
+                        "Box this lap. " + compound + " ready.",
                         tick.wallClockMs(), tick.currentLap(), 1));
             }
         }
         return Optional.empty();
+    }
+
+    private static int playerSector(EngineerTick tick) {
+        return tick.playerCar() != null && tick.playerCar().has("sector")
+                ? tick.playerCar().get("sector").asInt() : 0;
     }
 
     /** True when any corner is at/over the "finished" wear threshold. */
