@@ -38,7 +38,13 @@ public class ReadinessController {
     public record CompoundReadinessDto(int compound, String name, int total, int good,
                                        ReadinessCalculator.Reasons reasons, double confidence,
                                        boolean wearFitted, boolean baselineFitted, boolean degFitted,
+                                       int degSamples, boolean degClamped, boolean degLowConfidence,
                                        List<ReadinessCalculator.SectorReadiness> sectors) {}
+
+    /** Degradation-fit diagnostics per compound (item 2): total samples behind the fit,
+     * whether any sector fell back to the prior (clamped), and whether the fit is
+     * low-confidence (clamped or worst sector R² below {@link #LOW_R_SQUARED}). */
+    record DegDiag(int samples, boolean clamped, boolean lowConfidence) {}
 
     public record ReadinessResponse(int trackId, String trackName, String calibrationLastRanAt,
                                     double overallConfidence, boolean fuelEffectFitted,
@@ -79,6 +85,7 @@ public class ReadinessController {
         Set<Integer> wearCompounds = wearFittedCompounds(resolved);
         Set<Integer> baselineCompounds = baselineFittedCompounds(resolved);
         Set<Integer> degCompounds = degFittedCompounds(resolved);
+        Map<Integer, DegDiag> degDiag = degDiagnostics(resolved);
         boolean fuelFitted = fuelEffectFitted(resolved);
         String lastRan = calibrationLastRanAt(resolved);
 
@@ -86,10 +93,12 @@ public class ReadinessController {
         List<Double> withData = new ArrayList<>();
         for (CompoundReadiness c : base) {
             if (c.total() > 0) withData.add(c.confidence());
+            DegDiag d = degDiag.getOrDefault(c.compound(), new DegDiag(0, false, false));
             compounds.add(new CompoundReadinessDto(
                     c.compound(), c.name(), c.total(), c.good(), c.reasons(), c.confidence(),
                     wearCompounds.contains(c.compound()),
                     baselineCompounds.contains(c.compound()), degCompounds.contains(c.compound()),
+                    d.samples(), d.clamped(), d.lowConfidence(),
                     c.sectors()));
         }
         double overall = ReadinessCalculator.overallConfidence(withData);
@@ -248,6 +257,50 @@ public class ReadinessController {
                 case "tyre_deg_wet" -> out.add(8);
                 default -> { }
             }
+        }
+        return out;
+    }
+
+    /** Worst-sector R² below this reads as a noise fit, not a data-backed one. */
+    private static final double LOW_R_SQUARED = 0.3;
+
+    /** Aggregate the per-sector deg coefficient rows (PLAYER, non-default) into one
+     * diagnostic per compound: summed sample count, any-sector clamped, and a
+     * low-confidence flag (clamped or worst R² &lt; {@link #LOW_R_SQUARED}). */
+    private Map<Integer, DegDiag> degDiagnostics(int trackId) {
+        Map<Integer, int[]> samples = new java.util.HashMap<>();   // compound -> sumN
+        Map<Integer, Boolean> clamped = new java.util.HashMap<>();
+        Map<Integer, Double> worstR = new java.util.HashMap<>();
+        jdbc.query(
+                "SELECT knob_name, sample_count, r_squared, clamped FROM calibration_coefficients "
+                + "WHERE track_id = ? AND is_default = 0 AND calibration_regime = 'PLAYER' "
+                + "  AND knob_name LIKE 'tyre_deg_%'",
+                (RowCallbackHandler) rs -> {
+                    Integer compound = switch (rs.getString("KNOB_NAME")) {
+                        case "tyre_deg_soft" -> 16;
+                        case "tyre_deg_medium" -> 17;
+                        case "tyre_deg_hard" -> 18;
+                        case "tyre_deg_intermediate" -> 7;
+                        case "tyre_deg_wet" -> 8;
+                        default -> null;
+                    };
+                    if (compound == null) return;
+                    int n = rs.getInt("SAMPLE_COUNT");  // 0 if NULL
+                    samples.computeIfAbsent(compound, k -> new int[1])[0] += n;
+                    if (rs.getInt("CLAMPED") == 1) clamped.put(compound, true);
+                    double r2 = rs.getDouble("R_SQUARED");
+                    if (!rs.wasNull()) {
+                        worstR.merge(compound, r2, Math::min);
+                    }
+                },
+                trackId);
+
+        Map<Integer, DegDiag> out = new java.util.HashMap<>();
+        for (Integer compound : samples.keySet()) {
+            boolean isClamped = clamped.getOrDefault(compound, false);
+            Double r = worstR.get(compound);
+            boolean lowConf = isClamped || (r != null && r < LOW_R_SQUARED);
+            out.put(compound, new DegDiag(samples.get(compound)[0], isClamped, lowConf));
         }
         return out;
     }

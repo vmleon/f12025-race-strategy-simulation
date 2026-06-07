@@ -99,15 +99,18 @@ def _fit_tyre_degradation(
         reg = linear_regression(x, y)
 
         slope = reg.slope
+        clamped = 0
         if not (0.0 <= slope <= MAX_TYRE_DEG_MS_PER_LAP):
             prior = _PRIOR.get(knob_name, 30.0)
             print(f"  {knob_name} sector {sector}: implausible slope {slope:.1f} ms/lap "
                   f"(n={reg.n}) — falling back to prior {prior}")
             slope = prior
+            clamped = 1
 
         db.insert_calibration_coefficient(
             conn, track_id, knob_name, regime, sector, "linear_regression",
-            slope, 0, now)
+            slope, 0, now, sample_count=reg.n, r_squared=reg.r_squared,
+            slope_std_error=reg.slope_std_error, clamped=clamped)
 
         print(f"  {knob_name} sector {sector}: slope={slope:.2f} ms/lap, n={reg.n}")
 
@@ -149,10 +152,12 @@ def _fit_tyre_wear_rate(
         y = np.array([wear for _, wear in pts], dtype=float)
         reg = linear_regression(x, y)
         wear_rate = max(reg.slope, 0.0)
+        clamped = 1 if reg.slope < 0.0 else 0  # negative wear is impossible → rejected
 
         db.insert_calibration_coefficient(
             conn, track_id, knob_name, regime, None, "linear_regression",
-            wear_rate, 0, now)
+            wear_rate, 0, now, sample_count=reg.n, r_squared=reg.r_squared,
+            slope_std_error=reg.slope_std_error, clamped=clamped)
 
         print(f"  {knob_name}: {wear_rate:.3f} %/lap, n={reg.n}")
 
@@ -183,15 +188,18 @@ def _fit_fuel_effect(
         # A heavier car is slower, so fuel_effect must be >= 0; a negative slope means
         # fuel burn was confounded by track evolution / tyre warm-up on thin data.
         slope = reg.slope
+        clamped = 0
         if not (0.0 <= slope <= MAX_FUEL_EFFECT_MS_PER_KG):
             prior = _PRIOR.get("fuel_effect", 10.0)
             print(f"  fuel_effect sector {sector}: implausible slope {slope:.1f} ms/kg "
                   f"(n={reg.n}) — falling back to prior {prior}")
             slope = prior
+            clamped = 1
 
         db.insert_calibration_coefficient(
             conn, track_id, "fuel_effect", regime, sector, "linear_regression",
-            slope, 0, now)
+            slope, 0, now, sample_count=reg.n, r_squared=reg.r_squared,
+            slope_std_error=reg.slope_std_error, clamped=clamped)
 
         print(f"  fuel_effect sector {sector}: slope={slope:.2f} ms/kg, n={reg.n}")
 
@@ -232,12 +240,13 @@ def _fit_pit_stop_duration(
     m = mean(arr)
     sd = sqrt(variance(arr))
 
+    # Non-regression knobs: sample_count carries meaning, R²/SE do not (stay NULL).
     db.insert_calibration_coefficient(
         conn, track_id, "pit_stop_time_loss", regime, None, "mean",
-        m, 0, now)
+        m, 0, now, sample_count=len(time_losses))
     db.insert_calibration_coefficient(
         conn, track_id, "pit_stop_time_loss_stddev", regime, None, "stddev",
-        sd, 0, now)
+        sd, 0, now, sample_count=len(time_losses))
 
     print(f"  pit_stop_time_loss: mean={m:.0f}ms, sd={sd:.0f}ms, n={len(time_losses)}")
 

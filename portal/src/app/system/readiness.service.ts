@@ -29,6 +29,9 @@ export interface CompoundReadiness {
   wearFitted: boolean;
   baselineFitted: boolean;
   degFitted: boolean;
+  degSamples: number;
+  degClamped: boolean;
+  degLowConfidence: boolean;
   sectors: SectorReadiness[];
 }
 

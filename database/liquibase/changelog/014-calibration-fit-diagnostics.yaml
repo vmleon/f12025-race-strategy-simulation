@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 014-01-calibration-fit-diagnostics
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE calibration_coefficients ADD (
+                  sample_count     NUMBER(6),
+                  r_squared        NUMBER(6,4),
+                  slope_std_error  NUMBER(14,4),
+                  clamped          NUMBER(1)    DEFAULT 0
+              )

@@ -177,7 +177,7 @@ class TestFuelEffectPerSector:
         captured = []
 
         def fake_insert(conn, track_id, knob, regime, sector, method,
-                        value, is_default, now):
+                        value, is_default, now, *a, **k):
             captured.append((knob, sector))
 
         monkeypatch.setattr(db, "insert_calibration_coefficient", fake_insert)
@@ -247,7 +247,7 @@ class TestFitSlopeClamping:
         captured = []
         monkeypatch.setattr(
             db, "insert_calibration_coefficient",
-            lambda conn, t, knob, reg, sec, m, val, isd, now: captured.append((knob, val)))
+            lambda conn, t, knob, reg, sec, m, val, isd, now, *a, **k: captured.append((knob, val)))
         _fit_tyre_degradation(None, rows, track_id=4, regime="PLAYER", now=_dt.now())
         return captured
 
@@ -266,13 +266,35 @@ class TestFitSlopeClamping:
         captured = self._run_deg(monkeypatch, self._deg_rows(18, slope=35.0))
         assert captured and captured[0][1] == pytest.approx(35.0, abs=1.0)
 
+    def _run_deg_diag(self, monkeypatch, rows):
+        """Capture the diagnostic kwargs (sample_count, r_squared, clamped) of the fit."""
+        from datetime import datetime as _dt
+        from calibration.pipeline import _fit_tyre_degradation
+        captured = []
+        monkeypatch.setattr(
+            db, "insert_calibration_coefficient",
+            lambda conn, t, knob, reg, sec, m, val, isd, now, **k: captured.append(k))
+        _fit_tyre_degradation(None, rows, track_id=4, regime="PLAYER", now=_dt.now())
+        return captured
+
+    def test_clamped_fit_records_clamped_flag_and_diagnostics(self, monkeypatch):
+        kw = self._run_deg_diag(monkeypatch, self._deg_rows(17, slope=-120.0))
+        assert kw and kw[0]["clamped"] == 1
+        assert kw[0]["sample_count"] == 12          # n passed through
+        assert kw[0]["r_squared"] is not None       # regression diagnostics retained
+
+    def test_plausible_fit_is_not_clamped(self, monkeypatch):
+        kw = self._run_deg_diag(monkeypatch, self._deg_rows(18, slope=35.0))
+        assert kw and kw[0]["clamped"] == 0
+        assert kw[0]["r_squared"] == pytest.approx(1.0, abs=1e-6)  # perfectly linear synthetic data
+
     def test_negative_fuel_slope_falls_back_to_prior(self, monkeypatch):
         from datetime import datetime as _dt
         from calibration.pipeline import _fit_fuel_effect
         captured = []
         monkeypatch.setattr(
             db, "insert_calibration_coefficient",
-            lambda conn, t, knob, reg, sec, m, val, isd, now: captured.append((knob, val)))
+            lambda conn, t, knob, reg, sec, m, val, isd, now, *a, **k: captured.append((knob, val)))
 
         rows = []
         for i in range(8):
@@ -408,7 +430,7 @@ class TestTyreWearRateFit:
         captured = []
         monkeypatch.setattr(
             db, "insert_calibration_coefficient",
-            lambda c, t, knob, reg, sec, method, val, d, now:
+            lambda c, t, knob, reg, sec, method, val, d, now, *a, **k:
                 captured.append((knob, sec, val)),
         )
         # Most-worn wheel (RL) climbs 2%/lap; others slower.
@@ -438,7 +460,7 @@ class TestTyreWearRateFit:
         captured = []
         monkeypatch.setattr(
             db, "insert_calibration_coefficient",
-            lambda c, t, knob, reg, sec, method, val, d, now: captured.append(val),
+            lambda c, t, knob, reg, sec, method, val, d, now, *a, **k: captured.append(val),
         )
         # Wear that decreases with age (noise) -> negative slope -> clamp to 0.
         data = [self._row(18, age, 50 - age, 50 - age, 50 - age, 50 - age)

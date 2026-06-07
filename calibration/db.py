@@ -80,7 +80,7 @@ def ensure_cold_start_defaults(conn: oracledb.Connection, track_id: int) -> int:
                 if row is None:
                     insert_calibration_coefficient(
                         conn, track_id, knob_name, regime, None, METHOD_NAME,
-                        value, 1, now,
+                        value, 1, now, sample_count=0,
                     )
                     changed += 1
                 elif abs(float(row[0]) - value) > 1e-9:
@@ -281,8 +281,9 @@ def get_calibration_data(conn: oracledb.Connection, track_id: int, regime: str) 
 _INSERT_COEFFICIENT = """
     INSERT INTO calibration_coefficients (
         coefficient_id, track_id, knob_name, calibration_regime,
-        sector_number, method_name, value, is_default, trained_at
-    ) VALUES (seq_calibration_coefficients.NEXTVAL, :1,:2,:3,:4,:5,:6,:7,:8)
+        sector_number, method_name, value, is_default, trained_at,
+        sample_count, r_squared, slope_std_error, clamped
+    ) VALUES (seq_calibration_coefficients.NEXTVAL, :1,:2,:3,:4,:5,:6,:7,:8,:9,:10,:11,:12)
 """
 
 
@@ -290,9 +291,16 @@ def insert_calibration_coefficient(
     conn: oracledb.Connection, track_id: int, knob_name: str, regime: str,
     sector_number: int | None, method_name: str, value: float,
     is_default: int, trained_at: datetime,
+    sample_count: int | None = None, r_squared: float | None = None,
+    slope_std_error: float | None = None, clamped: int = 0,
 ) -> None:
+    """Persist one fitted coefficient plus its fit diagnostics. For non-regression
+    knobs (mean/stddev) pass sample_count only — r_squared / slope_std_error stay
+    NULL (an R²=0 would read as a real-but-terrible fit). clamped=1 marks a fit
+    rejected as implausible and replaced by the prior."""
     with conn.cursor() as cur:
         cur.execute(_INSERT_COEFFICIENT, [
             track_id, knob_name, regime, sector_number, method_name,
             value, is_default, trained_at,
+            sample_count, r_squared, slope_std_error, clamped,
         ])

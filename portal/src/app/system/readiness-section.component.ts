@@ -48,6 +48,15 @@ import {
               <td class="fit">
                 <span [class.on]="c.baselineFitted">pace</span>
                 <span [class.on]="c.degFitted">deg</span>
+                <span
+                  class="badge"
+                  *ngIf="c.degFitted && c.degLowConfidence"
+                  [class.prior]="c.degClamped"
+                  [title]="'deg fit n=' + c.degSamples"
+                >
+                  {{ c.degClamped ? 'prior-fallback' : 'low-confidence' }}
+                </span>
+                <span class="nfit" *ngIf="c.degFitted && !c.degLowConfidence">n={{ c.degSamples }}</span>
               </td>
               <td class="reasons">{{ reasonText(c) }}</td>
             </tr>
@@ -90,6 +99,9 @@ import {
       .bar i { display: block; height: 100%; background: #4caf50; }
       .fit span { font-size: 0.7rem; color: #555; margin-right: 0.4rem; }
       .fit span.on { color: #4caf50; }
+      .fit .badge { color: #1a1a1a; background: #e6a23c; border-radius: 3px; padding: 0 0.3rem; font-weight: 600; }
+      .fit .badge.prior { background: #d9534f; color: #fff; }
+      .fit .nfit { color: var(--gray-500, #999); }
       .reasons { color: var(--gray-500, #999); font-size: 0.75rem; }
       .sectors td { color: var(--gray-500, #999); font-size: 0.78rem; padding-bottom: 0.5rem; }
       .sector { margin-right: 1rem; }
