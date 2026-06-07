@@ -44,6 +44,9 @@ venv/
 .superpowers/
 docs/superpowers/
 
+# Playwright MCP artifacts (screenshots / page snapshots)
+.playwright-mcp/
+
 # Packaging
 tfg-victormartinalvarez-*.zip
 
