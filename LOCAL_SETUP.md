@@ -74,6 +74,11 @@ python manage.py local import   # restore the latest backup (run after setup, be
 ```
 
 ```bash
+python manage.py local repair-sectors          # preview 3rd-sector rows corrupted by the old capture bug
+python manage.py local repair-sectors --apply   # ...and write the fixes (re-derive S3, quarantine the rest)
+```
+
+```bash
 python manage.py local clean    # tear down — export first to keep your accumulated data
 ```
 

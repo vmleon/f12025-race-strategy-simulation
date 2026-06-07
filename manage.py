@@ -518,6 +518,84 @@ def import_cmd(backup_file):
     console.print("[green]Import complete.[/green]")
 
 
+@local.command(name="repair-sectors")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write the fixes. Without it, only previews what would change.")
+def repair_sectors_cmd(apply_changes):
+    """Repair third-sector rows corrupted by the old telemetry capture bug.
+
+    Historically sector_number=2 stored the whole lap time instead of the third
+    sector. This re-derives S3 = lap_time_ms - S1 - S2 from the sibling sector
+    rows, and quarantines (outlier=1) any that can't be derived. Idempotent and
+    safe to re-run. Defaults to a dry run; pass --apply to write. Re-calibrate
+    affected tracks afterwards (`python -m calibration run <trackId>`).
+    """
+    password = _get_password()
+    if not password:
+        console.print("[red]Error:[/red] No password in .env. Is the database set up?")
+        sys.exit(1)
+    if not _container_running():
+        console.print("[red]Error:[/red] Database container is not running.")
+        sys.exit(1)
+
+    conn = _db_connect(password)
+    cur = conn.cursor()
+    # A real third sector can never be >= the whole lap, so that flags the bug
+    # precisely and leaves already-correct (and already-repaired) rows untouched.
+    cur.execute(
+        "SELECT t.session_uid, t.car_index, t.lap_number, t.lap_time_ms, "
+        "       s0.sector_time_ms, s1.sector_time_ms, s.track_id "
+        "FROM sector_snapshots t "
+        "JOIN sessions s ON s.session_uid = t.session_uid "
+        "LEFT JOIN sector_snapshots s0 ON s0.session_uid = t.session_uid "
+        "  AND s0.car_index = t.car_index AND s0.lap_number = t.lap_number AND s0.sector_number = 0 "
+        "LEFT JOIN sector_snapshots s1 ON s1.session_uid = t.session_uid "
+        "  AND s1.car_index = t.car_index AND s1.lap_number = t.lap_number AND s1.sector_number = 1 "
+        "WHERE t.sector_number = 2 AND t.lap_time_ms > 0 AND t.sector_time_ms >= t.lap_time_ms"
+    )
+    fixes, quarantine, tracks = [], [], set()
+    for uid, car, lap, laptime, s1, s2, track in cur:
+        tracks.add(track)
+        if s1 and s2 and s1 > 0 and s2 > 0 and (laptime - s1 - s2) > 0:
+            fixes.append((laptime - s1 - s2, uid, car, lap))
+        else:
+            quarantine.append((uid, car, lap))
+
+    total = len(fixes) + len(quarantine)
+    console.print(f"[bold]Corrupted third-sector rows:[/bold] {total} "
+                  f"(tracks {sorted(tracks) if tracks else '—'})")
+    console.print(f"  re-derivable (S3 = lap - S1 - S2): {len(fixes)}")
+    console.print(f"  not derivable -> quarantine (outlier=1): {len(quarantine)}")
+    for new_s3, _uid, car, lap in fixes[:5]:
+        console.print(f"    e.g. car {car} lap {lap}: S3 -> {new_s3} ms")
+
+    if total == 0:
+        console.print("[green]Nothing to repair.[/green]")
+        conn.close()
+        return
+
+    if not apply_changes:
+        console.print("\n[yellow]Dry run[/yellow] — re-run with [bold]--apply[/bold] to write the changes.")
+        conn.close()
+        return
+
+    if fixes:
+        cur.executemany(
+            "UPDATE sector_snapshots SET sector_time_ms = :1 "
+            "WHERE session_uid = :2 AND car_index = :3 AND lap_number = :4 AND sector_number = 2",
+            fixes)
+    if quarantine:
+        cur.executemany(
+            "UPDATE sector_snapshots SET outlier = 1 "
+            "WHERE session_uid = :1 AND car_index = :2 AND lap_number = :3 AND sector_number = 2",
+            quarantine)
+    conn.commit()
+    conn.close()
+    console.print(f"[green]Repaired {len(fixes)} rows, quarantined {len(quarantine)}.[/green]")
+    console.print("Re-calibrate affected tracks: "
+                  + "  ".join(f"python -m calibration run {t}" for t in sorted(tracks)))
+
+
 @cli.group()
 def mcp():
     """Manage Oracle MCP server connections."""
