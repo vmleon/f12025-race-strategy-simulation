@@ -189,7 +189,7 @@ Within a single stint, `fuelInTank` and `tyresAgeLaps` are almost perfectly line
 
 **Why this matters for strategy:** The simulation uses tyre degradation coefficients to evaluate pit stop timing ("pit now or push 5 more laps?"). If the tyre deg curve includes hidden fuel effects, the model thinks old tyres are slower than they actually are — because it attributes fuel-related slowness to tyre age — making strategy predictions unreliable.
 
-**As built: direct regression, fuel not subtracted.** The implemented `_fit_tyre_degradation` (`pipeline.py`) does a **plain linear regression** of `sector_time_ms` against `tyre_age_laps`, grouped by compound and sector — with **no fuel pre-correction**. Fuel is fitted separately as its own knob (Knob 3, `_fit_fuel_effect`), but that fuel coefficient is **not** used to pre-correct the degradation data. As a consequence the fitted deg slope **conflates** the (small) fuel-burn change that occurs over a stint with the genuine tyre-age effect. This is a **known PoC limitation**: it slightly overstates how much old tyres slow the car, because some fuel-related slowness is attributed to tyre age.
+**As built: direct regression, fuel not subtracted, with a plausibility clamp.** The implemented `_fit_tyre_degradation` (`pipeline.py`) does a **plain linear regression** of `sector_time_ms` against `tyre_age_laps`, grouped by compound and sector — with **no fuel pre-correction**. Fuel is fitted separately as its own knob (Knob 3, `_fit_fuel_effect`), but that fuel coefficient is **not** used to pre-correct the degradation data. As a consequence the fitted deg slope **conflates** the (small) fuel-burn change over a stint with the genuine tyre-age effect — on thin/early FP data this confounding can even produce a **negative or absurdly large** slope (a few noisy laps once fit ~1500 ms/lap ≈ 4.5 s/lap, which made the simulator pit far too early). To stop that poisoning the simulator, the fitted slope is **clamped** to a plausible range (`0 ≤ slope ≤ MAX_TYRE_DEG_MS_PER_LAP = 300` ms/lap/sector) and **falls back to the cold-start prior** when outside it; fuel is clamped the same way (`0 ≤ slope ≤ 50` ms/kg). On sparse data this means deg/fuel often default to the prior rather than a fitted value. This is a **known PoC limitation** — cleanly separating fuel from deg needs a joint (multiple) regression. Coefficients are stored in **milliseconds**, matching the engine, which adds them straight onto ms sector times.
 
 **Considered refinement (roadmap, not applied): fuel burn rate subtraction.** Measure the fuel consumption rate from `fuelInTank` deltas between consecutive laps. Since F1 25 appears to enforce a near-constant burn rate, the estimated fuel effect could be subtracted analytically before fitting tyre degradation on the residual — a two-stage process: (1) measure burn rate, (2) compute expected fuel penalty per lap, (3) subtract from sector times, (4) fit tyre deg on the residual. This would require the least data and can be applied within individual stints, but it is **not currently implemented**.
 
@@ -357,10 +357,10 @@ Two sets of defaults are maintained — one for player, one for AI. Initially id
 
 | Knob                    | Initial Default            | Confidence | Notes                                   |
 | ----------------------- | -------------------------- | ---------- | --------------------------------------- |
-| Tyre deg (soft)         | +0.05s/lap/sector          | Low        | Highly track-dependent; AI likely lower |
-| Tyre deg (medium)       | +0.03s/lap/sector          | Low        | Highly track-dependent; AI likely lower |
-| Tyre deg (hard)         | +0.02s/lap/sector          | Low        | Highly track-dependent; AI likely lower |
-| Fuel effect             | +0.01s/kg/sector           | Medium     | May be similar for player and AI        |
+| Tyre deg (soft)         | 50 ms/lap/sector (0.05 s)  | Low        | Highly track-dependent; AI likely lower |
+| Tyre deg (medium)       | 30 ms/lap/sector (0.03 s)  | Low        | Highly track-dependent; AI likely lower |
+| Tyre deg (hard)         | 20 ms/lap/sector (0.02 s)  | Low        | Highly track-dependent; AI likely lower |
+| Fuel effect             | 10 ms/kg/sector (0.01 s)   | Medium     | May be similar for player and AI        |
 | Pit stop time loss      | 22 000 ms                  | Low        | Mean pit-lane time loss per stop        |
 | Tyre wear rate (soft)   | 1.33 %/lap                 | Low        | Laps-to-cliff at 40% ≈ old S30 lifespan |
 | Tyre wear rate (medium) | 1.08 %/lap                 | Low        | Laps-to-cliff at 40% ≈ old M37 lifespan |
@@ -511,13 +511,13 @@ Cold-start defaults and recomputed outlier flags are committed first, so they pe
 
 Each step has a minimum sample threshold — if insufficient data exists, the step is skipped and existing coefficients (or cold-start defaults) remain in place.
 
-| Step | Knob                                        | Min samples | Data filter                                                                                  |
-| ---- | ------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------- |
-| 1    | Base pace (per sector)                      | 5           | "Clean data": tyre age ≤5 laps, gap ahead >2s or leading, no damage                          |
-| 2    | Tyre degradation (per compound, per sector) | 10          | Linear regression: `time_ms = baseline + slope × tyre_age`                                   |
-| 3    | Tyre wear rate (per compound, sector-wide)  | 5           | Linear regression: `most-worn wheel wear % = baseline + slope × tyre_age`, slope clamped ≥ 0 |
-| 4    | Fuel effect (per track)                     | 5           | Linear regression: `time_ms = baseline + slope × fuel_kg`                                    |
-| 5    | Pit stop duration (per regime)              | 3           | Mean/variance of time loss vs baseline sector times                                          |
+| Step | Knob                                        | Min samples | Data filter                                                                                              |
+| ---- | ------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------- |
+| 1    | Base pace (per sector)                      | 5           | "Clean data": tyre age ≤5 laps, gap ahead >2s or leading, no damage                                      |
+| 2    | Tyre degradation (per compound, per sector) | 10          | Linear regression: `time_ms = baseline + slope × tyre_age`; slope clamped to [0, 300] ms/lap, else prior |
+| 3    | Tyre wear rate (per compound, sector-wide)  | 5           | Linear regression: `most-worn wheel wear % = baseline + slope × tyre_age`, slope clamped ≥ 0             |
+| 4    | Fuel effect (per track)                     | 5           | Linear regression: `time_ms = baseline + slope × fuel_kg`; slope clamped to [0, 50] ms/kg, else prior    |
+| 5    | Pit stop duration (per regime)              | 3           | Mean/variance of time loss vs baseline sector times                                                      |
 
 All steps filter by `ai_controlled` to produce separate PLAYER and AI coefficients (see Dual Calibration above).
 

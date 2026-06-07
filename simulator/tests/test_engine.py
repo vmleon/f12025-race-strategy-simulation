@@ -415,6 +415,7 @@ class TestPerSectorPace:
         # A per-sector tyre-deg coefficient (sector 1 only) must change S1's time.
         coeffs = Coefficients.defaults()
         coeffs.put("tyre_deg_medium", "AI", 1, 100.0)  # 100 ms/lap of age, sector 1
+        coeffs.put("tyre_deg_medium", "AI", 0, 0.0)  # isolate S1: no deg in S0 (defaults are now non-zero)
         engine = MonteCarloEngine(coeffs, seed=1)
         car = CarState.from_snapshot(
             _make_car(0, tyre_age_laps=10, sector_baseline_ms=[30_000, 30_000, 30_000]),

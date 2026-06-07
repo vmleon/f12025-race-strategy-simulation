@@ -8,6 +8,7 @@ import numpy as np
 import oracledb
 
 from calibration import db
+from calibration.cold_start import KNOB_DEFAULTS
 from calibration.fitting import linear_regression, mean, variance
 from calibration.outlier_detector import detect_outliers
 
@@ -15,6 +16,15 @@ MIN_TYRE_DEG_SAMPLES = 10
 MIN_FUEL_SAMPLES = 5
 MIN_PIT_STOP_SAMPLES = 3
 MIN_WEAR_SAMPLES = 5   # wear is smooth/monotonic, so it calibrates from few laps
+
+# Plausibility clamps for fitted slopes (ms). Thin / early FP data, where fuel burn
+# confounds tyre wear over a short stint, can yield absurd or negative slopes — a few
+# noisy laps once fit a soft-deg slope of ~1500 ms/lap (≈4.5 s/lap), which made the
+# simulator pit far too early. Outside these bounds we fall back to the cold-start
+# prior instead of poisoning the simulator with an over-fit value.
+MAX_TYRE_DEG_MS_PER_LAP = 300.0     # per sector; ~0.9 s/lap total — generous upper bound
+MAX_FUEL_EFFECT_MS_PER_KG = 50.0    # per sector; ~0.05 s/kg — generous upper bound
+_PRIOR = dict(KNOB_DEFAULTS)        # cold-start defaults, used as the fallback prior
 
 COMPOUND_KNOB_NAMES = {
     16: "tyre_deg_soft",
@@ -88,11 +98,18 @@ def _fit_tyre_degradation(
         y = np.array([r[db._COL_SECTOR_TIME_MS] for r in group], dtype=float)
         reg = linear_regression(x, y)
 
+        slope = reg.slope
+        if not (0.0 <= slope <= MAX_TYRE_DEG_MS_PER_LAP):
+            prior = _PRIOR.get(knob_name, 30.0)
+            print(f"  {knob_name} sector {sector}: implausible slope {slope:.1f} ms/lap "
+                  f"(n={reg.n}) — falling back to prior {prior}")
+            slope = prior
+
         db.insert_calibration_coefficient(
             conn, track_id, knob_name, regime, sector, "linear_regression",
-            reg.slope, 0, now)
+            slope, 0, now)
 
-        print(f"  {knob_name} sector {sector}: slope={reg.slope:.2f} ms/lap, n={reg.n}")
+        print(f"  {knob_name} sector {sector}: slope={slope:.2f} ms/lap, n={reg.n}")
 
 
 # ── tyre wear rate ───────────────────────────────────────────────────
@@ -163,11 +180,20 @@ def _fit_fuel_effect(
         y = np.array([r[db._COL_SECTOR_TIME_MS] for r in group], dtype=float)
         reg = linear_regression(x, y)
 
+        # A heavier car is slower, so fuel_effect must be >= 0; a negative slope means
+        # fuel burn was confounded by track evolution / tyre warm-up on thin data.
+        slope = reg.slope
+        if not (0.0 <= slope <= MAX_FUEL_EFFECT_MS_PER_KG):
+            prior = _PRIOR.get("fuel_effect", 10.0)
+            print(f"  fuel_effect sector {sector}: implausible slope {slope:.1f} ms/kg "
+                  f"(n={reg.n}) — falling back to prior {prior}")
+            slope = prior
+
         db.insert_calibration_coefficient(
             conn, track_id, "fuel_effect", regime, sector, "linear_regression",
-            reg.slope, 0, now)
+            slope, 0, now)
 
-        print(f"  fuel_effect sector {sector}: slope={reg.slope:.2f} ms/kg, n={reg.n}")
+        print(f"  fuel_effect sector {sector}: slope={slope:.2f} ms/kg, n={reg.n}")
 
 
 # ── pit stop duration ────────────────────────────────────────────────

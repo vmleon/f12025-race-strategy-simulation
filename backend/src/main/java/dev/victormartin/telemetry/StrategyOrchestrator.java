@@ -359,6 +359,13 @@ public class StrategyOrchestrator {
                 }
             }
 
+            // Seed each active car's race time from the real gap to the leader — the
+            // cumulative delta-to-car-in-front in position order — so a pit stop costs a
+            // realistic number of positions instead of dropping the car to last (the old
+            // 1s-per-position spread packed the whole field inside ~19 s, less than a stop).
+            // Falls back to that positional spread when the feed carries no gaps.
+            Map<Integer, Double> raceTimeSeedMs = seedRaceTimeByGap(carsNode);
+
             List<RaceSnapshot.CarSnapshot> cars = new ArrayList<>();
             for (JsonNode c : carsNode) {
                 int idx = c.get("idx").asInt();
@@ -378,7 +385,7 @@ public class StrategyOrchestrator {
                 int resultStatus = c.has("resultStatus") ? c.get("resultStatus").asInt() : 2;
                 if (resultStatus <= 1 || resultStatus >= 4) continue;
 
-                double totalTimeMs = (pos - 1) * 1000.0;
+                double totalTimeMs = raceTimeSeedMs.getOrDefault(idx, (pos - 1) * 1000.0);
                 List<RaceSnapshot.TyreSet> tyreSets = tyreSetsByCarIndex.getOrDefault(idx, List.of());
 
                 SectorBaselineLookup.SectorBaselines baselines = sectorBaselineLookup.lookup(
@@ -400,6 +407,30 @@ public class StrategyOrchestrator {
             log.warn("StrategyOrchestrator: snapshot assembly failed: {}", e.getMessage());
             return null;
         }
+    }
+
+    /** Cumulative gap-to-leader (ms) per car index: the running sum of each active car's
+     * delta-to-car-in-front in position order. Returns an empty map (→ caller falls back
+     * to a 1s-per-position spread) when the feed carries no gaps. */
+    static Map<Integer, Double> seedRaceTimeByGap(JsonNode carsNode) {
+        List<JsonNode> activeByPos = new ArrayList<>();
+        for (JsonNode c : carsNode) {
+            int rs = c.has("resultStatus") ? c.get("resultStatus").asInt() : 2;
+            if (rs > 1 && rs < 4) activeByPos.add(c);
+        }
+        activeByPos.sort((a, b) -> Integer.compare(
+                a.has("pos") ? a.get("pos").asInt() : Integer.MAX_VALUE,
+                b.has("pos") ? b.get("pos").asInt() : Integer.MAX_VALUE));
+        Map<Integer, Double> seed = new HashMap<>();
+        double running = 0.0;
+        boolean anyGap = false;
+        for (JsonNode c : activeByPos) {
+            long delta = c.has("deltaToFrontMs") ? Math.max(c.get("deltaToFrontMs").asLong(), 0L) : 0L;
+            if (delta > 0) anyGap = true;
+            running += delta;
+            seed.put(c.get("idx").asInt(), running);
+        }
+        return anyGap ? seed : new HashMap<>();
     }
 
     private static int mapTyreCode(String tyre) {

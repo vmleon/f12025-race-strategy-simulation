@@ -43,17 +43,20 @@ class Coefficients:
         """
         c = Coefficients()
         for regime in ("PLAYER", "AI"):
-            c.put("tyre_deg_soft", regime, -1, 0.05)
-            c.put("tyre_deg_medium", regime, -1, 0.03)
-            c.put("tyre_deg_hard", regime, -1, 0.02)
+            # Milliseconds: the engine adds these straight onto ms sector times, and
+            # fitted coefficients are in ms too. tyre_deg_* are ms/lap/sector
+            # (50 ms = 0.05 s); fuel_effect is ms/kg/sector (10 ms = 0.01 s).
+            c.put("tyre_deg_soft", regime, -1, 50.0)
+            c.put("tyre_deg_medium", regime, -1, 30.0)
+            c.put("tyre_deg_hard", regime, -1, 20.0)
             # Wet-weather compounds — placeholder until we have wet-session data.
-            c.put("tyre_deg_intermediate", regime, -1, 0.04)
-            c.put("tyre_deg_wet", regime, -1, 0.04)
-            c.put("fuel_effect", regime, -1, 0.01)
+            c.put("tyre_deg_intermediate", regime, -1, 40.0)
+            c.put("tyre_deg_wet", regime, -1, 40.0)
+            c.put("fuel_effect", regime, -1, 10.0)
             c.put("pit_stop_time_loss", regime, -1, 22_000.0)
             # Wear-rate %/lap (most-worn wheel). Defaults chosen so laps-to-cliff at
-            # the 40% threshold ≈ the old hardcoded lifespans (S30/M37/H45).
-            c.put("tyre_wear_rate_soft", regime, -1, 1.33)
-            c.put("tyre_wear_rate_medium", regime, -1, 1.08)
-            c.put("tyre_wear_rate_hard", regime, -1, 0.89)
+            # the 80% threshold ≈ the hardcoded lifespans (S30/M37/H45).
+            c.put("tyre_wear_rate_soft", regime, -1, 2.67)
+            c.put("tyre_wear_rate_medium", regime, -1, 2.16)
+            c.put("tyre_wear_rate_hard", regime, -1, 1.78)
         return c

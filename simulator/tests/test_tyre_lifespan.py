@@ -8,8 +8,8 @@ from simulator.tyre_lifespan import (
 
 class TestLapsToCliff:
     def test_derives_from_wear_rate(self):
-        # 40% cliff / 2%-per-lap = 20 laps.
-        assert laps_to_cliff(16, 2.0) == 20
+        # 80% cliff / 2%-per-lap = 40 laps.
+        assert laps_to_cliff(16, 2.0) == 40
 
     def test_falls_back_to_lifespan_when_uncalibrated(self):
         assert laps_to_cliff(16, 0.0) == compound_lifespan(16)
@@ -23,7 +23,7 @@ class TestStintCap:
     def test_uses_calibrated_wear_rate(self):
         c = Coefficients()
         c.put("tyre_wear_rate_soft", "AI", -1, 4.0)  # heavy wear
-        assert stint_cap_laps(16, c, "AI") == 10  # 40 / 4
+        assert stint_cap_laps(16, c, "AI") == 20  # 80 / 4
 
     def test_falls_back_without_coefficients(self):
         assert stint_cap_laps(16, None, "AI") == compound_lifespan(16)
@@ -34,7 +34,7 @@ class TestStintCap:
         assert stint_cap_laps(7, c, "AI") == compound_lifespan(7)
 
     def test_defaults_reproduce_old_lifespans(self):
-        # Wear-rate defaults are tuned so the 40% cliff ≈ the old hardcoded caps.
+        # Wear-rate defaults are tuned so the 80% cliff ≈ the hardcoded caps.
         c = Coefficients.defaults()
         assert stint_cap_laps(16, c, "AI") == 30
         assert stint_cap_laps(17, c, "AI") == 37

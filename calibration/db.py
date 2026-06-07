@@ -61,18 +61,37 @@ def has_default_coefficients(conn: oracledb.Connection, track_id: int) -> bool:
 
 
 def ensure_cold_start_defaults(conn: oracledb.Connection, track_id: int) -> int:
-    if has_default_coefficients(conn, track_id):
-        return 0
+    """Ensure each (regime, knob) has an is_default row matching the current
+    KNOB_DEFAULTS. Inserts missing rows and refreshes any whose stored value has
+    drifted from the code default (e.g. after a units change), so the cold-start
+    prior in the DB always tracks the code. Returns the number of rows changed."""
     now = datetime.now()
-    inserted = 0
-    for regime in REGIMES:
-        for knob_name, value in KNOB_DEFAULTS:
-            insert_calibration_coefficient(
-                conn, track_id, knob_name, regime, None, METHOD_NAME,
-                value, 1, now,
-            )
-            inserted += 1
-    return inserted
+    changed = 0
+    with conn.cursor() as cur:
+        for regime in REGIMES:
+            for knob_name, value in KNOB_DEFAULTS:
+                cur.execute(
+                    "SELECT value FROM calibration_coefficients "
+                    "WHERE track_id = :1 AND knob_name = :2 AND calibration_regime = :3 "
+                    "  AND sector_number IS NULL AND method_name = :4 AND is_default = 1",
+                    [track_id, knob_name, regime, METHOD_NAME],
+                )
+                row = cur.fetchone()
+                if row is None:
+                    insert_calibration_coefficient(
+                        conn, track_id, knob_name, regime, None, METHOD_NAME,
+                        value, 1, now,
+                    )
+                    changed += 1
+                elif abs(float(row[0]) - value) > 1e-9:
+                    cur.execute(
+                        "UPDATE calibration_coefficients SET value = :1, trained_at = :2 "
+                        "WHERE track_id = :3 AND knob_name = :4 AND calibration_regime = :5 "
+                        "  AND sector_number IS NULL AND method_name = :6 AND is_default = 1",
+                        [value, now, track_id, knob_name, regime, METHOD_NAME],
+                    )
+                    changed += 1
+    return changed
 
 
 # ── outlier detection queries ────────────────────────────────────────

@@ -19,14 +19,19 @@ DEFAULT_COMPOUND_LIFESPAN_LAPS = 37
 # Hardcoded per-compound and tunable here — NOT calibrated (the cliff location can't
 # be learned from short FP runs; only the wear-rate is). Combined with the calibrated
 # wear-rate it yields a per-circuit stint cap: laps-to-cliff = cliffPct / wear-rate.
+#
+# Set to 80%: telemetry shows the car still on the pace at ~43% most-worn-wheel wear,
+# so the earlier 40% threshold forced stops far too early (≈7-lap soft stints at the
+# measured ~6%/lap). The cold-start wear-rate defaults are scaled to match, so the
+# uncalibrated lifespans stay ~S30/M37/H45; only calibrated tracks get longer stints.
 CLIFF_WEAR_PCT = {
-    16: 40.0,  # Soft
-    17: 40.0,  # Medium
-    18: 40.0,  # Hard
-    7: 60.0,   # Intermediate (placeholder)
-    8: 60.0,   # Wet (placeholder)
+    16: 80.0,  # Soft
+    17: 80.0,  # Medium
+    18: 80.0,  # Hard
+    7: 80.0,   # Intermediate (placeholder)
+    8: 80.0,   # Wet (placeholder)
 }
-DEFAULT_CLIFF_WEAR_PCT = 40.0
+DEFAULT_CLIFF_WEAR_PCT = 80.0
 
 # Visual compound code -> calibrated wear-rate knob name (%/lap, sector-wide).
 WEAR_RATE_KNOBS = {

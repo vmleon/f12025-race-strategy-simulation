@@ -226,6 +226,65 @@ class TestFuelEffectPerSector:
 
 
 
+class TestFitSlopeClamping:
+    """Thin/early FP data can produce absurd or negative fitted slopes; those must
+    fall back to the cold-start prior rather than poison the simulator."""
+
+    def _deg_rows(self, compound, slope, n=12, base=24_000.0):
+        rows = []
+        for age in range(n):
+            r = [0] * 21
+            r[db._COL_TYRE_COMPOUND] = compound
+            r[db._COL_SECTOR_NUMBER] = 1
+            r[db._COL_TYRE_AGE] = age
+            r[db._COL_SECTOR_TIME_MS] = base + slope * age
+            rows.append(tuple(r))
+        return rows
+
+    def _run_deg(self, monkeypatch, rows):
+        from datetime import datetime as _dt
+        from calibration.pipeline import _fit_tyre_degradation
+        captured = []
+        monkeypatch.setattr(
+            db, "insert_calibration_coefficient",
+            lambda conn, t, knob, reg, sec, m, val, isd, now: captured.append((knob, val)))
+        _fit_tyre_degradation(None, rows, track_id=4, regime="PLAYER", now=_dt.now())
+        return captured
+
+    def test_absurd_deg_slope_falls_back_to_prior(self, monkeypatch):
+        # ~2000 ms/lap (≈6 s/lap) is implausible — fall back to the soft prior (50).
+        captured = self._run_deg(monkeypatch, self._deg_rows(16, slope=2000.0))
+        assert captured and captured[0][1] == pytest.approx(50.0)
+
+    def test_negative_deg_slope_falls_back_to_prior(self, monkeypatch):
+        # A tyre can't get faster with age at constant fuel — fall back (medium=30).
+        captured = self._run_deg(monkeypatch, self._deg_rows(17, slope=-120.0))
+        assert captured and captured[0][1] == pytest.approx(30.0)
+
+    def test_plausible_deg_slope_is_kept(self, monkeypatch):
+        # 35 ms/lap is within bounds and must be kept (hard prior would be 20).
+        captured = self._run_deg(monkeypatch, self._deg_rows(18, slope=35.0))
+        assert captured and captured[0][1] == pytest.approx(35.0, abs=1.0)
+
+    def test_negative_fuel_slope_falls_back_to_prior(self, monkeypatch):
+        from datetime import datetime as _dt
+        from calibration.pipeline import _fit_fuel_effect
+        captured = []
+        monkeypatch.setattr(
+            db, "insert_calibration_coefficient",
+            lambda conn, t, knob, reg, sec, m, val, isd, now: captured.append((knob, val)))
+
+        rows = []
+        for i in range(8):
+            r = [0] * 21
+            r[db._COL_SECTOR_NUMBER] = 0
+            r[db._COL_FUEL] = 100.0 - i * 5
+            r[db._COL_SECTOR_TIME_MS] = 24_000.0 + i * 80  # time rises as fuel falls -> negative slope
+            rows.append(tuple(r))
+        _fit_fuel_effect(None, rows, track_id=4, regime="PLAYER", now=_dt.now())
+        assert captured and captured[0][1] == pytest.approx(10.0)  # fuel prior
+
+
 class TestSummarizeBucket:
 
     def test_mean_stddev_perfect(self):

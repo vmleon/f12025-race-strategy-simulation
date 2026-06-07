@@ -65,7 +65,12 @@ def load_coefficients_for_track(track_id: int) -> Coefficients:
                     SELECT knob_name, calibration_regime, sector_number, value,
                            ROW_NUMBER() OVER (
                                PARTITION BY knob_name, calibration_regime, NVL(sector_number, -1)
-                               ORDER BY trained_at DESC
+                               -- Prefer a fitted value over a cold-start default (which
+                               -- shares the sector=NULL slot for sector-wide knobs like
+                               -- wear-rate), then the most recent. is_default first so a
+                               -- real fit always wins regardless of when defaults were
+                               -- (re)written.
+                               ORDER BY is_default ASC, trained_at DESC
                            ) rn
                     FROM calibration_coefficients
                     WHERE track_id = :1
