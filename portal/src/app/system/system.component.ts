@@ -33,7 +33,13 @@ import { ReadinessScatterComponent } from './readiness-scatter.component';
         </div>
       </div>
 
+      <!-- Calibration/strategy signal up top: degradation charts beside readiness. -->
       <div class="layout">
+        <app-readiness-scatter [trackId]="readinessTrackId"></app-readiness-scatter>
+        <app-readiness-section (trackChange)="readinessTrackId = $event"></app-readiness-section>
+      </div>
+
+      <!-- Operational counters demoted to a full-width strip at the bottom. -->
       <div class="cards">
         <!-- Simulations -->
         <div class="card">
@@ -82,9 +88,6 @@ import { ReadinessScatterComponent } from './readiness-scatter.component';
           <canvas baseChart type="line" [data]="calibPerDay" [options]="lineOpts"></canvas>
         </div>
       </div>
-        <app-readiness-section (trackChange)="readinessTrackId = $event"></app-readiness-section>
-      </div>
-      <app-readiness-scatter [trackId]="readinessTrackId"></app-readiness-scatter>
     </section>
   `,
   styles: [
@@ -94,7 +97,7 @@ import { ReadinessScatterComponent } from './readiness-scatter.component';
       .live-strip { display: flex; gap: 1.5rem; margin: 1rem 0; padding: 0.75rem 1rem; background: var(--surface, #1b1b1b); border-radius: 8px; }
       .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; margin-top: 1rem; }
       @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
-      .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+      .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; margin-top: 1rem; }
       .card { background: var(--surface, #1b1b1b); border-radius: 8px; padding: 1rem; }
       .card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
       .tiles { display: flex; gap: 1rem; margin-bottom: 0.5rem; }
