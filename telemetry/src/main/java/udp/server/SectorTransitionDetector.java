@@ -14,6 +14,13 @@ public class SectorTransitionDetector {
 
     private final int[] lastSector = new int[NUM_CARS];
     private final int[] lastLap = new int[NUM_CARS];
+    // Latest non-zero live S1/S2 (ms) seen for each car's current lap. The third
+    // sector completes at the start/finish line, where the live LapData packet has
+    // already reset S1/S2 to 0 for the new lap — so subtracting them there yields the
+    // whole lap time. We cache them while the car is mid-lap and subtract from the
+    // completed lap time to recover the true third-sector time.
+    private final long[] lapSector1Ms = new long[NUM_CARS];
+    private final long[] lapSector2Ms = new long[NUM_CARS];
 
     public SectorTransitionDetector() {
         reset();
@@ -23,6 +30,8 @@ public class SectorTransitionDetector {
         for (int i = 0; i < NUM_CARS; i++) {
             lastSector[i] = UNINITIALIZED;
             lastLap[i] = UNINITIALIZED;
+            lapSector1Ms[i] = 0;
+            lapSector2Ms[i] = 0;
         }
     }
 
@@ -35,7 +44,15 @@ public class SectorTransitionDetector {
      * Represents a detected sector transition for one car.
      * @param recovered 0=primary, 1=Tier1 (LapData cumulative), 2=Tier2 (SessionHistory), 3=Tier3 (gap flag)
      */
-    public record Transition(int carIndex, int completedSector, int lapNumber, int recovered) {}
+    public record Transition(int carIndex, int completedSector, int lapNumber, int recovered,
+                             long thirdSectorMs) {
+        /** @param thirdSectorMs pre-resolved third-sector time (completed lap − cached
+         *  S1 − S2), or -1 when not applicable. Only consulted for a sector-2
+         *  primary/Tier1 capture, where the live LapData S1/S2 have reset at the line. */
+        public Transition(int carIndex, int completedSector, int lapNumber, int recovered) {
+            this(carIndex, completedSector, lapNumber, recovered, -1L);
+        }
+    }
 
     /**
      * Check all 22 cars for sector transitions. Returns list of transitions detected,
@@ -51,6 +68,7 @@ public class SectorTransitionDetector {
             if (lastSector[i] == UNINITIALIZED) {
                 lastSector[i] = currentSector;
                 lastLap[i] = currentLap;
+                cacheLiveSectorTimes(i, car);
                 continue;
             }
 
@@ -61,15 +79,13 @@ public class SectorTransitionDetector {
                 for (int[] m : missed) {
                     int completedSector = m[0];
                     int lapForSnapshot = m[1];
-
-                    if (completedSector == lastSector[i]) {
-                        // This is the expected next transition — primary capture
-                        transitions.add(new Transition(i, completedSector, lapForSnapshot, RECOVERED_PRIMARY));
-                    } else {
-                        // This sector was missed — try recovery tiers
-                        int tier = recoverTier(i, lapForSnapshot, completedSector, car, historyBuffer);
-                        transitions.add(new Transition(i, completedSector, lapForSnapshot, tier));
-                    }
+                    // The third sector finishes at the line, where the live S1/S2 have
+                    // already reset — recover it from the cached pre-reset times.
+                    long thirdMs = completedSector == 2 ? thirdSectorFromCache(i, car) : -1L;
+                    int tier = completedSector == lastSector[i]
+                            ? RECOVERED_PRIMARY  // expected next transition — primary capture
+                            : recoverTier(i, lapForSnapshot, completedSector, car, historyBuffer);
+                    transitions.add(new Transition(i, completedSector, lapForSnapshot, tier, thirdMs));
                 }
 
                 lastSector[i] = currentSector;
@@ -77,8 +93,33 @@ public class SectorTransitionDetector {
             } else if (currentLap != lastLap[i]) {
                 lastLap[i] = currentLap;
             }
+
+            // Cache after handling the transition so the value consumed above is the
+            // pre-crossing one; only non-zero values overwrite, so the reset frame (S1/S2
+            // both 0) leaves the just-completed lap's times intact for the capture.
+            cacheLiveSectorTimes(i, car);
         }
         return transitions;
+    }
+
+    /** Remember the latest non-zero live S1/S2 for this car's current lap. */
+    private void cacheLiveSectorTimes(int carIndex, LapData lap) {
+        long s1 = lap.sector1TimeInMS();
+        if (s1 > 0) lapSector1Ms[carIndex] = s1;
+        long s2 = lap.sector2TimeInMS();
+        if (s2 > 0) lapSector2Ms[carIndex] = s2;
+    }
+
+    /** Third-sector time = completed lap time − cached S1 − S2, or -1 if unavailable. */
+    private long thirdSectorFromCache(int carIndex, LapData lap) {
+        long lapMs = lap.lastLapTimeInMS;
+        long s1 = lapSector1Ms[carIndex];
+        long s2 = lapSector2Ms[carIndex];
+        if (lapMs > 0 && s1 > 0 && s2 > 0) {
+            long third = lapMs - s1 - s2;
+            if (third > 0) return third;
+        }
+        return -1L;
     }
 
     /**
@@ -238,6 +279,12 @@ public class SectorTransitionDetector {
                 case 0 -> lap.sector1TimeInMS();
                 case 1 -> lap.sector2TimeInMS();
                 case 2 -> {
+                    // Cached pre-reset S1/S2 give the true third sector. The live
+                    // subtraction below is only a fallback — at the line S1/S2 read 0,
+                    // so it returns the whole lap time (the bug this replaces).
+                    if (transition.thirdSectorMs() > 0) {
+                        yield transition.thirdSectorMs();
+                    }
                     if (lap.lastLapTimeInMS > 0) {
                         yield lap.lastLapTimeInMS - lap.sector1TimeInMS() - lap.sector2TimeInMS();
                     }

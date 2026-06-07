@@ -286,6 +286,82 @@ class SectorTransitionDetectorTest {
         assertEquals(2, laps[1].resultStatus); // other cars remain active
     }
 
+    /** LapData with parameterized S1/S2/lastLap so we can simulate the real
+     * line-crossing reset (S1/S2 → 0, lastLapTime set) that the live game produces. */
+    private LapData[] buildLapDataFull(int sector, int lapNum, int s1Ms, int s2Ms, int lastLapMs) {
+        int totalSize = PacketHeader.HEADER_SIZE + LapData.NUM_CARS * LapData.SIZE + 2;
+        ByteBuffer buf = ByteBuffer.allocate(totalSize);
+        buf.order(ByteOrder.LITTLE_ENDIAN);
+        buf.putShort((short) 2025);
+        buf.put((byte) 25);
+        buf.put(new byte[4]);
+        buf.putLong(0x1234L);
+        buf.putFloat(10.0f);
+        buf.putInt(50);
+        buf.putInt(50);
+        buf.put((byte) 0);
+        buf.put((byte) 255);
+        for (int car = 0; car < 22; car++) {
+            buf.putInt(lastLapMs);          // lastLapTimeInMS
+            buf.putInt(30000);              // currentLapTimeInMS
+            buf.putShort((short) s1Ms);     // sector1TimeMSPart
+            buf.put((byte) 0);
+            buf.putShort((short) s2Ms);     // sector2TimeMSPart
+            buf.put((byte) 0);
+            buf.putShort((short) 0);
+            buf.put((byte) 0);
+            buf.putShort((short) 0);
+            buf.put((byte) 0);
+            buf.putFloat(1500.0f);
+            buf.putFloat(5000.0f);
+            buf.putFloat(0.0f);
+            buf.put((byte) (car + 1));
+            buf.put((byte) lapNum);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+            buf.put((byte) sector);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+            buf.put((byte) 0);
+            buf.put((byte) (car + 1));
+            buf.put((byte) 4);
+            buf.put((byte) 2);
+            buf.put((byte) 0);
+            buf.putShort((short) 0);
+            buf.putShort((short) 0);
+            buf.put((byte) 0);
+            buf.putFloat(310.0f);
+            buf.put((byte) 1);
+        }
+        return LapData.parseAll(buf.array(), buf.array().length);
+    }
+
+    @Test
+    void thirdSectorUsesCachedPreResetTimesNotWholeLap() {
+        SectorTransitionDetector detector = new SectorTransitionDetector();
+        // Mid-lap: S1 known, then S2 known (car running sectors 1 then 2 of lap 1).
+        detector.detect(buildLapDataFull(1, 1, 24000, 0, 0), historyBuffer);
+        detector.detect(buildLapDataFull(2, 1, 24000, 31000, 0), historyBuffer);
+        // Cross the line: new lap, the live S1/S2 reset to 0, lastLapTime = 80000.
+        var transitions = detector.detect(buildLapDataFull(0, 2, 0, 0, 80000), historyBuffer);
+
+        var sector2 = transitions.stream()
+                .filter(t -> t.carIndex() == 0 && t.completedSector() == 2).findFirst().orElseThrow();
+        // 80000 − 24000 − 31000 = 25000, NOT the whole 80000 lap time.
+        assertEquals(25000L, sector2.thirdSectorMs());
+
+        CarStateTracker state = new CarStateTracker();
+        state.updateLapData(buildLapDataFull(0, 2, 0, 0, 80000));
+        DbWriter.SectorSnapshot snap = SectorTransitionDetector.captureSnapshot(
+                0x1234L, sector2, state, historyBuffer, 1L);
+        // Old bug yielded 80000 (lastLap − 0 − 0); the cache fix yields the real S3.
+        assertEquals(25000L, snap.sectorTimeMs());
+        assertEquals(80000L, snap.lapTimeMs());
+    }
+
     @Test
     void resetClearsState() {
         SectorTransitionDetector detector = new SectorTransitionDetector();
