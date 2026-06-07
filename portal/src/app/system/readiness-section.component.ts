@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, Output, EventEmitter } from '@angular/core';
+import { Component, OnInit, OnDestroy, Output, EventEmitter, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Subscription, interval } from 'rxjs';
 import {
@@ -17,23 +17,23 @@ import {
       <div class="readiness__head">
         <h3>Calibration Readiness</h3>
         <div class="controls">
-          <select [value]="selectedTrackId ?? ''" (change)="onTrackChange($event)">
-            <option *ngFor="let t of tracks" [value]="t.trackId">{{ t.trackName }}</option>
+          <select [value]="selectedTrackId() ?? ''" (change)="onTrackChange($event)">
+            <option *ngFor="let t of tracks()" [value]="t.trackId">{{ t.trackName }}</option>
           </select>
         </div>
       </div>
 
-      <div class="summary" *ngIf="data">
+      <div class="summary" *ngIf="data() as d">
         <div class="tile">
-          <span>{{ data.overallConfidence * 100 | number: '1.0-0' }}%</span>sim confidence
+          <span>{{ d.overallConfidence * 100 | number: '1.0-0' }}%</span>sim confidence
         </div>
-        <div class="tile"><span>{{ data.fuelEffectFitted ? '✓' : '✗' }}</span>fuel effect</div>
-        <div class="tile last"><span>last calibrated</span>{{ data.calibrationLastRanAt ?? 'never' }}</div>
+        <div class="tile"><span>{{ d.fuelEffectFitted ? '✓' : '✗' }}</span>fuel effect</div>
+        <div class="tile last"><span>last calibrated</span>{{ d.calibrationLastRanAt ?? 'never' }}</div>
       </div>
 
-      <table class="rows" *ngIf="data">
+      <table class="rows" *ngIf="data() as d">
         <tbody>
-          <ng-container *ngFor="let c of data.compounds">
+          <ng-container *ngFor="let c of d.compounds">
             <tr class="row" (click)="toggle(c.compound)">
               <td class="exp">{{ expanded.has(c.compound) ? '▾' : '▸' }}</td>
               <td class="name">{{ c.name }}</td>
@@ -64,7 +64,7 @@ import {
         </tbody>
       </table>
 
-      <p class="empty" *ngIf="data && data.compounds.length === 0">No session data for this track yet.</p>
+      <p class="empty" *ngIf="data()?.compounds?.length === 0">No session data for this track yet.</p>
     </div>
   `,
   styles: [
@@ -98,9 +98,11 @@ import {
   ],
 })
 export class ReadinessSectionComponent implements OnInit, OnDestroy {
-  tracks: TrackOption[] = [];
-  selectedTrackId?: number;
-  data?: ReadinessResponse;
+  // Signals (not plain fields): the portal is zoneless, so a plain field set inside an
+  // HttpClient.subscribe callback would never repaint the view. signal.set() does.
+  tracks = signal<TrackOption[]>([]);
+  selectedTrackId = signal<number | undefined>(undefined);
+  data = signal<ReadinessResponse | undefined>(undefined);
   expanded = new Set<number>();
   private pollSub?: Subscription;
 
@@ -112,9 +114,10 @@ export class ReadinessSectionComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.svc.tracks().subscribe((ts) => {
-      this.tracks = ts;
-      this.selectedTrackId = ts.length ? ts[0].trackId : undefined;
-      this.trackChange.emit(this.selectedTrackId);
+      this.tracks.set(ts);
+      const selected = ts.length ? ts[0].trackId : undefined;
+      this.selectedTrackId.set(selected);
+      this.trackChange.emit(selected);
       this.refresh();
     });
     // Auto-refresh readiness for the selected track while a session runs.
@@ -126,13 +129,13 @@ export class ReadinessSectionComponent implements OnInit, OnDestroy {
   }
 
   onTrackChange(ev: Event): void {
-    this.selectedTrackId = Number((ev.target as HTMLSelectElement).value);
-    this.trackChange.emit(this.selectedTrackId);
+    this.selectedTrackId.set(Number((ev.target as HTMLSelectElement).value));
+    this.trackChange.emit(this.selectedTrackId());
     this.refresh();
   }
 
   refresh(): void {
-    this.svc.readiness(this.selectedTrackId).subscribe((d) => (this.data = d));
+    this.svc.readiness(this.selectedTrackId()).subscribe((d) => this.data.set(d));
   }
 
   toggle(compound: number): void {
