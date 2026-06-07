@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BaseChartDirective } from 'ng2-charts';
 import { ChartConfiguration } from 'chart.js';
@@ -25,11 +25,11 @@ import { ReadinessScatterComponent } from './readiness-scatter.component';
       </header>
 
       <div class="live-strip">
-        <div class="tile"><span>{{ live?.simsInFlight ?? 0 }}</span>in flight</div>
-        <div class="tile"><span>{{ live?.today?.simulations ?? 0 }}</span>sims today</div>
-        <div class="tile"><span>{{ live?.today?.radioMessages ?? 0 }}</span>radio today</div>
-        <div class="tile" *ngIf="(live?.accuracy?.races ?? 0) > 0">
-          <span>{{ live?.accuracy?.meanAbsError ?? 0 | number: '1.1-1' }}</span>sim error (Δpos, last {{ live?.accuracy?.races }})
+        <div class="tile"><span>{{ live()?.simsInFlight ?? 0 }}</span>in flight</div>
+        <div class="tile"><span>{{ live()?.today?.simulations ?? 0 }}</span>sims today</div>
+        <div class="tile"><span>{{ live()?.today?.radioMessages ?? 0 }}</span>radio today</div>
+        <div class="tile" *ngIf="(live()?.accuracy?.races ?? 0) > 0">
+          <span>{{ live()?.accuracy?.meanAbsError ?? 0 | number: '1.1-1' }}</span>sim error (Δpos, last {{ live()?.accuracy?.races }})
         </div>
       </div>
 
@@ -45,11 +45,11 @@ import { ReadinessScatterComponent } from './readiness-scatter.component';
         <div class="card">
           <h3>Simulations</h3>
           <div class="tiles">
-            <div class="tile"><span>{{ sim?.total ?? 0 }}</span>total</div>
-            <div class="tile"><span>{{ (sim?.avgDurationMs ?? 0) | number: '1.0-0' }}</span>avg ms</div>
-            <div class="tile"><span>{{ (sim?.avgIterations ?? 0) | number: '1.0-0' }}</span>avg iters</div>
+            <div class="tile"><span>{{ sim()?.total ?? 0 }}</span>total</div>
+            <div class="tile"><span>{{ (sim()?.avgDurationMs ?? 0) | number: '1.0-0' }}</span>avg ms</div>
+            <div class="tile"><span>{{ (sim()?.avgIterations ?? 0) | number: '1.0-0' }}</span>avg iters</div>
           </div>
-          <canvas baseChart type="bar" [data]="simPerDay" [options]="barOpts"></canvas>
+          <canvas baseChart type="bar" [data]="simPerDay()" [options]="barOpts"></canvas>
         </div>
 
         <!-- Simulation status -->
@@ -64,28 +64,28 @@ import { ReadinessScatterComponent } from './readiness-scatter.component';
         <!-- Radio -->
         <div class="card">
           <h3>Radio messages</h3>
-          <div class="tiles"><div class="tile"><span>{{ radio?.total ?? 0 }}</span>total</div></div>
-          <canvas baseChart type="line" [data]="radioPerDay" [options]="lineOpts"></canvas>
+          <div class="tiles"><div class="tile"><span>{{ radio()?.total ?? 0 }}</span>total</div></div>
+          <canvas baseChart type="line" [data]="radioPerDay()" [options]="lineOpts"></canvas>
         </div>
 
         <div class="card">
           <h3>By priority</h3>
-          <canvas baseChart type="doughnut" [data]="radioPriority" [options]="pieOpts"></canvas>
+          <canvas baseChart type="doughnut" [data]="radioPriority()" [options]="pieOpts"></canvas>
         </div>
 
         <div class="card">
           <h3>Rendered vs fallback</h3>
-          <canvas baseChart type="doughnut" [data]="radioRendered" [options]="pieOpts"></canvas>
+          <canvas baseChart type="doughnut" [data]="radioRendered()" [options]="pieOpts"></canvas>
         </div>
 
         <!-- Calibration -->
         <div class="card">
           <h3>Calibration</h3>
           <div class="tiles">
-            <div class="tile"><span>{{ calib?.totalRuns ?? 0 }}</span>runs</div>
-            <div class="tile"><span>{{ calib?.totalCoefficients ?? 0 }}</span>coeffs</div>
+            <div class="tile"><span>{{ calib()?.totalRuns ?? 0 }}</span>runs</div>
+            <div class="tile"><span>{{ calib()?.totalCoefficients ?? 0 }}</span>coeffs</div>
           </div>
-          <canvas baseChart type="line" [data]="calibPerDay" [options]="lineOpts"></canvas>
+          <canvas baseChart type="line" [data]="calibPerDay()" [options]="lineOpts"></canvas>
         </div>
       </div>
     </section>
@@ -108,25 +108,27 @@ import { ReadinessScatterComponent } from './readiness-scatter.component';
   ],
 })
 export class SystemComponent implements OnInit, OnDestroy {
-  sim?: SimulationStats;
-  radio?: RadioStats;
-  calib?: CalibrationStats;
-  live?: LiveStats;
+  // Signals (not plain fields): the portal is zoneless, so a plain field set inside an
+  // HttpClient.subscribe callback would never repaint the view. signal.set() does.
+  sim = signal<SimulationStats | undefined>(undefined);
+  radio = signal<RadioStats | undefined>(undefined);
+  calib = signal<CalibrationStats | undefined>(undefined);
+  live = signal<LiveStats | undefined>(undefined);
 
   /** Track selected in the readiness section; drives the degradation scatter charts. */
   readinessTrackId?: number;
 
-  get completedRuns(): number { return this.sim?.byStatus?.['completed'] ?? 0; }
-  get failedRuns(): number { return this.sim?.byStatus?.['failed'] ?? 0; }
+  get completedRuns(): number { return this.sim()?.byStatus?.['completed'] ?? 0; }
+  get failedRuns(): number { return this.sim()?.byStatus?.['failed'] ?? 0; }
 
   private liveSub?: Subscription;
   private pollSub?: Subscription;
 
-  simPerDay = this.emptyDataset('Simulations');
-  radioPerDay = this.emptyDataset('Radio');
-  radioPriority = this.emptyDataset('Priority');
-  radioRendered = this.emptyDataset('Rendered');
-  calibPerDay = this.emptyDataset('Coefficients');
+  simPerDay = signal(this.emptyDataset('Simulations'));
+  radioPerDay = signal(this.emptyDataset('Radio'));
+  radioPriority = signal(this.emptyDataset('Priority'));
+  radioRendered = signal(this.emptyDataset('Rendered'));
+  calibPerDay = signal(this.emptyDataset('Coefficients'));
 
   readonly barOpts: ChartConfiguration['options'] = { responsive: true, plugins: { legend: { display: false } } };
   readonly lineOpts: ChartConfiguration['options'] = { responsive: true, plugins: { legend: { display: false } } };
@@ -136,7 +138,7 @@ export class SystemComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.refresh();
-    this.liveSub = this.svc.live$().subscribe((l) => (this.live = l));
+    this.liveSub = this.svc.live$().subscribe((l) => this.live.set(l));
     // Auto-refresh the stat cards while a session runs (the live strip polls 5s itself).
     this.pollSub = interval(15_000).subscribe(() => this.refresh());
   }
@@ -148,24 +150,26 @@ export class SystemComponent implements OnInit, OnDestroy {
 
   refresh(): void {
     this.svc.simulations().subscribe((s) => {
-      this.sim = s;
-      this.simPerDay = this.fromDayCounts('Simulations', s.perDay);
+      this.sim.set(s);
+      this.simPerDay.set(this.fromDayCounts('Simulations', s.perDay));
     });
     this.svc.radio().subscribe((r) => {
-      this.radio = r;
-      this.radioPerDay = this.fromDayCounts('Radio', r.perDay);
-      this.radioPriority = {
+      this.radio.set(r);
+      this.radioPerDay.set(this.fromDayCounts('Radio', r.perDay));
+      this.radioPriority.set({
         labels: r.byPriority.map((p) => p.priority),
         datasets: [{ data: r.byPriority.map((p) => p.count) }],
-      };
-      this.radioRendered = this.fromRecord({
-        rendered: r.renderedVsFallback.rendered,
-        fallback: r.renderedVsFallback.fallback,
       });
+      this.radioRendered.set(
+        this.fromRecord({
+          rendered: r.renderedVsFallback.rendered,
+          fallback: r.renderedVsFallback.fallback,
+        }),
+      );
     });
     this.svc.calibration().subscribe((c) => {
-      this.calib = c;
-      this.calibPerDay = this.fromDayCounts('Coefficients', c.perDay);
+      this.calib.set(c);
+      this.calibPerDay.set(this.fromDayCounts('Coefficients', c.perDay));
     });
   }
 

@@ -5,6 +5,7 @@ import {
   ReadinessService,
   ReadinessResponse,
   CompoundReadiness,
+  SectorReadiness,
   TrackOption,
 } from './readiness.service';
 
@@ -31,47 +32,45 @@ import {
         <div class="tile last"><span>last calibrated</span>{{ d.calibrationLastRanAt ?? 'never' }}</div>
       </div>
 
-      <table class="rows" *ngIf="data() as d">
-        <tbody>
-          <ng-container *ngFor="let c of d.compounds">
-            <tr class="row" (click)="toggle(c.compound)">
-              <td class="exp">{{ expanded.has(c.compound) ? '▾' : '▸' }}</td>
-              <td class="name">{{ c.name }}</td>
-              <td class="ready" [class.on]="c.wearFitted">
-                {{ c.wearFitted ? '✓ cliff' : '— cliff' }}
-              </td>
-              <td class="count secondary">good {{ c.good }} / {{ c.total }}</td>
-              <td class="conf secondary">
-                <span class="bar"><i [style.width.%]="c.confidence * 100"></i></span>
-                {{ c.confidence * 100 | number: '1.0-0' }}%
-              </td>
-              <td class="fit">
-                <span [class.on]="c.baselineFitted">pace</span>
-                <span [class.on]="c.degFitted">deg</span>
-                <span
-                  class="badge"
-                  *ngIf="c.degFitted && c.degLowConfidence"
-                  [class.prior]="c.degClamped"
-                  [title]="'deg fit n=' + c.degSamples"
-                >
-                  {{ c.degClamped ? 'prior-fallback' : 'low-confidence' }}
-                </span>
-                <span class="nfit" *ngIf="c.degFitted && !c.degLowConfidence">n={{ c.degSamples }}</span>
-              </td>
-              <td class="reasons">{{ reasonText(c) }}</td>
-            </tr>
-            <tr class="sectors" *ngIf="expanded.has(c.compound)">
-              <td></td>
-              <td colspan="6">
-                <span *ngFor="let s of c.sectors" class="sector">
-                  S{{ s.sector + 1 }} {{ s.good }}/{{ s.total }}
-                  ({{ s.confidence * 100 | number: '1.0-0' }}%)
-                </span>
-              </td>
-            </tr>
-          </ng-container>
-        </tbody>
-      </table>
+      <div class="rows" *ngIf="data() as d">
+        <div class="comp" *ngFor="let c of d.compounds">
+          <!-- Row 1: identity + overall readiness + fitted-state badges -->
+          <div class="comp__main">
+            <span class="chip" [style.background]="compoundColor(c.compound)"></span>
+            <span class="name">{{ c.name }}</span>
+            <span class="conf">
+              <span class="bar"><i [style.width.%]="c.confidence * 100" [class.thin]="c.confidence < 0.5"></i></span>
+              {{ c.confidence * 100 | number: '1.0-0' }}%
+            </span>
+            <span class="badges">
+              <span class="badge" [class.on]="c.baselineFitted" title="sector pace baseline">pace</span>
+              <span class="badge" [class.on]="c.degFitted" title="tyre degradation fit">deg</span>
+              <span class="badge" [class.on]="c.wearFitted" title="wear-rate / cliff fit">cliff</span>
+              <span
+                class="flag"
+                *ngIf="c.degFitted && c.degLowConfidence"
+                [class.prior]="c.degClamped"
+                [title]="'deg fit n=' + c.degSamples"
+              >
+                {{ c.degClamped ? 'prior-fallback' : 'low-confidence' }}
+              </span>
+              <span class="nfit" *ngIf="c.degFitted && !c.degLowConfidence">n={{ c.degSamples }}</span>
+            </span>
+          </div>
+          <!-- Row 2: per-sector good/total mini-bars + exclusion reason counters -->
+          <div class="comp__detail">
+            <span class="sector" *ngFor="let s of c.sectors">
+              <span class="slabel">S{{ s.sector + 1 }}</span>
+              <span class="mini"><i [style.width.%]="miniPct(s)" [class.ok]="s.good >= GATE"></i></span>
+              <span class="scount">{{ s.good }}/{{ s.total }}</span>
+            </span>
+            <span class="reasons">
+              <span class="rc" *ngFor="let r of reasonCounters(c)">{{ r.label }} {{ r.count }}</span>
+              <span class="rc clean" *ngIf="reasonCounters(c).length === 0">no exclusions</span>
+            </span>
+          </div>
+        </div>
+      </div>
 
       <p class="empty" *ngIf="data()?.compounds?.length === 0">No session data for this track yet.</p>
     </div>
@@ -86,25 +85,30 @@ import {
       .tile { display: flex; flex-direction: column; font-size: 0.7rem; color: var(--gray-500, #999); }
       .tile span { font-size: 1.3rem; font-weight: 600; color: var(--gray-100, #eee); }
       .tile.last span { font-size: 0.7rem; font-weight: 400; }
-      .rows { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-      .row { cursor: pointer; border-top: 1px solid #2a2a2a; }
-      .row td { padding: 0.4rem 0.5rem; }
-      .exp { width: 1rem; color: var(--gray-500, #999); }
-      .name { font-weight: 600; }
-      .conf { white-space: nowrap; }
-      .ready { font-weight: 600; font-size: 0.8rem; white-space: nowrap; color: var(--gray-500, #999); }
-      .ready.on { color: #4caf50; }
-      .secondary { opacity: 0.55; }
-      .bar { display: inline-block; width: 80px; height: 8px; background: #2a2a2a; border-radius: 4px; vertical-align: middle; margin-right: 0.4rem; overflow: hidden; }
+      .rows { font-size: 0.85rem; }
+      .comp { border-top: 1px solid #2a2a2a; padding: 0.55rem 0.25rem; }
+      .comp__main { display: flex; align-items: center; gap: 0.6rem; }
+      .chip { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; border: 1px solid #00000055; }
+      .name { font-weight: 600; min-width: 4rem; }
+      .conf { white-space: nowrap; display: flex; align-items: center; }
+      .bar { display: inline-block; width: 90px; height: 8px; background: #2a2a2a; border-radius: 4px; margin-right: 0.4rem; overflow: hidden; }
       .bar i { display: block; height: 100%; background: #4caf50; }
-      .fit span { font-size: 0.7rem; color: #555; margin-right: 0.4rem; }
-      .fit span.on { color: #4caf50; }
-      .fit .badge { color: #1a1a1a; background: #e6a23c; border-radius: 3px; padding: 0 0.3rem; font-weight: 600; }
-      .fit .badge.prior { background: #d9534f; color: #fff; }
-      .fit .nfit { color: var(--gray-500, #999); }
-      .reasons { color: var(--gray-500, #999); font-size: 0.75rem; }
-      .sectors td { color: var(--gray-500, #999); font-size: 0.78rem; padding-bottom: 0.5rem; }
-      .sector { margin-right: 1rem; }
+      .bar i.thin { background: #e6a23c; }
+      .badges { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; }
+      .badge { font-size: 0.7rem; color: #555; border: 1px solid #444; border-radius: 3px; padding: 0 0.3rem; }
+      .badge.on { color: #1a1a1a; background: #4caf50; border-color: #4caf50; font-weight: 600; }
+      .flag { font-size: 0.7rem; color: #1a1a1a; background: #e6a23c; border-radius: 3px; padding: 0 0.3rem; font-weight: 600; }
+      .flag.prior { background: #d9534f; color: #fff; }
+      .nfit { font-size: 0.7rem; color: var(--gray-500, #999); }
+      .comp__detail { display: flex; align-items: center; gap: 1rem; margin-top: 0.4rem; padding-left: 1.7rem; flex-wrap: wrap; }
+      .sector { display: flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: var(--gray-500, #999); }
+      .slabel { font-weight: 600; color: #bbb; }
+      .mini { display: inline-block; width: 48px; height: 6px; background: #2a2a2a; border-radius: 3px; overflow: hidden; }
+      .mini i { display: block; height: 100%; background: #e6a23c; }
+      .mini i.ok { background: #4caf50; }
+      .reasons { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-left: auto; }
+      .rc { font-size: 0.7rem; color: var(--gray-500, #999); background: #222; border-radius: 3px; padding: 0 0.3rem; }
+      .rc.clean { color: #4caf50; background: transparent; }
       .empty { color: var(--gray-500, #999); font-size: 0.85rem; }
     `,
   ],
@@ -115,7 +119,8 @@ export class ReadinessSectionComponent implements OnInit, OnDestroy {
   tracks = signal<TrackOption[]>([]);
   selectedTrackId = signal<number | undefined>(undefined);
   data = signal<ReadinessResponse | undefined>(undefined);
-  expanded = new Set<number>();
+  /** Clean-sample gate a sector needs before its deg fit is data-backed (MIN_TYRE_DEG_SAMPLES). */
+  readonly GATE = 10;
   private pollSub?: Subscription;
 
   /** Emits whenever the selected track changes, so the degradation charts below
@@ -150,21 +155,36 @@ export class ReadinessSectionComponent implements OnInit, OnDestroy {
     this.svc.readiness(this.selectedTrackId()).subscribe((d) => this.data.set(d));
   }
 
-  toggle(compound: number): void {
-    if (this.expanded.has(compound)) this.expanded.delete(compound);
-    else this.expanded.add(compound);
+  /** Official F1 compound colours (matches the degradation scatter / strategy widget). */
+  compoundColor(compound: number): string {
+    return COMPOUND_COLOR[compound] ?? '#888888';
   }
 
-  reasonText(c: CompoundReadiness): string {
+  /** Per-sector good/total fill, capped at 100%. */
+  miniPct(s: SectorReadiness): number {
+    return s.total > 0 ? Math.min((s.good / s.total) * 100, 100) : 0;
+  }
+
+  /** Non-zero exclusion reasons as labelled counters. */
+  reasonCounters(c: CompoundReadiness): { label: string; count: number }[] {
     const r = c.reasons;
-    const parts: string[] = [];
-    if (r.outlier) parts.push(`outlier ${r.outlier}`);
-    if (r.invalid) parts.push(`invalid ${r.invalid}`);
-    if (r.cornerCut) parts.push(`corner-cut ${r.cornerCut}`);
-    if (r.damage) parts.push(`damage ${r.damage}`);
-    if (r.pit) parts.push(`pit ${r.pit}`);
-    if (r.safetyCar) parts.push(`SC ${r.safetyCar}`);
-    if (r.standingStart) parts.push(`start ${r.standingStart}`);
-    return parts.length ? parts.join(' · ') : '—';
+    const out: { label: string; count: number }[] = [];
+    if (r.outlier) out.push({ label: 'outlier', count: r.outlier });
+    if (r.invalid) out.push({ label: 'invalid', count: r.invalid });
+    if (r.cornerCut) out.push({ label: 'corner-cut', count: r.cornerCut });
+    if (r.damage) out.push({ label: 'damage', count: r.damage });
+    if (r.pit) out.push({ label: 'pit', count: r.pit });
+    if (r.safetyCar) out.push({ label: 'SC', count: r.safetyCar });
+    if (r.standingStart) out.push({ label: 'start', count: r.standingStart });
+    return out;
   }
 }
+
+// Official F1 compound colours: 16 Soft, 17 Medium, 18 Hard, 7 Inter, 8 Wet.
+const COMPOUND_COLOR: Record<number, string> = {
+  16: '#DA291C',
+  17: '#FFD12E',
+  18: '#F0F0EC',
+  7: '#43B02A',
+  8: '#0067AD',
+};
