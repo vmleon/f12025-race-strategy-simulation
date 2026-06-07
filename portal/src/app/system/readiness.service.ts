@@ -80,6 +80,39 @@ export interface ScatterResponse {
   sectors: SectorScatter[];
 }
 
+// ── coverage / data-sufficiency charts (item 6) ──
+export interface CoverageCell {
+  compound: number;
+  regime: string;
+  sector: number;
+  count: number;
+}
+
+export interface WearPoint {
+  age: number;
+  wearPct: number;
+}
+
+export interface WearCompound {
+  compound: number;
+  points: WearPoint[];
+}
+
+export interface FitConfidence {
+  knob: string;
+  regime: string;
+  sector: number | null;
+  samples: number | null;
+  rSquared: number | null;
+  clamped: boolean;
+}
+
+export interface AccuracyPoint {
+  predicted: number;
+  actual: number;
+  absError: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ReadinessService {
   constructor(private http: HttpClient) {}
@@ -96,5 +129,24 @@ export class ReadinessService {
   scatter(trackId?: number): Observable<ScatterResponse> {
     const q = trackId != null ? `?trackId=${trackId}` : '';
     return this.http.get<ScatterResponse>(`/api/system/readiness/scatter${q}`);
+  }
+
+  coverage(trackId?: number): Observable<CoverageCell[]> {
+    const q = trackId != null ? `?trackId=${trackId}` : '';
+    return this.http.get<CoverageCell[]>(`/api/system/readiness/coverage${q}`);
+  }
+
+  wearScatter(trackId?: number): Observable<WearCompound[]> {
+    const q = trackId != null ? `?trackId=${trackId}` : '';
+    return this.http.get<WearCompound[]>(`/api/system/readiness/wear-scatter${q}`);
+  }
+
+  fitConfidence(trackId?: number): Observable<FitConfidence[]> {
+    const q = trackId != null ? `?trackId=${trackId}` : '';
+    return this.http.get<FitConfidence[]>(`/api/system/readiness/fit-confidence${q}`);
+  }
+
+  accuracy(): Observable<AccuracyPoint[]> {
+    return this.http.get<AccuracyPoint[]>('/api/system/readiness/accuracy');
   }
 }

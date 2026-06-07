@@ -156,6 +156,94 @@ public class ReadinessController {
         return new ScatterResponse(resolved, currentUid, sectors);
     }
 
+    // ── coverage / data-sufficiency charts (item 6) ──────────────────────────
+    public record CoverageCell(int compound, String regime, int sector, int count) {}
+    public record WearPoint(int age, double wearPct) {}
+    public record WearCompound(int compound, List<WearPoint> points) {}
+    public record FitConfidence(String knob, String regime, Integer sector,
+                                Integer samples, Double rSquared, boolean clamped) {}
+    public record AccuracyPoint(double predicted, int actual, double absError) {}
+
+    /** Clean-lap counts per compound × regime × sector — the "do we have enough?" heatmap. */
+    @GetMapping("/coverage")
+    public List<CoverageCell> coverage(@RequestParam(value = "trackId", required = false) Integer trackId) {
+        int resolved = trackId != null ? trackId : mostRecentTrack();
+        if (resolved < 0) return List.of();
+        return jdbc.query(
+                "SELECT ss.tyre_compound_visual AS compound, p.ai_controlled AS ai, "
+                + "ss.sector_number AS sector, COUNT(*) AS cnt "
+                + "FROM sector_snapshots ss "
+                + "JOIN sessions s ON s.session_uid = ss.session_uid "
+                + "JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index "
+                + "WHERE s.track_id = ? AND ss.outlier = 0 AND ss.lap_invalid = 0 AND ss.pit_status = 0 "
+                + "  AND ss.tyre_compound_visual IN (7,8,16,17,18) AND ss.sector_number IN (0,1,2) "
+                + "GROUP BY ss.tyre_compound_visual, p.ai_controlled, ss.sector_number",
+                (rs, i) -> new CoverageCell(rs.getInt("COMPOUND"), rs.getInt("AI") == 1 ? "AI" : "PLAYER",
+                        rs.getInt("SECTOR"), rs.getInt("CNT")),
+                resolved);
+    }
+
+    /** Player tyre age → most-worn-wheel wear %, per dry compound (one sample per lap,
+     * read from the final sector). The wear analogue of the degradation scatter. */
+    @GetMapping("/wear-scatter")
+    public List<WearCompound> wearScatter(@RequestParam(value = "trackId", required = false) Integer trackId) {
+        int resolved = trackId != null ? trackId : mostRecentTrack();
+        if (resolved < 0) return List.of();
+        Map<Integer, List<WearPoint>> byCompound = new LinkedHashMap<>();
+        for (int c : new int[] {16, 17, 18}) byCompound.put(c, new ArrayList<>());
+        jdbc.query(
+                "SELECT ss.tyre_compound_visual AS compound, ss.tyre_age_laps AS age, "
+                + "GREATEST(NVL(ss.tyre_wear_fl,0), NVL(ss.tyre_wear_fr,0), "
+                + "         NVL(ss.tyre_wear_rl,0), NVL(ss.tyre_wear_rr,0)) AS wear "
+                + "FROM sector_snapshots ss "
+                + "JOIN sessions s ON s.session_uid = ss.session_uid "
+                + "JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index "
+                + "WHERE s.track_id = ? AND p.ai_controlled = 0 AND ss.outlier = 0 AND ss.lap_invalid = 0 "
+                + "  AND ss.pit_status = 0 AND ss.sector_number = 2 "
+                + "  AND ss.tyre_compound_visual IN (16,17,18)",
+                (RowCallbackHandler) rs -> {
+                    List<WearPoint> pts = byCompound.get(rs.getInt("COMPOUND"));
+                    if (pts != null) pts.add(new WearPoint(rs.getInt("AGE"), rs.getDouble("WEAR")));
+                },
+                resolved);
+        List<WearCompound> out = new ArrayList<>();
+        for (var e : byCompound.entrySet()) out.add(new WearCompound(e.getKey(), e.getValue()));
+        return out;
+    }
+
+    /** Per-knob fit diagnostics (item 2): sample count, R², clamped flag — non-default rows. */
+    @GetMapping("/fit-confidence")
+    public List<FitConfidence> fitConfidence(@RequestParam(value = "trackId", required = false) Integer trackId) {
+        int resolved = trackId != null ? trackId : mostRecentTrack();
+        if (resolved < 0) return List.of();
+        return jdbc.query(
+                "SELECT knob_name, calibration_regime, sector_number, sample_count, r_squared, clamped "
+                + "FROM calibration_coefficients WHERE track_id = ? AND is_default = 0 "
+                + "ORDER BY calibration_regime, knob_name, sector_number",
+                (rs, i) -> {
+                    int sector = rs.getInt("SECTOR_NUMBER");
+                    Integer sectorOrNull = rs.wasNull() ? null : sector;
+                    int n = rs.getInt("SAMPLE_COUNT");
+                    Integer nOrNull = rs.wasNull() ? null : n;
+                    double r2 = rs.getDouble("R_SQUARED");
+                    Double r2OrNull = rs.wasNull() ? null : r2;
+                    return new FitConfidence(rs.getString("KNOB_NAME"), rs.getString("CALIBRATION_REGIME"),
+                            sectorOrNull, nOrNull, r2OrNull, rs.getInt("CLAMPED") == 1);
+                },
+                resolved);
+    }
+
+    /** Predicted vs actual finishing position over recent finished races (item 3). */
+    @GetMapping("/accuracy")
+    public List<AccuracyPoint> accuracy() {
+        return jdbc.query(
+                "SELECT predicted_position, actual_position, abs_error FROM simulation_accuracy "
+                + "WHERE predicted_position IS NOT NULL AND actual_position IS NOT NULL "
+                + "ORDER BY evaluated_at DESC FETCH FIRST 50 ROWS ONLY",
+                (rs, i) -> new AccuracyPoint(rs.getDouble("PREDICTED_POSITION"),
+                        rs.getInt("ACTUAL_POSITION"), rs.getDouble("ABS_ERROR")));
+    }
+
     private String latestSessionUid(int trackId) {
         List<String> uids = jdbc.queryForList(
                 "SELECT session_uid FROM sessions WHERE track_id = ? "

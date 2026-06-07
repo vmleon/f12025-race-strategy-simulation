@@ -13,11 +13,18 @@ import {
 } from './system.service';
 import { ReadinessSectionComponent } from './readiness-section.component';
 import { ReadinessScatterComponent } from './readiness-scatter.component';
+import { CoverageChartsComponent } from './coverage-charts.component';
 
 @Component({
   selector: 'app-system',
   standalone: true,
-  imports: [CommonModule, BaseChartDirective, ReadinessSectionComponent, ReadinessScatterComponent],
+  imports: [
+    CommonModule,
+    BaseChartDirective,
+    ReadinessSectionComponent,
+    ReadinessScatterComponent,
+    CoverageChartsComponent,
+  ],
   template: `
     <section class="system">
       <header class="system__head">
@@ -38,6 +45,9 @@ import { ReadinessScatterComponent } from './readiness-scatter.component';
         <app-readiness-scatter [trackId]="readinessTrackId"></app-readiness-scatter>
         <app-readiness-section (trackChange)="readinessTrackId = $event"></app-readiness-section>
       </div>
+
+      <!-- Data-sufficiency: coverage matrix, wear-rate, predicted-vs-actual, fit confidence. -->
+      <app-coverage-charts [trackId]="readinessTrackId"></app-coverage-charts>
 
       <!-- Operational counters demoted to a full-width strip at the bottom. -->
       <div class="cards">
