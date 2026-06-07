@@ -190,7 +190,7 @@ public class ReadinessController {
                 + "ss.sector_time_ms AS time_ms, "
                 + "CASE WHEN ss.front_wing_damage_l > 0 OR ss.front_wing_damage_r > 0 "
                 + "  OR ss.rear_wing_damage > 0 OR ss.floor_damage > 0 OR ss.diffuser_damage > 0 "
-                + "  OR ss.sidepod_damage > 0 OR ss.engine_damage > 0 OR ss.gearbox_damage > 0 "
+                + "  OR ss.sidepod_damage > 0 "
                 + "  THEN 1 ELSE 0 END AS damaged, s.session_type AS session_type "
                 + "FROM sector_snapshots ss "
                 + "JOIN sessions s ON s.session_uid = ss.session_uid "

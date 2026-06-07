@@ -113,7 +113,6 @@ _SELECT_SECTORS_FOR_OUTLIER_DETECTION = """
       AND ss.front_wing_damage_l = 0 AND ss.front_wing_damage_r = 0
       AND ss.rear_wing_damage = 0 AND ss.floor_damage = 0
       AND ss.diffuser_damage = 0 AND ss.sidepod_damage = 0
-      AND ss.engine_damage = 0 AND ss.gearbox_damage = 0
     ORDER BY p.driver_name, ss.sector_number, ss.tyre_compound_visual
 """
 
