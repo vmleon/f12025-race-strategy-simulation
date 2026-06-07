@@ -28,11 +28,20 @@ import dev.victormartin.telemetry.engineer.SessionKind;
  *    (or "Up N places. P{pos}. ..." for N ≥ 2)
  *  - Net loss of N places → "Lost a place. P{pos}. {name ahead} is now ahead"
  *    (or "Lost N places. P{pos}. ..." for N ≥ 2)
+ *
+ * Two windows are fully suppressed because positions are artificially scrambled
+ * and not actionable: the opening lap (standing-start scramble — suppressed
+ * through lap 1) and the player's pit out-lap (positions settle only once the
+ * cars that pitted around the player finish cycling through — mirrors
+ * {@code CarBehindDetector}'s post-pit self-suppression).
  */
 public class PositionChangeDetector implements RadioDetector {
 
     private static final long DEBOUNCE_MS = 5_000L;
     private static final float METRES_PER_SECOND = 55f;
+
+    /** Through this lap (inclusive) the standing-start scramble isn't actionable. */
+    private static final int OPENING_LAP = 1;
 
     private final Map<String, State> stateByUid = new ConcurrentHashMap<>();
 
@@ -52,11 +61,14 @@ public class PositionChangeDetector implements RadioDetector {
 
         // First ON_TRACK tick of a session, or first ON_TRACK tick after a pit
         // cycle: reset the baseline, drop any pending fire, emit nothing. The
-        // grid may have reshuffled while we were in the pit lane.
+        // grid may have reshuffled while we were in the pit lane. Suppress
+        // position calls until the out-lap completes (positions settle only once
+        // the cars that pitted around us finish their stops).
         if (tick.previousPitState() != PitState.ON_TRACK) {
             s.baseline = currentPos;
             s.lastSeen = currentPos;
             s.pendingFireAt = 0;
+            s.suppressUntilLap = tick.currentLap() + 1;
             return Optional.empty();
         }
 
@@ -64,6 +76,16 @@ public class PositionChangeDetector implements RadioDetector {
         if (s.lastSeen == 0) {
             s.baseline = currentPos;
             s.lastSeen = currentPos;
+            return Optional.empty();
+        }
+
+        // Suppression windows: the opening-lap scramble and the pit out-lap. Keep
+        // the baseline pinned to the current position so the first settled lap
+        // doesn't fire a stale net once the window lifts.
+        if (tick.currentLap() <= OPENING_LAP || tick.currentLap() < s.suppressUntilLap) {
+            s.baseline = currentPos;
+            s.lastSeen = currentPos;
+            s.pendingFireAt = 0;
             return Optional.empty();
         }
 
@@ -163,5 +185,6 @@ public class PositionChangeDetector implements RadioDetector {
         int baseline = 0;        // pre-battle position; the message compares against this
         int lastSeen = 0;        // most recent observed position
         long pendingFireAt = 0;  // 0 = no pending fire; else absolute wallClockMs to fire at
+        int suppressUntilLap = 0; // pit out-lap: suppress position calls until this lap
     }
 }
