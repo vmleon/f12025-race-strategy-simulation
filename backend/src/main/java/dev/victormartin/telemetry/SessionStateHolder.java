@@ -12,12 +12,15 @@ public class SessionStateHolder {
 
     private final RaceWebSocketHandler raceWebSocketHandler;
     private final QueueService queueService;
+    private final SimulationAccuracyEvaluator accuracyEvaluator;
     private final ConcurrentHashMap<String, SessionInfo> sessions = new ConcurrentHashMap<>();
 
     public SessionStateHolder(RaceWebSocketHandler raceWebSocketHandler,
-                              QueueService queueService) {
+                              QueueService queueService,
+                              SimulationAccuracyEvaluator accuracyEvaluator) {
         this.raceWebSocketHandler = raceWebSocketHandler;
         this.queueService = queueService;
+        this.accuracyEvaluator = accuracyEvaluator;
     }
 
     public void onSessionStarted(String sessionUid, int trackId, int sessionType) {
@@ -46,6 +49,13 @@ public class SessionStateHolder {
             System.out.println("Enqueuing calibration request for track " + endedTrackId + " after session " + sessionUid);
             queueService.enqueue("PDBADMIN.CALIBRATION_REQUEST",
                     "{\"trackId\":" + endedTrackId + ",\"sessionUid\":\"" + sessionUid + "\",\"trigger\":\"sessionEnded\"}");
+        }
+
+        // On a finished Race, score the last strategy prediction against the result.
+        boolean isRace = removed != null
+                && SessionKind.fromSessionType(removed.sessionType()) == SessionKind.RACE;
+        if (isRace) {
+            accuracyEvaluator.evaluate(sessionUid);
         }
     }
 

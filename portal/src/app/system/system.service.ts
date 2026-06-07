@@ -37,6 +37,7 @@ export interface CalibrationStats {
 export interface LiveStats {
   simsInFlight: number;
   today: { simulations: number; radioMessages: number };
+  accuracy: { meanAbsError: number; races: number };
 }
 
 @Injectable({ providedIn: 'root' })

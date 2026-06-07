@@ -87,6 +87,15 @@ public class SystemStatsController {
         today.put("radioMessages", firstNonNull(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM radio_messages WHERE sent_at >= TRUNC(SYSTIMESTAMP)", Long.class), 0L));
         out.put("today", today);
+
+        // Rolling sim accuracy: mean |predicted − actual| over the most recent races.
+        Map<String, Object> accuracy = new LinkedHashMap<>();
+        accuracy.put("meanAbsError", firstNonNull(jdbc.queryForObject(
+                "SELECT AVG(abs_error) FROM (SELECT abs_error FROM simulation_accuracy "
+                + "ORDER BY evaluated_at DESC FETCH FIRST 20 ROWS ONLY)", Double.class), 0.0));
+        accuracy.put("races", firstNonNull(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM simulation_accuracy", Long.class), 0L));
+        out.put("accuracy", accuracy);
         return out;
     }
 

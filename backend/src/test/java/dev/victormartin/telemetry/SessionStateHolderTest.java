@@ -13,6 +13,7 @@ class SessionStateHolderTest {
     private SessionStateHolder holder;
     private RaceWebSocketHandler handler;
     private CapturingQueueService queueService;
+    private CapturingAccuracyEvaluator accuracyEvaluator;
 
     /** Captures enqueued queue names so we can assert the calibration gate. */
     static class CapturingQueueService extends QueueService {
@@ -23,11 +24,19 @@ class SessionStateHolderTest {
         }
     }
 
+    /** Captures sessions handed to the accuracy evaluator so we can assert the Race gate. */
+    static class CapturingAccuracyEvaluator extends SimulationAccuracyEvaluator {
+        final List<String> evaluated = new ArrayList<>();
+        CapturingAccuracyEvaluator() { super(null); }
+        @Override public void evaluate(String hexUid) { evaluated.add(hexUid); }
+    }
+
     @BeforeEach
     void setUp() {
         handler = new RaceWebSocketHandler();
         queueService = new CapturingQueueService();
-        holder = new SessionStateHolder(handler, queueService);
+        accuracyEvaluator = new CapturingAccuracyEvaluator();
+        holder = new SessionStateHolder(handler, queueService, accuracyEvaluator);
     }
 
     @Test
@@ -96,5 +105,19 @@ class SessionStateHolderTest {
         holder.onSessionStarted("q1", 4, 9); // One-Shot Qualifying
         holder.onSessionEnded("q1");
         assertFalse(queueService.enqueuedQueues.contains("PDBADMIN.CALIBRATION_REQUEST"));
+    }
+
+    @Test
+    void raceSessionEndEvaluatesAccuracy() {
+        holder.onSessionStarted("race1", 4, 15); // sessionType 15 = Race
+        holder.onSessionEnded("race1");
+        assertTrue(accuracyEvaluator.evaluated.contains("race1"));
+    }
+
+    @Test
+    void practiceSessionEndDoesNotEvaluateAccuracy() {
+        holder.onSessionStarted("fp1", 4, 1); // Practice
+        holder.onSessionEnded("fp1");
+        assertFalse(accuracyEvaluator.evaluated.contains("fp1"));
     }
 }

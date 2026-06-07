@@ -1,0 +1,27 @@
+databaseChangeLog:
+  - changeSet:
+      id: 015-01-seq-simulation-accuracy
+      author: victormartin
+      changes:
+        - sql:
+            sql: CREATE SEQUENCE seq_simulation_accuracy START WITH 1 INCREMENT BY 1
+
+  - changeSet:
+      id: 015-02-simulation-accuracy
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE simulation_accuracy (
+                  accuracy_id         NUMBER(12)    NOT NULL,
+                  session_uid         NUMBER(20)    NOT NULL,
+                  player_car_index    NUMBER(2),
+                  predicted_position  NUMBER(5,2),
+                  predicted_at_lap    NUMBER(3),
+                  actual_position     NUMBER(2),
+                  abs_error           NUMBER(5,2),
+                  job_id              VARCHAR2(16),
+                  evaluated_at        TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+                  CONSTRAINT pk_simulation_accuracy PRIMARY KEY (accuracy_id),
+                  CONSTRAINT uq_simulation_accuracy_session UNIQUE (session_uid)
+              )

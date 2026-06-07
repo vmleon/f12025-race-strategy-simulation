@@ -28,6 +28,9 @@ import { ReadinessScatterComponent } from './readiness-scatter.component';
         <div class="tile"><span>{{ live?.simsInFlight ?? 0 }}</span>in flight</div>
         <div class="tile"><span>{{ live?.today?.simulations ?? 0 }}</span>sims today</div>
         <div class="tile"><span>{{ live?.today?.radioMessages ?? 0 }}</span>radio today</div>
+        <div class="tile" *ngIf="(live?.accuracy?.races ?? 0) > 0">
+          <span>{{ live?.accuracy?.meanAbsError ?? 0 | number: '1.1-1' }}</span>sim error (Δpos, last {{ live?.accuracy?.races }})
+        </div>
       </div>
 
       <div class="layout">
