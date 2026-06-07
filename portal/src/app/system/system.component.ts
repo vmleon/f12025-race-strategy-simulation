@@ -22,7 +22,6 @@ import { ReadinessScatterComponent } from './readiness-scatter.component';
     <section class="system">
       <header class="system__head">
         <h2>System</h2>
-        <button (click)="refresh()">Refresh</button>
       </header>
 
       <div class="live-strip">

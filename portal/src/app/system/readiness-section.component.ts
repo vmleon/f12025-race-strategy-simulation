@@ -20,7 +20,6 @@ import {
           <select [value]="selectedTrackId ?? ''" (change)="onTrackChange($event)">
             <option *ngFor="let t of tracks" [value]="t.trackId">{{ t.trackName }}</option>
           </select>
-          <button (click)="refresh()">Refresh</button>
         </div>
       </div>
 
