@@ -48,6 +48,7 @@ import dev.victormartin.telemetry.engineer.detectors.RaceFinishDetector;
 import dev.victormartin.telemetry.engineer.detectors.RaceLapCompleteDetector;
 import dev.victormartin.telemetry.engineer.detectors.SessionStartGreetingDetector;
 import dev.victormartin.telemetry.engineer.detectors.SlowLapTrafficWarningDetector;
+import dev.victormartin.telemetry.engineer.detectors.StrategySummaryDetector;
 import dev.victormartin.telemetry.engineer.detectors.TyreConditionDetector;
 import dev.victormartin.telemetry.engineer.detectors.TrackTrafficExitDetector;
 import dev.victormartin.telemetry.engineer.detectors.WeatherDetector;
@@ -93,6 +94,7 @@ public class RaceEngineerService {
     // Detectors with extra hooks the orchestrator needs to call directly.
     private final PitStopCompletedDetector pitStopCompleted;
     private final PitWindowMessagesDetector pitWindow;
+    private final StrategySummaryDetector strategySummary;
     private final RaceFinishDetector raceFinish;
 
     private final Map<String, SessionState> sessions = new ConcurrentHashMap<>();
@@ -127,6 +129,7 @@ public class RaceEngineerService {
         this.renderExecutor = renderExecutor;
         this.pitStopCompleted = new PitStopCompletedDetector();
         this.pitWindow = new PitWindowMessagesDetector();
+        this.strategySummary = new StrategySummaryDetector();
         this.raceFinish = new RaceFinishDetector();
         this.detectors = List.of(
                 // Greeting (fires once on first ON_TRACK tick of the session)
@@ -150,6 +153,7 @@ public class RaceEngineerService {
                 new PositionChangeDetector(),
                 pitStopCompleted,
                 pitWindow,
+                strategySummary,
                 new PeriodicSituationalAwarenessDetector(),
                 new RaceLapCompleteDetector(),
                 raceFinish,
@@ -351,6 +355,7 @@ public class RaceEngineerService {
         for (SessionState session : sessions.values()) {
             session.latestEvaluation = evaluation;
             session.latestEvaluationJobId = jobId;
+            strategySummary.setEvaluation(session.sessionUid, evaluation);
             int lap = session.currentLap;
             RaceSnapshot.PitStrategy.PitStop nextStop = null;
             if (stops != null) {
