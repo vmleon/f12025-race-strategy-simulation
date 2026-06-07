@@ -344,12 +344,13 @@ public class RaceEngineerService {
     /** Pushes the next recommended pit lap to PitWindowMessagesDetector.
      * If the best strategy has no future pit (e.g. "No stop"), clear any prior recommendation so stale
      * T-1/box messages don't fire from an obsolete plan. */
-    public void onStrategyEvaluation(int evaluatedAtLap, StrategyEvaluation evaluation) {
+    public void onStrategyEvaluation(String jobId, int evaluatedAtLap, StrategyEvaluation evaluation) {
         if (evaluation == null || evaluation.strategies() == null || evaluation.strategies().isEmpty()) return;
         StrategyEvaluation.RankedStrategy best = evaluation.strategies().getFirst();
         List<RaceSnapshot.PitStrategy.PitStop> stops = best.candidate().stops();
         for (SessionState session : sessions.values()) {
             session.latestEvaluation = evaluation;
+            session.latestEvaluationJobId = jobId;
             int lap = session.currentLap;
             RaceSnapshot.PitStrategy.PitStop nextStop = null;
             if (stops != null) {
@@ -472,6 +473,7 @@ public class RaceEngineerService {
                     message.text(),
                     renderedText,
                     strategies,
+                    session.latestEvaluationJobId,
                     tick.wallClockMs()));
         } catch (Exception e) {
             TRACE.warn("ENGINEER_RADIO_LOG_FAILED {}", e.getMessage());
@@ -489,6 +491,7 @@ public class RaceEngineerService {
         boolean chequeredFlag = false;
         long radioSuppressedUntilMs = 0;  // set on flashback; radio held until then
         volatile StrategyEvaluation latestEvaluation;   // null until first strategy push
+        volatile String latestEvaluationJobId;          // job id of the run behind latestEvaluation
 
         SessionState(String sessionUid, int trackId, int sessionType, SessionKind kind) {
             this.sessionUid = sessionUid;

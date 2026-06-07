@@ -20,6 +20,7 @@ public class StrategyResultConsumer {
 
     private final QueueService queueService;
     private final StrategyOrchestrator strategyOrchestrator;
+    private final SimulationIoLog simulationIoLog;
     private final ObjectMapper objectMapper = newResultMapper();
 
     /**
@@ -33,9 +34,11 @@ public class StrategyResultConsumer {
     }
 
     public StrategyResultConsumer(QueueService queueService,
-                                  StrategyOrchestrator strategyOrchestrator) {
+                                  StrategyOrchestrator strategyOrchestrator,
+                                  SimulationIoLog simulationIoLog) {
         this.queueService = queueService;
         this.strategyOrchestrator = strategyOrchestrator;
+        this.simulationIoLog = simulationIoLog;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -68,6 +71,15 @@ public class StrategyResultConsumer {
 
                 log.info("StrategyResultConsumer: received result for job {} (lap {}, {} strategies)",
                         jobId, evaluatedAtLap, evaluation.strategies().size());
+
+                Double playerMean = evaluation.strategies().isEmpty()
+                        ? null : evaluation.strategies().get(0).meanPosition();
+                try {
+                    simulationIoLog.recordResult(jobId, node.get("result").toString(), playerMean);
+                } catch (Exception ioEx) {
+                    log.warn("StrategyResultConsumer: io log recordResult failed: {}", ioEx.getMessage());
+                }
+
                 strategyOrchestrator.completeJob(jobId, evaluatedAtLap, evaluation);
             } catch (Exception e) {
                 log.error("StrategyResultConsumer: error: {}", e.getMessage(), e);

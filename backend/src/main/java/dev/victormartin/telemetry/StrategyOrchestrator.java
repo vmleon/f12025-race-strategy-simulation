@@ -35,6 +35,7 @@ public class StrategyOrchestrator {
     private final RaceEngineerService raceEngineerService;
     private final dev.victormartin.telemetry.simulation.SectorHistoryLookup sectorHistoryLookup;
     private final dev.victormartin.telemetry.simulation.SectorBaselineLookup sectorBaselineLookup;
+    private final SimulationIoLog simulationIoLog;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -70,9 +71,11 @@ public class StrategyOrchestrator {
                                  RaceWebSocketHandler raceWebSocketHandler,
                                  RaceEngineerService raceEngineerService,
                                  dev.victormartin.telemetry.simulation.SectorHistoryLookup sectorHistoryLookup,
-                                 dev.victormartin.telemetry.simulation.SectorBaselineLookup sectorBaselineLookup) {
+                                 dev.victormartin.telemetry.simulation.SectorBaselineLookup sectorBaselineLookup,
+                                 SimulationIoLog simulationIoLog) {
         this.sectorHistoryLookup = sectorHistoryLookup;
         this.sectorBaselineLookup = sectorBaselineLookup;
+        this.simulationIoLog = simulationIoLog;
         this.queueService = queueService;
         this.jdbc = jdbc;
         this.raceWebSocketHandler = raceWebSocketHandler;
@@ -193,7 +196,7 @@ public class StrategyOrchestrator {
         leaderboard = new StrategyLeaderboard(evaluatedAtLap, false, evaluation);
         log.info("StrategyOrchestrator: leaderboard updated at lap {}", evaluatedAtLap);
         broadcastLeaderboard();
-        raceEngineerService.onStrategyEvaluation(evaluatedAtLap, evaluation);
+        raceEngineerService.onStrategyEvaluation(jobId, evaluatedAtLap, evaluation);
     }
 
     public StrategyLeaderboard getLeaderboard() {
@@ -297,6 +300,11 @@ public class StrategyOrchestrator {
                     "sessionUid", uid,
                     "playerCarIndex", playerCarIndex,
                     "raceSnapshot", snapshot));
+            try {
+                simulationIoLog.recordRequest(jobId, "STRATEGY", payload, playerCarIndex);
+            } catch (Exception ioEx) {
+                log.warn("StrategyOrchestrator: io log recordRequest failed: {}", ioEx.getMessage());
+            }
             queueService.enqueue("PDBADMIN.STRATEGY_REQUEST", payload);
             log.info("StrategyOrchestrator: enqueued strategy request {} (lap={}/{}, playerCarIndex={}, playerTyreSets={})", jobId, snapshot.currentLap(), snapshot.totalLaps(), playerCarIndex, playerTyreSets);
         } catch (Exception e) {

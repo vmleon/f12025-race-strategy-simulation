@@ -33,12 +33,19 @@ class SimulationOrchestratorTest {
         };
     }
 
+    private static SimulationIoLog noopIoLog() {
+        return new SimulationIoLog() {
+            @Override public void recordRequest(String jobId, String kind, String requestJson, int playerCarIndex) { }
+            @Override public void recordResult(String jobId, String resultJson, Double playerMeanPosition) { }
+        };
+    }
+
     @BeforeEach
     void setUp() {
         started.clear();
         QueueService queueService = new QueueService(null);
         orchestrator = new SimulationOrchestrator(
-                queueService, new SectorHistoryLookup(null), new SectorBaselineLookup(null), capturingLog());
+                queueService, new SectorHistoryLookup(null), new SectorBaselineLookup(null), capturingLog(), noopIoLog());
     }
 
     private String buildStateJson(int leaderLap, int safetyCarStatus, int car0PitStatus) {
@@ -212,7 +219,7 @@ class SimulationOrchestratorTest {
             @Override public void recordCompleted(String j, long d, int i, String s) { throw new RuntimeException("boom"); }
         };
         SimulationOrchestrator o = new SimulationOrchestrator(
-                new QueueService(null), new SectorHistoryLookup(null), new SectorBaselineLookup(null), throwing);
+                new QueueService(null), new SectorHistoryLookup(null), new SectorBaselineLookup(null), throwing, noopIoLog());
 
         o.onStateUpdate(buildStateJson(5, 0, 0));
         assertNotNull(o.triggerNow(), "a throwing run log must not break triggering");

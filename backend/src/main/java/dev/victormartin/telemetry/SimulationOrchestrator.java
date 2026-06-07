@@ -41,6 +41,7 @@ public class SimulationOrchestrator {
     private final SectorBaselineLookup sectorBaselineLookup;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final SimulationRunLog simulationRunLog;
+    private final SimulationIoLog simulationIoLog;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "sim-orchestrator");
@@ -63,11 +64,13 @@ public class SimulationOrchestrator {
     public SimulationOrchestrator(QueueService queueService,
                                   SectorHistoryLookup sectorHistoryLookup,
                                   SectorBaselineLookup sectorBaselineLookup,
-                                  SimulationRunLog simulationRunLog) {
+                                  SimulationRunLog simulationRunLog,
+                                  SimulationIoLog simulationIoLog) {
         this.queueService = queueService;
         this.sectorHistoryLookup = sectorHistoryLookup;
         this.sectorBaselineLookup = sectorBaselineLookup;
         this.simulationRunLog = simulationRunLog;
+        this.simulationIoLog = simulationIoLog;
     }
 
     /**
@@ -144,12 +147,21 @@ public class SimulationOrchestrator {
     public void completeJob(String jobId, SimulationResult result) {
         SimulationJob existing = jobs.get(jobId);
         if (existing != null) {
-            jobs.put(jobId, new SimulationJob(jobId, existing.startedAt(), result));
+            jobs.put(jobId, new SimulationJob(jobId, existing.startedAt(), existing.playerCarIndex(), result));
             long durationMs = System.currentTimeMillis() - existing.startedAt();
             int iterations = result != null ? result.iterations() : 0;
             safeRecordCompleted(jobId, durationMs, iterations, "completed");
             log.info("SimulationOrchestrator: job {} completed", jobId);
         }
+    }
+
+    /** Mean finishing position the auto sim projected for the player car (null if absent). */
+    static Double playerMeanPosition(int playerCarIndex, SimulationResult result) {
+        if (result == null || result.cars() == null) return null;
+        for (SimulationResult.CarResult c : result.cars()) {
+            if (c.carIndex() == playerCarIndex) return c.meanPosition();
+        }
+        return null;
     }
 
     // ── trigger detection ─────────────────────────────────────────────
@@ -226,7 +238,7 @@ public class SimulationOrchestrator {
     private String executeSimulation(JsonNode state) {
         String jobId = UUID.randomUUID().toString().substring(0, 8);
         long startedAt = System.currentTimeMillis();
-        jobs.put(jobId, new SimulationJob(jobId, startedAt, null));
+        jobs.put(jobId, new SimulationJob(jobId, startedAt, -1, null));
         String sessionUid = state.has("sessionUid") ? state.get("sessionUid").asText() : "-";
         try {
             simulationRunLog.recordStarted(jobId, sessionUid, startedAt);
@@ -252,10 +264,17 @@ public class SimulationOrchestrator {
                 return jobId;
             }
 
+            int playerCarIndex = -1;
+            for (RaceSnapshot.CarSnapshot car : snapshot.cars()) {
+                if (!car.aiControlled()) { playerCarIndex = car.carIndex(); break; }
+            }
+            jobs.put(jobId, new SimulationJob(jobId, startedAt, playerCarIndex, null));
+
             String payload = objectMapper.writeValueAsString(Map.of(
                     "jobId", jobId,
                     "sessionUid", sessionUid,
                     "raceSnapshot", snapshot));
+            safeRecordRequest(jobId, "AUTO", payload, playerCarIndex);
             queueService.enqueue("PDBADMIN.SIMULATION_REQUEST", payload);
             log.info("SimulationOrchestrator: enqueued simulation request {}", jobId);
         } catch (Exception e) {
@@ -383,7 +402,15 @@ public class SimulationOrchestrator {
         }
     }
 
+    private void safeRecordRequest(String jobId, String kind, String requestJson, int playerCarIndex) {
+        try {
+            simulationIoLog.recordRequest(jobId, kind, requestJson, playerCarIndex);
+        } catch (Exception e) {
+            log.warn("SimulationOrchestrator: io log recordRequest failed: {}", e.getMessage());
+        }
+    }
+
     // ── job record ────────────────────────────────────────────────────
 
-    public record SimulationJob(String jobId, long startedAt, SimulationResult result) {}
+    public record SimulationJob(String jobId, long startedAt, int playerCarIndex, SimulationResult result) {}
 }

@@ -20,11 +20,11 @@ class JdbcRadioMessageLogTest {
         RadioMessageLogEntry e = new RadioMessageLogEntry(
                 hexUid, 7, 15, 3, 58, 5, 1234.5, 1,
                 "ON_TRACK", "Soft", 4, "NORMAL", "Box this lap", "Box, box",
-                "[{\"rank\":1}]", 1_700_000_000_000L);
+                "[{\"rank\":1}]", "a1b2c3d4", 1_700_000_000_000L);
 
         Object[] args = JdbcRadioMessageLog.bindArgs(e);
 
-        assertEquals(16, args.length);
+        assertEquals(17, args.length);
         assertEquals(uid, args[0]);
         assertEquals(7, args[1]);
         assertEquals(15, args[2]);
@@ -40,7 +40,8 @@ class JdbcRadioMessageLogTest {
         assertEquals("Box this lap", args[12]);
         assertEquals("Box, box", args[13]);
         assertEquals("[{\"rank\":1}]", args[14]);
-        assertEquals(new Timestamp(1_700_000_000_000L), args[15]);
+        assertEquals("a1b2c3d4", args[15]);
+        assertEquals(new Timestamp(1_700_000_000_000L), args[16]);
     }
 
     @Test

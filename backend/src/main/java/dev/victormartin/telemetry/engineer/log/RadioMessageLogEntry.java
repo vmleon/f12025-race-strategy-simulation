@@ -6,7 +6,9 @@ package dev.victormartin.telemetry.engineer.log;
  * hex string of the game session uid as serialized by telemetry; the radio log
  * converts it to the signed NUMBER value before persisting (see
  * {@code JdbcRadioMessageLog#parseSessionUid}). {@code bestStrategiesJson} is null
- * when no strategy evaluation exists yet (e.g. Practice).
+ * when no strategy evaluation exists yet (e.g. Practice). {@code jobId} links the
+ * row to the strategy run that justified it ({@code simulation_run_io.job_id});
+ * null when no evaluation has been pushed yet.
  */
 public record RadioMessageLogEntry(
         String sessionUid,
@@ -24,5 +26,6 @@ public record RadioMessageLogEntry(
         String messageText,
         String renderedText,
         String bestStrategiesJson,
+        String jobId,
         long sentAtEpochMs
 ) {}

@@ -22,14 +22,17 @@ public class SimulationResultConsumer {
     private final QueueService queueService;
     private final SimulationOrchestrator orchestrator;
     private final RaceWebSocketHandler raceWebSocketHandler;
+    private final SimulationIoLog simulationIoLog;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public SimulationResultConsumer(QueueService queueService,
                                     SimulationOrchestrator orchestrator,
-                                    RaceWebSocketHandler raceWebSocketHandler) {
+                                    RaceWebSocketHandler raceWebSocketHandler,
+                                    SimulationIoLog simulationIoLog) {
         this.queueService = queueService;
         this.orchestrator = orchestrator;
         this.raceWebSocketHandler = raceWebSocketHandler;
+        this.simulationIoLog = simulationIoLog;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -60,6 +63,15 @@ public class SimulationResultConsumer {
 
                 log.info("SimulationResultConsumer: received result for job {}", jobId);
                 orchestrator.completeJob(jobId, result);
+
+                SimulationOrchestrator.SimulationJob job = orchestrator.getJob(jobId);
+                int playerCarIndex = job != null ? job.playerCarIndex() : -1;
+                try {
+                    simulationIoLog.recordResult(jobId, node.get("result").toString(),
+                            SimulationOrchestrator.playerMeanPosition(playerCarIndex, result));
+                } catch (Exception ioEx) {
+                    log.warn("SimulationResultConsumer: io log recordResult failed: {}", ioEx.getMessage());
+                }
 
                 String resultJson = objectMapper.writeValueAsString(Map.of(
                         "type", "simulationResult",

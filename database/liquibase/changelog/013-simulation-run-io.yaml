@@ -1,0 +1,33 @@
+databaseChangeLog:
+  - changeSet:
+      id: 013-01-seq-simulation-run-io
+      author: victormartin
+      changes:
+        - sql:
+            sql: CREATE SEQUENCE seq_simulation_run_io START WITH 1 INCREMENT BY 1
+
+  - changeSet:
+      id: 013-02-simulation-run-io
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE simulation_run_io (
+                  io_id                NUMBER(12)    NOT NULL,
+                  job_id               VARCHAR2(16)  NOT NULL,
+                  kind                 VARCHAR2(12)  NOT NULL,
+                  request_json         CLOB,
+                  result_json          CLOB,
+                  player_car_index     NUMBER(2),
+                  player_mean_position NUMBER(5,2),
+                  created_at           TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+                  CONSTRAINT pk_simulation_run_io PRIMARY KEY (io_id),
+                  CONSTRAINT uq_simulation_run_io_job UNIQUE (job_id)
+              )
+
+  - changeSet:
+      id: 013-03-radio-messages-job-id
+      author: victormartin
+      changes:
+        - sql:
+            sql: ALTER TABLE radio_messages ADD job_id VARCHAR2(16)

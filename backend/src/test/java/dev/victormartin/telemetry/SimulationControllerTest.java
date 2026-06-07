@@ -38,7 +38,7 @@ class SimulationControllerTest {
     @Test
     void resultsReturns202ForRunningJob() throws Exception {
         when(orchestrator.getJob("abc123")).thenReturn(
-                new SimulationOrchestrator.SimulationJob("abc123", System.currentTimeMillis(), null));
+                new SimulationOrchestrator.SimulationJob("abc123", System.currentTimeMillis(), -1, null));
 
         mockMvc.perform(get("/api/simulation/results/abc123"))
                 .andExpect(status().isAccepted())
