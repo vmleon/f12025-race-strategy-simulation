@@ -129,23 +129,44 @@ graph TD
 
 From a clean clone:
 
+Create the virtualenv and install dependencies (one-time):
+
 ```bash
-python -m venv venv                  # one-time: create virtualenv at project root
+python -m venv venv
 source venv/bin/activate             # Windows: venv\Scripts\activate
-pip install -r requirements.txt      # installs manage.py + podman-compose
+pip install -r requirements.txt
 ```
 
+Oracle container + Liquibase + generated configs + Java build (~5-6 min):
+
 ```bash
-python manage.py local setup         # Oracle container + Liquibase + generated configs + Java build (~5-6 min)
-podman compose up --build -d         # build + start telemetry, backend, simulator, calibration, portal
+python manage.py local setup
 ```
 
-Check endpoints and point the F1 2025 game at the right UDP target:
+Build + start telemetry, backend, simulator, calibration, portal:
 
 ```bash
-python manage.py info                # consolidated endpoints + game setup info
-podman compose ps                    # container status
-podman compose logs -f <service>     # follow one service's log (e.g. backend)
+podman compose up --build -d
+```
+
+Check endpoints and point the F1 2025 game at the right UDP target.
+
+Consolidated endpoints + game setup info:
+
+```bash
+python manage.py info
+```
+
+Container status:
+
+```bash
+podman compose ps
+```
+
+Follow one service's log (e.g. backend):
+
+```bash
+podman compose logs -f <service>
 ```
 
 Portal is at http://localhost:4200. Logs from all services land in `logs/` at the repo root.
@@ -165,9 +186,16 @@ If a session was already live before the redeploy, the backend has no in-memory 
 
 ### Clean up
 
+Stop and remove the 5 service containers:
+
 ```bash
-podman compose down                  # stop and remove the 5 service containers
-python manage.py local clean         # stop Oracle + remove container + clear password from .env
+podman compose down
+```
+
+Stop Oracle + remove container + clear password from .env:
+
+```bash
+python manage.py local clean
 ```
 
 ### Database backup & restore
@@ -189,8 +217,10 @@ python manage.py local import database/backups/export_20250101_120000.sql
 
 Enables Claude Code to query the database directly via SQLcl's MCP server.
 
+Create the SQLcl saved connection (f1strategy_local):
+
 ```bash
-python manage.py mcp setup           # create SQLcl saved connection (f1strategy_local)
+python manage.py mcp setup
 ```
 
 The project includes a `.mcp.json` that configures the SQLcl MCP server. After running the setup, restart Claude Code to pick up the connection.
