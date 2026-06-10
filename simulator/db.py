@@ -60,9 +60,9 @@ def load_coefficients_for_track(track_id: int) -> Coefficients:
         with conn.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT knob_name, calibration_regime, sector_number, value
+                SELECT knob_name, calibration_regime, sector_number, value, is_default
                 FROM (
-                    SELECT knob_name, calibration_regime, sector_number, value,
+                    SELECT knob_name, calibration_regime, sector_number, value, is_default,
                            ROW_NUMBER() OVER (
                                PARTITION BY knob_name, calibration_regime, NVL(sector_number, -1)
                                -- Prefer a fitted value over a cold-start default (which
@@ -79,10 +79,27 @@ def load_coefficients_for_track(track_id: int) -> Coefficients:
                 """,
                 [track_id],
             )
+            # Track-wide pit_stop_time_loss provenance per regime, so we can borrow the
+            # AI fit for PLAYER when PLAYER is still on the cold-start prior (below).
+            pit_loss_is_default: dict[str, int] = {}
+            pit_loss_value: dict[str, float] = {}
             for row in cursor:
-                knob_name, regime, sector_number, value = row
+                knob_name, regime, sector_number, value, is_default = row
                 sector = sector_number if sector_number is not None else -1
                 coefficients.put(knob_name, regime, sector, value)
+                if knob_name == "pit_stop_time_loss" and sector == -1:
+                    pit_loss_is_default[regime] = is_default
+                    pit_loss_value[regime] = value
+
+    # Pit-lane time loss is a near-deterministic property of the track (lane length +
+    # speed limit), so PLAYER and AI lose essentially the same time. The PLAYER regime
+    # rarely accumulates enough real pit stops (MIN_PIT_STOP_SAMPLES) in Free Practice to
+    # fit, so when PLAYER is still a cold-start default but AI has a real fit, borrow the
+    # AI value for PLAYER rather than simulating on the 22 s prior.
+    player_default = pit_loss_is_default.get("PLAYER", 1)
+    ai_default = pit_loss_is_default.get("AI", 1)
+    if player_default and not ai_default and "AI" in pit_loss_value:
+        coefficients.put("pit_stop_time_loss", "PLAYER", -1, pit_loss_value["AI"])
 
     return coefficients
 
