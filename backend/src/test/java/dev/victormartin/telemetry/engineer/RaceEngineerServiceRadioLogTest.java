@@ -9,6 +9,7 @@ import dev.victormartin.telemetry.engineer.CircuitSafeZoneService;
 import dev.victormartin.telemetry.engineer.RaceEngineerWebSocketHandler;
 import dev.victormartin.telemetry.engineer.log.RadioMessageLog;
 import dev.victormartin.telemetry.engineer.llm.PassthroughRadioMessageRenderer;
+import dev.victormartin.telemetry.engineer.llm.RadioMessageRenderer;
 import dev.victormartin.telemetry.engineer.log.RadioMessageLogEntry;
 import dev.victormartin.telemetry.simulation.StrategyEvaluation;
 import dev.victormartin.telemetry.simulation.StrategyEvaluation.RankedStrategy;
@@ -122,5 +123,40 @@ class RaceEngineerServiceRadioLogTest {
 
         assertTrue(broadcasts.stream().anyMatch(b -> b.contains("\"type\":\"raceEngineer\"")),
                 "delivery must still happen even if logging throws");
+    }
+
+    @Test
+    void unhealthyLlmSkipsRenderAndShipsTemplate() {
+        List<RadioMessageLogEntry> logged = new ArrayList<>();
+        int[] renderCalls = {0};
+        RadioMessageRenderer counting = ctx -> { renderCalls[0]++; return "RENDERED"; };
+        RaceEngineerService service = new RaceEngineerService(
+                alwaysInZone(), capturing(new ArrayList<>()), logged::add, counting,
+                500L, Runnable::run, () -> false);
+
+        service.onSessionStarted(SESSION_UID, TRACK_ID, SESSION_TYPE_RACE, 0, 0);
+        service.onStateUpdate(stateJson(1));
+
+        assertFalse(logged.isEmpty(), "message is still delivered when the LLM is down");
+        assertEquals(0, renderCalls[0], "render must be skipped when the LLM is unhealthy");
+        assertEquals(logged.get(0).messageText(), logged.get(0).renderedText(),
+                "delivered text is the raw template, not a rendered string");
+    }
+
+    @Test
+    void healthyLlmRendersMessage() {
+        List<RadioMessageLogEntry> logged = new ArrayList<>();
+        int[] renderCalls = {0};
+        RadioMessageRenderer counting = ctx -> { renderCalls[0]++; return "RENDERED"; };
+        RaceEngineerService service = new RaceEngineerService(
+                alwaysInZone(), capturing(new ArrayList<>()), logged::add, counting,
+                500L, Runnable::run, () -> true);
+
+        service.onSessionStarted(SESSION_UID, TRACK_ID, SESSION_TYPE_RACE, 0, 0);
+        service.onStateUpdate(stateJson(1));
+
+        assertFalse(logged.isEmpty());
+        assertTrue(renderCalls[0] > 0, "render is called when the LLM is healthy");
+        assertEquals("RENDERED", logged.get(0).renderedText());
     }
 }

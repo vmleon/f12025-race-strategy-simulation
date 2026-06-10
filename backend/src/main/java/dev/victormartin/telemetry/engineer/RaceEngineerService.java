@@ -54,6 +54,7 @@ import dev.victormartin.telemetry.engineer.detectors.TrackTrafficExitDetector;
 import dev.victormartin.telemetry.engineer.detectors.WeatherDetector;
 import dev.victormartin.telemetry.engineer.detectors.YellowFlagDetector;
 import dev.victormartin.telemetry.engineer.llm.RadioMessageRenderer;
+import dev.victormartin.telemetry.engineer.llm.VllmHealthCheck;
 import dev.victormartin.telemetry.engineer.llm.RadioRenderContext;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 import dev.victormartin.telemetry.simulation.StrategyEvaluation;
@@ -88,6 +89,7 @@ public class RaceEngineerService {
     private final RadioMessageRenderer renderer;
     private final long renderTimeoutMs;
     private final Executor renderExecutor;
+    private final java.util.function.BooleanSupplier llmHealthy;
     private final ObjectMapper mapper = new ObjectMapper();
     private final List<RadioDetector> detectors;
 
@@ -104,29 +106,43 @@ public class RaceEngineerService {
                                RaceEngineerWebSocketHandler webSocketHandler,
                                RadioMessageLog radioMessageLog,
                                RadioMessageRenderer renderer,
+                               VllmHealthCheck llmHealthCheck,
                                @Value("${engineer.llm.timeout-ms:500}") long renderTimeoutMs) {
         this(safeZoneService, webSocketHandler, radioMessageLog, renderer, renderTimeoutMs,
                 Executors.newSingleThreadExecutor(r -> {
                     Thread t = new Thread(r, "radio-render");
                     t.setDaemon(true);
                     return t;
-                }));
+                }),
+                llmHealthCheck::isHealthy);
     }
 
-    /** Visible for tests — inject a same-thread executor ({@code Runnable::run}) for
-     *  deterministic, synchronous delivery. */
+    /** Visible for tests — same-thread executor ({@code Runnable::run}) for
+     *  deterministic, synchronous delivery; assumes the LLM is healthy. */
     RaceEngineerService(CircuitSafeZoneService safeZoneService,
                         RaceEngineerWebSocketHandler webSocketHandler,
                         RadioMessageLog radioMessageLog,
                         RadioMessageRenderer renderer,
                         long renderTimeoutMs,
                         Executor renderExecutor) {
+        this(safeZoneService, webSocketHandler, radioMessageLog, renderer, renderTimeoutMs,
+                renderExecutor, () -> true);
+    }
+
+    RaceEngineerService(CircuitSafeZoneService safeZoneService,
+                        RaceEngineerWebSocketHandler webSocketHandler,
+                        RadioMessageLog radioMessageLog,
+                        RadioMessageRenderer renderer,
+                        long renderTimeoutMs,
+                        Executor renderExecutor,
+                        java.util.function.BooleanSupplier llmHealthy) {
         this.safeZoneService = safeZoneService;
         this.webSocketHandler = webSocketHandler;
         this.radioMessageLog = radioMessageLog;
         this.renderer = renderer;
         this.renderTimeoutMs = renderTimeoutMs;
         this.renderExecutor = renderExecutor;
+        this.llmHealthy = llmHealthy;
         this.pitStopCompleted = new PitStopCompletedDetector();
         this.pitWindow = new PitWindowMessagesDetector();
         this.strategySummary = new StrategySummaryDetector();
@@ -423,6 +439,16 @@ public class RaceEngineerService {
      * hears something. The telemetry thread is never blocked.
      */
     private void renderAndDeliver(SessionState session, EngineerTick tick, EngineerMessage original) {
+        // Circuit breaker: when the vLLM server is unhealthy, don't pay the render call
+        // or its timeout — ship the templated fallback straight away (still off the
+        // telemetry thread via renderExecutor to preserve the non-blocking guarantee).
+        if (!llmHealthy.getAsBoolean()) {
+            renderExecutor.execute(() -> {
+                deliver(session.sessionUid, original, original.text());
+                logDelivered(session, tick, original, original.text());
+            });
+            return;
+        }
         // The single-thread renderExecutor orders the render step only; on timeout the
         // fallback completes on a scheduler thread, so delivery order is best-effort.
         RadioRenderContext ctx = buildRenderContext(session, tick, original);
