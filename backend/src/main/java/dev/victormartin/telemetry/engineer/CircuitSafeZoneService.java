@@ -103,6 +103,21 @@ public class CircuitSafeZoneService {
         return -1;
     }
 
+    /**
+     * Index of the last safe zone before the start/finish line (the one with the
+     * greatest {@code fromMetres}), or -1 if the track has no config. Lets a detector
+     * deliver a message in the final sector rather than the start/finish straight.
+     */
+    public int finalZoneIndex(int trackId) {
+        List<SafeZone> zones = circuits.get(trackId);
+        if (zones == null || zones.isEmpty()) return -1;
+        int best = 0;
+        for (int i = 1; i < zones.size(); i++) {
+            if (zones.get(i).fromMetres() > zones.get(best).fromMetres()) best = i;
+        }
+        return best;
+    }
+
     public boolean hasCircuit(int trackId) {
         return circuits.containsKey(trackId);
     }

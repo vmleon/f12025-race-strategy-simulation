@@ -161,7 +161,7 @@ public class RaceEngineerService {
                 new QualifyingSectorDeltaDetector(),
                 new QualifyingLapCompleteDetector(),
                 // Practice
-                new PracticeTyreFuelSummaryDetector(),
+                new PracticeTyreFuelSummaryDetector(safeZoneService),
                 new PracticeLapCompleteDetector(),
                 new PracticeSectorComparisonDetector(),
                 new PracticeSpeedTrapDetector(),

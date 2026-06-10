@@ -44,17 +44,7 @@ public class PracticeLapCompleteDetector implements RadioDetector {
 
         // Track every car's session-best lap (player + AI). Used to rank the
         // player on the time sheet when reporting their own completed lap.
-        int playerIdx = -1;
-        for (JsonNode car : tick.cars()) {
-            int idx = car.has("idx") ? car.get("idx").asInt() : -1;
-            if (idx < 0) continue;
-            long ms = car.has("lastLapTimeMs") ? car.get("lastLapTimeMs").asLong() : 0;
-            if (ms > 0) {
-                Long prev = s.bestByCarIdx.get(idx);
-                if (prev == null || ms < prev) s.bestByCarIdx.put(idx, ms);
-            }
-            if (car.has("ai") && !car.get("ai").asBoolean()) playerIdx = idx;
-        }
+        int playerIdx = PaceRanking.updateBests(s.bestByCarIdx, tick.cars());
 
         int lap = tick.currentLap();
         if (lap <= s.lastFiredLap) return Optional.empty();
