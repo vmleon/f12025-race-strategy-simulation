@@ -16,13 +16,22 @@ import dev.victormartin.telemetry.engineer.RadioDetector;
 import dev.victormartin.telemetry.engineer.SessionKind;
 
 /**
- * Stint-aware greeting fired once per session on the first ON_TRACK tick. Replaces
+ * Stint-aware greeting fired once per session on the out-lap. Replaces
  * a generic "Radio check" at session start — that message
  * routinely expired (60s wall-clock TTL) while the player sat in the garage with
- * no safe zone. By gating on ON_TRACK we guarantee the message lands on the
- * out-lap and includes the fitted compound and (for practice) fuel laps.
+ * no safe zone. By gating on ON_TRACK <em>and</em> the car actually rolling we
+ * guarantee the message lands on the out-lap and includes the fitted compound
+ * and (for practice) fuel laps.
+ *
+ * Firing on the very first ON_TRACK tick (lapDist ≈ 0, stationary) raced the iOS
+ * client (re)connecting to the new sessionUid: a client that connects after the
+ * already-sent greeting never receives it, so the scene-set was published into
+ * the void. Waiting until the car is moving leaves time for the client to attach.
  */
 public class SessionStartGreetingDetector implements RadioDetector {
+
+    /** Car is considered rolling out of the garage once it exceeds this speed. */
+    private static final int OUT_LAP_SPEED_KMH = 30;
 
     private final Map<String, Boolean> firedByUid = new ConcurrentHashMap<>();
 
@@ -38,6 +47,8 @@ public class SessionStartGreetingDetector implements RadioDetector {
     @Override
     public Optional<EngineerMessage> evaluate(EngineerTick tick) {
         if (Boolean.TRUE.equals(firedByUid.get(tick.sessionUid()))) return Optional.empty();
+        // Wait for the out-lap (car rolling) so the client is connected to hear it.
+        if (tick.playerSpeedKmh() < OUT_LAP_SPEED_KMH) return Optional.empty();
         firedByUid.put(tick.sessionUid(), true);
 
         JsonNode p = tick.playerCar();
