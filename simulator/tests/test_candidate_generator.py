@@ -186,8 +186,11 @@ class TestGenerateCandidates:
             _make_tyre_set(17, fitted=True, usable_life=37, wear=0),
             _make_tyre_set(16, available=True),
         ]
+        # player_pits=0: the Medium->Soft switch already satisfies the two-compound
+        # rule, so this is a mandatory first stop (not an extra stop subject to the
+        # break-even cutoff).
         snapshot = _make_snapshot(current_lap=5, total_laps=20, player_compound=17,
-                                  player_pits=1, player_tyre_sets=tyre_sets)
+                                  player_pits=0, player_tyre_sets=tyre_sets)
 
         candidates = generate_candidates(snapshot, player_car_index=0)
 
@@ -195,6 +198,35 @@ class TestGenerateCandidates:
         assert len(one_stop) > 0, (
             f"Expected at least one valid 1-stop candidate, got: {[c.label for c in candidates]}"
         )
+
+    def test_no_stop_offered_after_pit_when_usable_life_unknown(self):
+        """Just pitted to Hard; usable_life reads 0 (not yet refreshed). "No stop"
+        must still be offered via the lifespan fallback, not dropped."""
+        tyre_sets = [
+            _make_tyre_set(18, fitted=True, usable_life=0, wear=0),
+            _make_tyre_set(17, available=True),
+        ]
+        snapshot = _make_snapshot(current_lap=10, total_laps=17, player_compound=18,
+                                  player_pits=1, player_tyre_sets=tyre_sets)
+
+        candidates = generate_candidates(snapshot, player_car_index=0)
+
+        assert "No stop" in [c.label for c in candidates]
+
+    def test_no_extra_stop_when_cannot_break_even(self):
+        """Already pitted, on a Hard that can finish, only 7 laps left: an extra
+        stop can't recover the ~22s pit loss, so only "No stop" is offered."""
+        tyre_sets = [
+            _make_tyre_set(18, fitted=True, usable_life=40, wear=0),
+            _make_tyre_set(16, available=True),
+            _make_tyre_set(17, available=True),
+        ]
+        snapshot = _make_snapshot(current_lap=10, total_laps=17, player_compound=18,
+                                  player_pits=1, player_tyre_sets=tyre_sets)
+
+        candidates = generate_candidates(snapshot, player_car_index=0)
+
+        assert [c.label for c in candidates] == ["No stop"]
 
 
 class TestRepairCandidates:

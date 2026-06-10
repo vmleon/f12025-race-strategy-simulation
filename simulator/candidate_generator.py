@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from math import ceil
 
 from simulator.models import (
     CarSnapshot,
@@ -35,6 +36,12 @@ MIN_FINAL_STINT_LAPS = 3        # Min racing laps after the last pit
 LAP_DELTA_THRESHOLD_MS = 5000   # Exclude compounds slower by >5s per lap
 REPAIR_DAMAGE_THRESHOLD = 20    # Front-wing damage % at which repair stops are proposed
 
+# An additional pit stop only pays off if the fresher tyre recovers more than the
+# pit-lane time loss over the laps that follow it. We approximate the per-lap gain
+# of fresh rubber conservatively; the Monte Carlo evaluator does the precise scoring.
+PER_LAP_FRESH_TYRE_GAIN_MS = 1500
+DEFAULT_PIT_LOSS_MS = 22000
+
 
 def generate_candidates(
     snapshot: RaceSnapshot, player_car_index: int, coefficients=None
@@ -63,6 +70,14 @@ def generate_candidates(
     # Determine the fitted set's usable life for 0-stop feasibility
     fitted_sets = [ts for ts in player.tyre_sets if ts.fitted]
     fitted_usable_life = fitted_sets[0].usable_life if fitted_sets else 0
+    if fitted_usable_life <= 0:
+        # usable_life isn't refreshed immediately after a pit (reads 0); estimate it
+        # from the fitted compound's lifespan minus laps already run, so the "stay
+        # out" option isn't spuriously dropped right after a stop.
+        fitted_usable_life = max(
+            0,
+            stint_cap_laps(current_compound, coefficients, "PLAYER") - player.tyre_age_laps,
+        )
 
     logger.info(
         "candidate_generator: player=%d remaining_laps=%d current_compound=%d pit_stops=%d "
@@ -81,10 +96,8 @@ def generate_candidates(
         snapshot.current_lap + MIN_STINT_LAPS
         >= snapshot.total_laps - MIN_FINAL_STINT_LAPS + 1
     )
-    if (
-        (has_used_multiple_compounds or is_wet or no_pit_window)
-        and remaining_laps <= fitted_usable_life
-    ):
+    current_tyre_can_finish = remaining_laps <= fitted_usable_life
+    if (has_used_multiple_compounds or is_wet or no_pit_window) and current_tyre_can_finish:
         candidates.append(StrategyCandidate(label="No stop", stops=[]))
 
     available_compounds = _get_available_compounds(player.tyre_sets, snapshot.weather)
@@ -107,6 +120,17 @@ def generate_candidates(
     # 1-stop strategies
     pit_lap_step = _compute_lap_step(remaining_laps)
     last_pit_lap_exclusive = snapshot.total_laps - MIN_FINAL_STINT_LAPS + 1
+    if has_used_multiple_compounds and current_tyre_can_finish:
+        # Any further stop is an optional "extra" stop (two-compound rule already met
+        # and the fitted tyre can reach the end). Only propose it if enough laps
+        # remain after it to recover the pit-lane loss, so we never recommend a late
+        # stop that can't break even. When too few laps remain this collapses the
+        # pit-lap range to empty, leaving "No stop" as the answer. The guard on
+        # current_tyre_can_finish ensures a *required* stop is never suppressed.
+        break_even = _stop_break_even_laps(coefficients)
+        last_pit_lap_exclusive = min(
+            last_pit_lap_exclusive, snapshot.total_laps - break_even + 1
+        )
     for compound, name in available_compounds.items():
         if compound == current_compound and not has_used_multiple_compounds and not is_wet:
             # Would violate two-compound rule unless we've already used another
@@ -231,6 +255,16 @@ def _get_available_compounds(
         if compound not in compounds:
             compounds[compound] = COMPOUND_NAMES.get(compound, f"C{compound}")
     return compounds
+
+
+def _stop_break_even_laps(coefficients) -> int:
+    """Minimum racing laps after a pit for the fresh-tyre gain to recover the pit loss."""
+    pit_loss_ms = (
+        coefficients.get("pit_stop_time_loss", "PLAYER") if coefficients else DEFAULT_PIT_LOSS_MS
+    )
+    if pit_loss_ms <= 0:
+        pit_loss_ms = DEFAULT_PIT_LOSS_MS
+    return max(MIN_FINAL_STINT_LAPS, ceil(pit_loss_ms / PER_LAP_FRESH_TYRE_GAIN_MS))
 
 
 def _compute_lap_step(remaining_laps: int) -> int:

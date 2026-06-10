@@ -31,6 +31,14 @@ public class StrategySummaryDetector implements RadioDetector {
     /** Through this lap the standing-start scramble makes strategy chatter pointless. */
     private static final int OPENING_LAP = 1;
 
+    /**
+     * Quiet window after the player rejoins from a pit stop. The gap-to-leader (and
+     * thus the seeded race time) is transiently distorted by the pit-lane loss, so a
+     * strategy evaluated right after the stop can briefly flip to nonsense (e.g. a
+     * second stop). Don't speak it until the picture settles.
+     */
+    private static final long POST_PIT_SETTLE_MS = 12_000;
+
     private final Map<String, State> stateByUid = new ConcurrentHashMap<>();
 
     @Override
@@ -58,6 +66,14 @@ public class StrategySummaryDetector implements RadioDetector {
         // Opening-lap quiet period: don't update the signature, so the first
         // post-scramble plan still announces once.
         if (tick.currentLap() <= OPENING_LAP) return Optional.empty();
+
+        // Post-pit settle window: arm on the rejoin tick (first ON_TRACK tick after
+        // a pit) and stay quiet until it elapses. We don't touch lastSignature, so
+        // the settled plan still announces once the window closes.
+        if (tick.previousPitState() != PitState.ON_TRACK) {
+            s.settleUntilMs = tick.wallClockMs() + POST_PIT_SETTLE_MS;
+        }
+        if (tick.wallClockMs() < s.settleUntilMs) return Optional.empty();
 
         RankedStrategy r1 = eval.strategies().get(0);
         RankedStrategy r2 = eval.strategies().size() > 1 ? eval.strategies().get(1) : null;
@@ -126,5 +142,6 @@ public class StrategySummaryDetector implements RadioDetector {
     private static class State {
         volatile StrategyEvaluation eval;
         String lastSignature = "";
+        long settleUntilMs = 0;
     }
 }
