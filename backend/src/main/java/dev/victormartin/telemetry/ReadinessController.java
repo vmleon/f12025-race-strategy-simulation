@@ -1,6 +1,7 @@
 package dev.victormartin.telemetry;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -163,6 +164,134 @@ public class ReadinessController {
     public record FitConfidence(String knob, String regime, Integer sector,
                                 Integer samples, Double rSquared, boolean clamped) {}
     public record AccuracyPoint(double predicted, int actual, double absError) {}
+    public record SectorTimePoint(int compound, int sector, long timeMs, boolean outlier) {}
+    public record PitLossPoint(String regime, long lossMs) {}
+
+    /** PLAYER dry-compound sector times with the outlier flag (flagged rows included),
+     * for the data-cleanliness histogram — shows how much the outlier filter removed. */
+    @GetMapping("/sector-times")
+    public List<SectorTimePoint> sectorTimes(@RequestParam(value = "trackId", required = false) Integer trackId) {
+        int resolved = trackId != null ? trackId : mostRecentTrack();
+        if (resolved < 0) return List.of();
+        return jdbc.query(
+                "SELECT ss.tyre_compound_visual AS compound, ss.sector_number AS sector, "
+                + "ss.sector_time_ms AS time_ms, ss.outlier AS outlier "
+                + "FROM sector_snapshots ss "
+                + "JOIN sessions s ON s.session_uid = ss.session_uid "
+                + "JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index "
+                + "WHERE s.track_id = ? AND p.ai_controlled = 0 AND ss.lap_invalid = 0 "
+                + "  AND ss.pit_status = 0 AND ss.sector_time_ms > 0 "
+                + "  AND ss.tyre_compound_visual IN (16,17,18) AND ss.sector_number IN (0,1,2)",
+                (rs, i) -> new SectorTimePoint(rs.getInt("COMPOUND"), rs.getInt("SECTOR"),
+                        rs.getLong("TIME_MS"), rs.getInt("OUTLIER") == 1),
+                resolved);
+    }
+
+    public record RegimeDeg(int compound, String regime, double slopeMsPerLap, int samples) {}
+
+    /** Fitted tyre-degradation slope per dry compound, PLAYER vs AI, aggregated across
+     * sectors (mean slope, summed sample count) — the regime-overlay chart. */
+    @GetMapping("/regime-deg")
+    public List<RegimeDeg> regimeDeg(@RequestParam(value = "trackId", required = false) Integer trackId) {
+        int resolved = trackId != null ? trackId : mostRecentTrack();
+        if (resolved < 0) return List.of();
+        return jdbc.query(
+                "SELECT knob_name, calibration_regime, AVG(value) AS slope, SUM(sample_count) AS n "
+                + "FROM calibration_coefficients "
+                + "WHERE track_id = ? AND is_default = 0 "
+                + "  AND knob_name IN ('tyre_deg_soft','tyre_deg_medium','tyre_deg_hard') "
+                + "GROUP BY knob_name, calibration_regime",
+                (rs, i) -> new RegimeDeg(degKnobCompound(rs.getString("KNOB_NAME")),
+                        rs.getString("CALIBRATION_REGIME"), rs.getDouble("SLOPE"), rs.getInt("N")),
+                resolved);
+    }
+
+    private static int degKnobCompound(String knob) {
+        return switch (knob) {
+            case "tyre_deg_soft" -> 16;
+            case "tyre_deg_medium" -> 17;
+            case "tyre_deg_hard" -> 18;
+            default -> -1;
+        };
+    }
+
+    private record PitRow(String session, int car, int sector, long timeMs, int pitStatus, int ai) {}
+
+    private static final double PIT_INFLATION_FACTOR = 0.30; // following sector joins the stop while this far over baseline
+    private static final int MAX_PIT_STOP_SECTORS = 4;       // safety cap on sectors per stop
+
+    /** Per-stop pit-lane time losses, recomputed from race sectors the same way the
+     * calibration worker does ({@code _pit_stop_losses}): from each pit_status=1 entry,
+     * sum the excess over the normal-sector baseline of that sector plus the following
+     * inflated out-lap sector(s) that carry the box stop + pit exit (flagged
+     * pit_status=0). Feeds the pit-loss histogram. */
+    @GetMapping("/pit-loss")
+    public List<PitLossPoint> pitLoss(@RequestParam(value = "trackId", required = false) Integer trackId) {
+        int resolved = trackId != null ? trackId : mostRecentTrack();
+        if (resolved < 0) return List.of();
+
+        // Normal-sector median baselines per (sector, ai) — mirrors get_normal_sector_medians.
+        Map<String, Double> baseline = new HashMap<>();
+        jdbc.query(
+                "SELECT ss.sector_number AS sector, p.ai_controlled AS ai, "
+                + "MEDIAN(ss.sector_time_ms) AS med "
+                + "FROM sector_snapshots ss "
+                + "JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index "
+                + "JOIN sessions s ON s.session_uid = ss.session_uid "
+                + "WHERE s.track_id = ? AND ss.pit_status = 0 AND ss.lap_invalid = 0 "
+                + "  AND ss.safety_car_status = 0 AND ss.lap_number > 1 AND ss.sector_time_ms > 0 "
+                + "  AND ss.outlier = 0 "
+                + "GROUP BY ss.sector_number, p.ai_controlled",
+                (RowCallbackHandler) rs -> baseline.put(
+                        rs.getInt("SECTOR") + "|" + rs.getInt("AI"), rs.getDouble("MED")),
+                resolved);
+
+        // All race sectors for any car that pitted, ordered for the walk-forward — mirrors
+        // _SELECT_PIT_STOP_SECTORS. The box/exit sector carrying most of the loss is flagged
+        // pit_status=0, so non-pit sectors must be visible too.
+        List<PitRow> rows = jdbc.query(
+                "SELECT ss.session_uid AS session_uid, ss.car_index AS car, ss.sector_number AS sector, "
+                + "ss.sector_time_ms AS time_ms, ss.pit_status AS pit, p.ai_controlled AS ai "
+                + "FROM sector_snapshots ss "
+                + "JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index "
+                + "JOIN sessions s ON s.session_uid = ss.session_uid "
+                + "WHERE s.track_id = ? AND ss.sector_time_ms > 0 AND ss.lap_number > 1 "
+                + "  AND ss.safety_car_status = 0 AND ss.penalties_sec = 0 "
+                + "  AND s.session_type IN (10,11,12,15,16,17) "
+                + "  AND EXISTS (SELECT 1 FROM sector_snapshots e WHERE e.session_uid = ss.session_uid "
+                + "              AND e.car_index = ss.car_index AND e.pit_status = 1) "
+                + "ORDER BY ss.session_uid, ss.car_index, ss.lap_number, ss.sector_number",
+                (rs, i) -> new PitRow(rs.getString("SESSION_UID"), rs.getInt("CAR"), rs.getInt("SECTOR"),
+                        rs.getLong("TIME_MS"), rs.getInt("PIT"), rs.getInt("AI")),
+                resolved);
+
+        List<PitLossPoint> out = new ArrayList<>();
+        int n = rows.size();
+        int i = 0;
+        while (i < n) {
+            PitRow entry = rows.get(i);
+            if (entry.pitStatus() != 1) { i++; continue; }
+            double loss = 0;
+            boolean valid = true;
+            int j = i;
+            while (j < n && (j - i) < MAX_PIT_STOP_SECTORS) {
+                PitRow s = rows.get(j);
+                if (s.car() != entry.car() || !s.session().equals(entry.session())) break;
+                Double b = baseline.get(s.sector() + "|" + s.ai());
+                if (b == null || b <= 0) { valid = false; break; }
+                double excess = s.timeMs() - b;
+                // Always include the entry sector; add following sectors only while clearly
+                // inflated (the box/exit sector), then stop.
+                if (j == i || excess > b * PIT_INFLATION_FACTOR) { loss += excess; j++; }
+                else break;
+            }
+            if (valid && loss > 0) {
+                out.add(new PitLossPoint(entry.ai() == 1 ? "AI" : "PLAYER", Math.round(loss)));
+            }
+            i = j > i ? j : i + 1;
+        }
+        return out;
+    }
 
     /** Clean-lap counts per compound × regime × sector — the "do we have enough?" heatmap. */
     @GetMapping("/coverage")

@@ -113,6 +113,25 @@ export interface AccuracyPoint {
   absError: number;
 }
 
+export interface SectorTimePoint {
+  compound: number;
+  sector: number;
+  timeMs: number;
+  outlier: boolean;
+}
+
+export interface PitLossPoint {
+  regime: string;
+  lossMs: number;
+}
+
+export interface RegimeDeg {
+  compound: number;
+  regime: string;
+  slopeMsPerLap: number;
+  samples: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ReadinessService {
   constructor(private http: HttpClient) {}
@@ -148,5 +167,20 @@ export class ReadinessService {
 
   accuracy(): Observable<AccuracyPoint[]> {
     return this.http.get<AccuracyPoint[]>('/api/system/readiness/accuracy');
+  }
+
+  sectorTimes(trackId?: number): Observable<SectorTimePoint[]> {
+    const q = trackId != null ? `?trackId=${trackId}` : '';
+    return this.http.get<SectorTimePoint[]>(`/api/system/readiness/sector-times${q}`);
+  }
+
+  pitLoss(trackId?: number): Observable<PitLossPoint[]> {
+    const q = trackId != null ? `?trackId=${trackId}` : '';
+    return this.http.get<PitLossPoint[]>(`/api/system/readiness/pit-loss${q}`);
+  }
+
+  regimeDeg(trackId?: number): Observable<RegimeDeg[]> {
+    const q = trackId != null ? `?trackId=${trackId}` : '';
+    return this.http.get<RegimeDeg[]>(`/api/system/readiness/regime-deg${q}`);
   }
 }

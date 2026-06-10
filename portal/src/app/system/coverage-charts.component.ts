@@ -9,6 +9,9 @@ import {
   WearCompound,
   FitConfidence,
   AccuracyPoint,
+  SectorTimePoint,
+  PitLossPoint,
+  RegimeDeg,
 } from './readiness.service';
 
 const COMPOUND_COLOR: Record<number, string> = {
@@ -90,6 +93,33 @@ interface MatrixRegime {
           <p class="empty" *ngIf="!hasAccuracy()">No finished races scored yet.</p>
         </div>
 
+        <!-- Sector-time distribution + outliers -->
+        <div class="panel">
+          <h4>Sector-time distribution (outliers flagged)</h4>
+          <div class="chart" *ngIf="hasSectorTimes()">
+            <canvas baseChart type="bar" [data]="sectorHist()" [options]="sectorHistOpts"></canvas>
+          </div>
+          <p class="empty" *ngIf="!hasSectorTimes()">No sector data yet.</p>
+        </div>
+
+        <!-- PLAYER vs AI degradation -->
+        <div class="panel">
+          <h4>Degradation slope: PLAYER vs AI</h4>
+          <div class="chart" *ngIf="hasRegimeDeg()">
+            <canvas baseChart type="bar" [data]="regimeDeg()" [options]="regimeDegOpts"></canvas>
+          </div>
+          <p class="empty" *ngIf="!hasRegimeDeg()">No fitted degradation yet.</p>
+        </div>
+
+        <!-- Pit-loss histogram -->
+        <div class="panel">
+          <h4>Pit-loss distribution</h4>
+          <div class="chart" *ngIf="hasPitLoss()">
+            <canvas baseChart type="bar" [data]="pitLoss()" [options]="pitLossOpts"></canvas>
+          </div>
+          <p class="empty" *ngIf="!hasPitLoss()">No race pit stops yet.</p>
+        </div>
+
         <!-- Fit confidence -->
         <div class="panel">
           <h4>Fit confidence per knob</h4>
@@ -155,6 +185,12 @@ export class CoverageChartsComponent implements OnChanges, OnInit, OnDestroy {
   accuracy = signal<ChartConfiguration['data']>({ datasets: [] });
   hasAccuracy = signal(false);
   fit = signal<FitConfidence[]>([]);
+  sectorHist = signal<ChartConfiguration['data']>({ datasets: [] });
+  hasSectorTimes = signal(false);
+  regimeDeg = signal<ChartConfiguration['data']>({ datasets: [] });
+  hasRegimeDeg = signal(false);
+  pitLoss = signal<ChartConfiguration['data']>({ datasets: [] });
+  hasPitLoss = signal(false);
 
   private pollSub?: Subscription;
 
@@ -178,6 +214,49 @@ export class CoverageChartsComponent implements OnChanges, OnInit, OnDestroy {
       y: { title: { display: true, text: 'Actual' } },
     },
     plugins: { legend: { display: false } },
+  };
+
+  readonly sectorHistOpts: ChartConfiguration['options'] = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    scales: {
+      x: { stacked: true, title: { display: true, text: 'Sector time (s)' } },
+      y: { stacked: true, title: { display: true, text: 'Samples' }, beginAtZero: true },
+    },
+    plugins: { legend: { display: true, labels: { boxWidth: 10, font: { size: 9 } } } },
+  };
+
+  readonly regimeDegOpts: ChartConfiguration['options'] = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    scales: {
+      x: { title: { display: true, text: 'Compound' } },
+      y: { title: { display: true, text: 'Deg slope (ms/lap)' } },
+    },
+    plugins: {
+      legend: { display: true, labels: { boxWidth: 10, font: { size: 9 } } },
+      tooltip: {
+        callbacks: {
+          afterLabel: (ctx) => {
+            const n = (ctx.dataset as any).samples?.[ctx.dataIndex];
+            return n != null ? `n=${n}` : '';
+          },
+        },
+      },
+    },
+  };
+
+  readonly pitLossOpts: ChartConfiguration['options'] = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    scales: {
+      x: { stacked: true, title: { display: true, text: 'Pit loss (s)' } },
+      y: { stacked: true, title: { display: true, text: 'Stops' }, beginAtZero: true },
+    },
+    plugins: { legend: { display: true, labels: { boxWidth: 10, font: { size: 9 } } } },
   };
 
   constructor(private svc: ReadinessService) {}
@@ -212,6 +291,18 @@ export class CoverageChartsComponent implements OnChanges, OnInit, OnDestroy {
     this.svc.accuracy().subscribe((pts) => {
       this.hasAccuracy.set(pts.length > 0);
       this.accuracy.set(this.buildAccuracy(pts));
+    });
+    this.svc.sectorTimes(this.trackId).subscribe((pts) => {
+      this.hasSectorTimes.set(pts.length > 0);
+      this.sectorHist.set(this.buildSectorHist(pts));
+    });
+    this.svc.regimeDeg(this.trackId).subscribe((rows) => {
+      this.hasRegimeDeg.set(rows.length > 0);
+      this.regimeDeg.set(this.buildRegimeDeg(rows));
+    });
+    this.svc.pitLoss(this.trackId).subscribe((pts) => {
+      this.hasPitLoss.set(pts.length > 0);
+      this.pitLoss.set(this.buildPitLoss(pts));
     });
   }
 
@@ -305,5 +396,86 @@ export class CoverageChartsComponent implements OnChanges, OnInit, OnDestroy {
       });
     }
     return { datasets };
+  }
+
+  /** Stacked histogram of PLAYER dry-compound sector times: clean bars per compound
+   * plus a red "outlier" series, so the outlier-filter's effect is visible. */
+  private buildSectorHist(pts: SectorTimePoint[]): ChartConfiguration['data'] {
+    if (!pts.length) return { datasets: [] };
+    const times = pts.map((p) => p.timeMs);
+    const lo = Math.min(...times);
+    const hi = Math.max(...times);
+    const BINS = 24;
+    const width = (hi - lo) / BINS || 1;
+    const binOf = (t: number) => Math.min(BINS - 1, Math.floor((t - lo) / width));
+    const labels = Array.from({ length: BINS }, (_, i) => ((lo + (i + 0.5) * width) / 1000).toFixed(1));
+    const cleanByCompound = new Map<number, number[]>();
+    const outliers = new Array(BINS).fill(0);
+    for (const p of pts) {
+      const b = binOf(p.timeMs);
+      if (p.outlier) {
+        outliers[b]++;
+      } else {
+        const arr = cleanByCompound.get(p.compound) ?? new Array(BINS).fill(0);
+        arr[b]++;
+        cleanByCompound.set(p.compound, arr);
+      }
+    }
+    const datasets: any[] = [];
+    for (const compound of [16, 17, 18]) {
+      const arr = cleanByCompound.get(compound);
+      if (!arr) continue;
+      datasets.push({
+        type: 'bar',
+        label: COMPOUND_LABEL[compound],
+        data: arr,
+        backgroundColor: COMPOUND_COLOR[compound],
+        stack: 's',
+      });
+    }
+    datasets.push({ type: 'bar', label: 'outlier', data: outliers, backgroundColor: '#d9534f', stack: 's' });
+    return { labels, datasets };
+  }
+
+  /** Grouped bar of fitted degradation slope (ms/lap) per dry compound, PLAYER vs AI.
+   * Sample volume per bar is carried on the dataset for the tooltip. */
+  private buildRegimeDeg(rows: RegimeDeg[]): ChartConfiguration['data'] {
+    if (!rows.length) return { datasets: [] };
+    const compounds = [16, 17, 18].filter((c) => rows.some((r) => r.compound === c));
+    const labels = compounds.map((c) => COMPOUND_LABEL[c] ?? `#${c}`);
+    const series = (regime: string, color: string) => ({
+      type: 'bar' as const,
+      label: regime,
+      backgroundColor: color,
+      data: compounds.map((c) => rows.find((x) => x.compound === c && x.regime === regime)?.slopeMsPerLap ?? 0),
+      samples: compounds.map((c) => rows.find((x) => x.compound === c && x.regime === regime)?.samples ?? 0),
+    });
+    return { labels, datasets: [series('PLAYER', '#4caf50'), series('AI', '#0067AD')] };
+  }
+
+  /** Stacked histogram of recomputed per-stop pit-lane losses, PLAYER vs AI. */
+  private buildPitLoss(pts: PitLossPoint[]): ChartConfiguration['data'] {
+    if (!pts.length) return { datasets: [] };
+    const losses = pts.map((p) => p.lossMs);
+    const lo = Math.min(...losses);
+    const hi = Math.max(...losses);
+    const BINS = 16;
+    const width = (hi - lo) / BINS || 1;
+    const binOf = (t: number) => Math.min(BINS - 1, Math.floor((t - lo) / width));
+    const labels = Array.from({ length: BINS }, (_, i) => ((lo + (i + 0.5) * width) / 1000).toFixed(1));
+    const byRegime = new Map<string, number[]>();
+    for (const p of pts) {
+      const arr = byRegime.get(p.regime) ?? new Array(BINS).fill(0);
+      arr[binOf(p.lossMs)]++;
+      byRegime.set(p.regime, arr);
+    }
+    const color: Record<string, string> = { PLAYER: '#4caf50', AI: '#0067AD' };
+    const datasets: any[] = [];
+    for (const regime of ['PLAYER', 'AI']) {
+      const arr = byRegime.get(regime);
+      if (!arr) continue;
+      datasets.push({ type: 'bar', label: regime, data: arr, backgroundColor: color[regime], stack: 's' });
+    }
+    return { labels, datasets };
   }
 }
