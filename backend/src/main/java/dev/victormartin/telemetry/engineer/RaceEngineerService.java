@@ -238,6 +238,8 @@ public class RaceEngineerService {
                     pitStatus, pitLaneTimer, pitLaneMs, lapDist, speedKmh, session.kind, previousPitState);
             session.lastPitState = pitState;
             session.currentLap = currentLap;
+            session.latestCars = cars;
+            session.playerPos = playerPos;
 
             if (pitState != previousPitState && previousPitState != null) {
                 TRACE.debug("ENGINEER_PIT_TRANSITION from={} to={} lap={} lapDist={} pitStatus={} speedKmh={}",
@@ -325,10 +327,14 @@ public class RaceEngineerService {
                 case "RTMT" -> {
                     String rawName = node.has("driverName") ? node.get("driverName").asText() : "";
                     String name = rawName.isBlank() ? "A car" : rawName;
-                    session.queue.enqueue(new EngineerMessage(
-                            Priority.NORMAL,
-                            name + " has retired.",
-                            System.currentTimeMillis(), lap, 2));
+                    // Only worth a radio call if the retiring car was near the player —
+                    // a backmarker dropping out is noise.
+                    if (isRetirementRelevant(session, rawName)) {
+                        session.queue.enqueue(new EngineerMessage(
+                                Priority.NORMAL,
+                                name + " has retired.",
+                                System.currentTimeMillis(), lap, 2));
+                    }
                 }
                 case "FLBK" -> session.radioSuppressedUntilMs =
                         System.currentTimeMillis() + FLASHBACK_SUPPRESS_MS;
@@ -341,6 +347,27 @@ public class RaceEngineerService {
         } catch (Exception e) {
             TRACE.warn("ENGINEER_EVENT_ERROR {}", e.getMessage());
         }
+    }
+
+    /** Announce a retirement only if the retiring driver was within this many track
+     * positions of the player (directly ahead/behind). */
+    private static final int RETIREMENT_PROXIMITY = 2;
+
+    /** True if the retiring driver was near the player in the latest snapshot. Falls back
+     * to true when we can't determine positions, so we never silently drop a call we
+     * can't classify. */
+    private static boolean isRetirementRelevant(SessionState session, String driverName) {
+        JsonNode cars = session.latestCars;
+        int playerPos = session.playerPos;
+        if (cars == null || playerPos <= 0 || driverName == null || driverName.isBlank()) return true;
+        for (JsonNode car : cars) {
+            if (car.has("name") && driverName.equals(car.get("name").asText())) {
+                int pos = car.has("pos") ? car.get("pos").asInt() : -1;
+                if (pos <= 0) return true;
+                return Math.abs(pos - playerPos) <= RETIREMENT_PROXIMITY;
+            }
+        }
+        return true;
     }
 
     // -- strategy callback ----------------------------------------------------
@@ -497,6 +524,8 @@ public class RaceEngineerService {
         long radioSuppressedUntilMs = 0;  // set on flashback; radio held until then
         volatile StrategyEvaluation latestEvaluation;   // null until first strategy push
         volatile String latestEvaluationJobId;          // job id of the run behind latestEvaluation
+        volatile JsonNode latestCars;                   // last cars snapshot, for event proximity lookups
+        volatile int playerPos = 0;                     // last seen player track position
 
         SessionState(String sessionUid, int trackId, int sessionType, SessionKind kind) {
             this.sessionUid = sessionUid;
