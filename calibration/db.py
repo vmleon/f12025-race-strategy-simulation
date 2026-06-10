@@ -159,7 +159,6 @@ _SELECT_PIT_STOP_SECTORS = """
     JOIN participants p ON p.session_uid = ss.session_uid AND p.car_index = ss.car_index
     JOIN sessions s ON s.session_uid = ss.session_uid
     WHERE s.track_id = :1
-      AND ss.pit_status IN (1, 2)
       AND ss.sector_time_ms > 0
       AND ss.lap_number > 1
       AND ss.safety_car_status = 0
@@ -167,7 +166,13 @@ _SELECT_PIT_STOP_SECTORS = """
       -- Races only: in FP/Quali a "pit stop" is a garage return (car parks for an
       -- arbitrary time), which is not a real race pit-lane time loss.
       AND s.session_type IN (10, 11, 12, 15, 16, 17)
-    ORDER BY ss.car_index, ss.lap_number, ss.sector_number
+      -- All sectors for any car that pitted (not just pit_status IN (1,2)): the box
+      -- stop + pit exit lands in the out-lap sector, which the game flags pit_status=0,
+      -- so the loss calc must be able to walk into it (see _pit_stop_losses).
+      AND EXISTS (SELECT 1 FROM sector_snapshots e
+                  WHERE e.session_uid = ss.session_uid AND e.car_index = ss.car_index
+                    AND e.pit_status = 1)
+    ORDER BY ss.session_uid, ss.car_index, ss.lap_number, ss.sector_number
 """
 
 PIT_COL_SESSION = 0

@@ -5,7 +5,7 @@ import pytest
 
 from calibration import db
 from calibration.pipeline import (
-    _group_pit_stops, _mad_filter,
+    _pit_stop_losses, _mad_filter,
     COMPOUND_KNOB_NAMES, MIN_TYRE_DEG_SAMPLES, MIN_FUEL_SAMPLES,
     MIN_PIT_STOP_SAMPLES,
 )
@@ -42,60 +42,50 @@ def _make_pit_sector(session_uid=1, car_index=0, lap_number=10, sector_number=2,
             sector_time_ms, pit_status, tyre_compound_actual, ai_controlled)
 
 
-class TestGroupPitStops:
+class TestPitStopLosses:
+    # Baselines mirror real Catalunya AI medians: S0≈23.5s, S1≈32.5s, S2≈24.0s.
+    BASE = {(0, 0): 23500.0, (1, 0): 32500.0, (2, 0): 24000.0}
 
-    def test_single_stop_two_sectors(self):
+    def test_includes_outlap_box_exit_sector(self):
+        """The loss spans the pit_status=1 entry sector AND the inflated out-lap sector
+        (box stop + exit) that the game flags pit_status=0."""
         sectors = [
-            _make_pit_sector(lap_number=10, sector_number=2, pit_status=1),
-            _make_pit_sector(lap_number=11, sector_number=0, pit_status=2),
+            _make_pit_sector(lap_number=10, sector_number=2, sector_time_ms=27494, pit_status=1),
+            _make_pit_sector(lap_number=11, sector_number=0, sector_time_ms=44020, pit_status=0),
+            _make_pit_sector(lap_number=11, sector_number=1, sector_time_ms=32553, pit_status=0),
         ]
-        stops = _group_pit_stops(sectors)
-        assert len(stops) == 1
-        assert len(stops[0]) == 2
+        losses = _pit_stop_losses(sectors, self.BASE, ai_controlled=0)
+        assert losses == pytest.approx([(27494 - 24000) + (44020 - 23500)])
 
-    def test_two_stops_same_car(self):
+    def test_excludes_normal_following_sector(self):
+        """A following sector near baseline is not counted (only the entry excess)."""
         sectors = [
-            _make_pit_sector(lap_number=10, sector_number=2, pit_status=1),
-            _make_pit_sector(lap_number=11, sector_number=0, pit_status=2),
-            _make_pit_sector(lap_number=25, sector_number=2, pit_status=1),
-            _make_pit_sector(lap_number=26, sector_number=0, pit_status=2),
+            _make_pit_sector(lap_number=10, sector_number=2, sector_time_ms=27494, pit_status=1),
+            _make_pit_sector(lap_number=11, sector_number=0, sector_time_ms=23600, pit_status=0),
         ]
-        stops = _group_pit_stops(sectors)
-        assert len(stops) == 2
-        assert len(stops[0]) == 2
-        assert len(stops[1]) == 2
+        losses = _pit_stop_losses(sectors, self.BASE, ai_controlled=0)
+        assert losses == pytest.approx([27494 - 24000])
 
-    def test_different_cars(self):
+    def test_no_entry_no_loss(self):
+        """Inflated sectors with no pit_status=1 entry produce nothing."""
         sectors = [
-            _make_pit_sector(car_index=0, lap_number=10, pit_status=1),
-            _make_pit_sector(car_index=0, lap_number=11, pit_status=2),
-            _make_pit_sector(car_index=1, lap_number=12, pit_status=1),
-            _make_pit_sector(car_index=1, lap_number=13, pit_status=2),
+            _make_pit_sector(lap_number=11, sector_number=0, sector_time_ms=44020, pit_status=0),
         ]
-        stops = _group_pit_stops(sectors)
-        assert len(stops) == 2
+        assert _pit_stop_losses(sectors, self.BASE, ai_controlled=0) == []
 
-    def test_single_sector_stop(self):
-        """A pit stop with only a pit_status=1 sector (no exit sector recorded)."""
+    def test_stops_at_car_boundary(self):
+        """The walk stops at a different car: the next car's inflated sector is not added."""
         sectors = [
-            _make_pit_sector(lap_number=10, pit_status=1),
+            _make_pit_sector(car_index=0, lap_number=10, sector_number=2,
+                             sector_time_ms=27494, pit_status=1),
+            _make_pit_sector(car_index=1, lap_number=11, sector_number=0,
+                             sector_time_ms=44020, pit_status=0),
         ]
-        stops = _group_pit_stops(sectors)
-        assert len(stops) == 1
-        assert len(stops[0]) == 1
-
-    def test_orphan_exit_sector_discarded(self):
-        """A pit_status=2 without a preceding pit_status=1 starts no group."""
-        sectors = [
-            _make_pit_sector(car_index=0, lap_number=5, pit_status=2),
-            _make_pit_sector(car_index=1, lap_number=10, pit_status=1),
-        ]
-        stops = _group_pit_stops(sectors)
-        assert len(stops) == 1
-        assert stops[0][0][db.PIT_COL_CAR] == 1
+        losses = _pit_stop_losses(sectors, self.BASE, ai_controlled=0)
+        assert losses == pytest.approx([27494 - 24000])
 
     def test_empty_input(self):
-        assert _group_pit_stops([]) == []
+        assert _pit_stop_losses([], self.BASE, ai_controlled=0) == []
 
 
 

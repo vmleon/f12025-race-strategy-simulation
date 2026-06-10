@@ -16,6 +16,8 @@ MIN_TYRE_DEG_SAMPLES = 10
 MIN_FUEL_SAMPLES = 5
 MIN_PIT_STOP_SAMPLES = 3
 MIN_WEAR_SAMPLES = 5   # wear is smooth/monotonic, so it calibrates from few laps
+PIT_INFLATION_FACTOR = 0.30   # a following sector joins the stop while this far over baseline
+MAX_PIT_STOP_SECTORS = 4      # safety cap on sectors attributed to one stop
 
 # Plausibility clamps for fitted slopes (ms). Thin / early FP data, where fuel burn
 # confounds tyre wear over a short stint, can yield absurd or negative slopes — a few
@@ -217,20 +219,7 @@ def _fit_pit_stop_duration(
     ai_controlled = 1 if regime == "AI" else 0
     pit_sectors = [s for s in pit_sectors if s[db.PIT_COL_AI] == ai_controlled]
 
-    stops = _group_pit_stops(pit_sectors)
-
-    time_losses = []
-    for stop in stops:
-        loss = 0.0
-        valid = True
-        for sector in stop:
-            baseline = baselines.get((sector[db.PIT_COL_SECTOR], ai_controlled))
-            if baseline is None or baseline <= 0:
-                valid = False
-                break
-            loss += sector[db.PIT_COL_TIME] - baseline
-        if valid and loss > 0:
-            time_losses.append(loss)
+    time_losses = _pit_stop_losses(pit_sectors, baselines, ai_controlled)
 
     if len(time_losses) < MIN_PIT_STOP_SAMPLES:
         print(f"  pit_stop_time_loss: insufficient data ({len(time_losses)}), skipping")
@@ -413,30 +402,50 @@ def _upsert_sector_baseline(
 
 
 
-def _group_pit_stops(pit_sectors: list[tuple]) -> list[list[tuple]]:
-    """Group pit sectors into individual pit stop events.
+def _pit_stop_losses(
+    sectors: list[tuple], baselines: dict[tuple[int, int], float], ai_controlled: int
+) -> list[float]:
+    """Per-stop pit-lane time loss in ms.
 
-    A pit stop starts with pit_status=1 (pitting). Subsequent pit_status=2
-    sectors for the same car in the same session are part of the same stop.
+    The pit time splits across the pit_status=1 entry sector (pit entry) and the
+    following out-lap sector(s) that carry the box stop + pit exit — which the game
+    flags pit_status=0. From each entry we therefore sum the excess over the
+    normal-sector baseline of that sector plus following sectors (same car+session)
+    while they stay clearly inflated (> PIT_INFLATION_FACTOR over baseline), so the
+    full ~20 s loss is captured, not just the small entry-sector excess.
+
+    `sectors` must be all race sectors for cars that pitted, ordered by
+    session, car, lap, sector (see db._SELECT_PIT_STOP_SECTORS).
     """
-    stops: list[list[tuple]] = []
-    current: list[tuple] = []
-
-    for s in pit_sectors:
-        if s[db.PIT_COL_STATUS] == 1:
-            if current:
-                stops.append(current)
-            current = [s]
-        elif (current
-              and s[db.PIT_COL_CAR] == current[0][db.PIT_COL_CAR]
-              and s[db.PIT_COL_SESSION] == current[0][db.PIT_COL_SESSION]):
-            current.append(s)
-        else:
-            if current:
-                stops.append(current)
-            current = []
-
-    if current:
-        stops.append(current)
-
-    return stops
+    losses: list[float] = []
+    n = len(sectors)
+    i = 0
+    while i < n:
+        entry = sectors[i]
+        if entry[db.PIT_COL_STATUS] != 1:
+            i += 1
+            continue
+        loss = 0.0
+        valid = True
+        j = i
+        while j < n and (j - i) < MAX_PIT_STOP_SECTORS:
+            s = sectors[j]
+            if (s[db.PIT_COL_CAR] != entry[db.PIT_COL_CAR]
+                    or s[db.PIT_COL_SESSION] != entry[db.PIT_COL_SESSION]):
+                break
+            baseline = baselines.get((s[db.PIT_COL_SECTOR], ai_controlled))
+            if baseline is None or baseline <= 0:
+                valid = False
+                break
+            excess = s[db.PIT_COL_TIME] - baseline
+            # Always include the entry sector; include following sectors only while
+            # they remain clearly inflated (the box/exit sector), then stop.
+            if j == i or excess > baseline * PIT_INFLATION_FACTOR:
+                loss += excess
+                j += 1
+            else:
+                break
+        if valid and loss > 0:
+            losses.append(loss)
+        i = j if j > i else i + 1
+    return losses
