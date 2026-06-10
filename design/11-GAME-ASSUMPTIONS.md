@@ -27,6 +27,17 @@ uncalibrated. With the default wear-rates (Soft 1.33, Medium 1.08, Hard 0.89
 | Inter    | — (unverified)           | **TODO: observe and record.**                           |
 | Wet      | — (unverified)           | **TODO: observe and record.**                           |
 
+## Pit Status in Snapshots
+
+`pit_status` in `sector_snapshots` is only ever observed as **0** (on track) or **1**
+(in the pit lane / pitting). The game's value **2** ("in pit area", being serviced) is
+effectively **never recorded**: snapshots are written on sector transitions, and the
+stationary box stop plus pit exit fall inside the out-lap's first sector — which the game
+has already flagged back to `pit_status = 0` by the time that sector completes. The
+practical consequence is that a pit stop's real time loss (~20 s) lands mostly in a
+`pit_status = 0` out-lap sector, not the `pit_status = 1` entry sector, so the pit-loss
+calibration walks forward into the inflated out-lap sector(s) (see `05-CALIBRATION.md`).
+
 ## Open Questions
 
 - Hard compound lifespan — extrapolated, not observed.

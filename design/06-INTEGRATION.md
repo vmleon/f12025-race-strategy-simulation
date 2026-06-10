@@ -212,10 +212,12 @@ sequenceDiagram
 
 A full-race simulation, triggered automatically during the race or manually from the portal.
 
-- **Kicked off by:** `SimulationOrchestrator` trigger (leader lap completion, any pit stop,
-  safety-car change), debounced 3 s — **gated to the Race only** (`SessionKind.fromSessionType`
-  == `RACE`); FP/Qualy never auto-trigger a simulation. The manual `POST /api/simulation/run`
-  (returns `202` + jobId) is unaffected by the gate.
+- **Kicked off by:** `SimulationOrchestrator` trigger — leader lap completion, any pit stop,
+  safety-car change, plus player sector change, player position change, and the player's own pit
+  completion; debounced 3 s, with a 5 s idle floor that refreshes the projection when nothing else
+  has fired. **Gated to the Race only** (`SessionKind.fromSessionType` == `RACE`); FP/Qualy never
+  auto-trigger a simulation. The manual `POST /api/simulation/run` (returns `202` + jobId) is
+  unaffected by the gate.
 - **Queues:** `SIMULATION_REQUEST` (out), `SIMULATION_RESULT` (in).
 - **Path:** Backend → **`SIMULATION_REQUEST`** → Simulator ([FastAPI](10-REFERENCES.md#fastapi),
   port 8081; daemon thread polls when `SIMULATOR_USE_DB=true`) loads coefficients, runs
@@ -234,7 +236,7 @@ sequenceDiagram
     participant BE as Backend (Consumer)
     participant Portal as Portal
 
-    Note over Orch: Trigger from TCP stream<br/>(lap / pit / safety car) → debounce 3s<br/>RACE sessions only (type 10-12 / 15-17)
+    Note over Orch: Trigger from TCP stream<br/>(lap · pit · safety car · player sector/pos/pit · 5s idle floor)<br/>debounce 3s, RACE only (type 10-12 / 15-17)
     Orch->>Q1: Enqueue {jobId, raceSnapshot}
     Q1->>Sim: Dequeue
     activate Sim
@@ -255,7 +257,10 @@ the **calibrated** coefficients (Flow 4), ranked, and the result drives both the
 widget **and** a race-engineer pit-window message to iOS.
 
 - **Kicked off by:** `StrategyOrchestrator.onStateUpdate()` trigger (player lap completion, any
-  pit stop, safety-car change, weather change), debounced 3 s.
+  pit stop, safety-car change, weather change, player sector change, player position change, and
+  the player's own pit completion), debounced 3 s, with a 5 s idle floor. Sector/position and
+  AI-pit triggers are NORMAL and capped at 2 runs per player lap; player lap/pit, safety car and
+  weather are CRITICAL and bypass the cap.
 - **Queues:** `STRATEGY_REQUEST` (out), `STRATEGY_RESULT` (in) — both single-consumer TxEventQ.
 - **Path:** Backend enriches the snapshot with `tyre_sets` availability → marks leaderboard
   `stale=true` (broadcast) → **`STRATEGY_REQUEST`** → Simulator `run_strategy_worker()`:

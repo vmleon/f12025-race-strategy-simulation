@@ -65,6 +65,7 @@ Candidate strategies are generated automatically by the Simulator's `candidate_g
 - **2-stop:** Only if 15+ laps remain. Cross-product of available compounds for both stops, with lap windows stepped at 5+ lap intervals and a minimum stint length of 3 laps (first/middle and final stints)
 - **Two-compound rule in the wet:** The two-compound-rule pruning applied to 1-stop and 2-stop candidates is waived in wet conditions (`weather` at or above the wet threshold) — when running wet tyres the simulation allows staying on the same compound across stints
 - **Pruning:** Compounds with a lap delta time >5 seconds versus the fitted set are excluded. Total candidates are capped at 50, prioritizing 0/1-stop strategies over 2-stop when truncating
+- **Break-even pruning of extra stops:** once the two-compound rule is already met and the fitted tyre can reach the end, an _additional_ stop is generated only if enough laps remain after it for fresh rubber to recover the pit-lane loss (≈ `pit_loss / 1500 ms-per-lap`, minimum 3 laps). Late stops that can't break even are dropped — this stops the engine proposing an unrecoverable second stop right after pitting. When the fitted set's usable life is unknown (e.g. immediately after a stop) it falls back to the compound's lifespan minus laps already run, so the "No stop" option isn't spuriously excluded
 
 This generation logic lives in the Simulator (`candidate_generator.py`) rather than the Backend, keeping strategy knowledge co-located with the evaluation engine. The Backend's `StrategyOrchestrator` assembles the race snapshot (enriched with tyre set availability from the database) and passes it to the Simulator via the `STRATEGY_REQUEST` queue — see `06-INTEGRATION.md` Flow 6 for the full flow.
 
@@ -146,19 +147,19 @@ The Monte Carlo simulation samples from probability distributions derived from h
 
 ### Required historical distributions
 
-| Distribution                         | Built from                                                    | Minimum data needed                    |
-| ------------------------------------ | ------------------------------------------------------------- | -------------------------------------- |
-| Base pace per driver per track       | Sector times (valid laps, clean air)                          | Several sessions per track             |
-| Tyre degradation curves per compound | Sector time vs tyre age, grouped by compound                  | Multiple stints per compound per track |
-| Fuel effect on pace                  | Sector time vs fuel load                                      | Full race distances                    |
-| Overtake probability per sector      | Position changes at sector boundaries vs pace delta, gap, DRS | Multiple races per track               |
-| Pit stop duration distribution       | Pit lane time (in-lap sector 3 + out-lap sector 1 vs normal)  | Multiple pit stops per track           |
-| Safety car / VSC probability         | Event frequency per race distance                             | Multiple races                         |
-| DNF probability                      | Retirement events per car per race                            | Multiple races                         |
-| Tyre temp effect on pace             | Sector time vs tyre surface/inner temp                        | Multiple stints across conditions      |
-| Weather effect on pace               | Sector time deltas across weather changes                     | Sessions with weather variation        |
-| Car damage effect on pace            | Sector time vs damage levels (wing, floor, engine)            | Sessions with damage incidents         |
-| Damage-triggered pit/retirement prob | Pit stops and retirements correlated with damage levels       | Multiple sessions with damage events   |
+| Distribution                           | Built from                                                    | Minimum data needed                    |
+| -------------------------------------- | ------------------------------------------------------------- | -------------------------------------- |
+| Base pace per driver per track         | Sector times (valid laps, clean air)                          | Several sessions per track             |
+| Tyre degradation curves per compound   | Sector time vs tyre age, grouped by compound                  | Multiple stints per compound per track |
+| Fuel effect on pace                    | Sector time vs fuel load                                      | Full race distances                    |
+| Overtake probability per sector        | Position changes at sector boundaries vs pace delta, gap, DRS | Multiple races per track               |
+| Pit stop duration (deterministic mean) | Pit lane time (in-lap sector 3 + out-lap sector 1 vs normal)  | Multiple pit stops per track           |
+| Safety car / VSC probability           | Event frequency per race distance                             | Multiple races                         |
+| DNF probability                        | Retirement events per car per race                            | Multiple races                         |
+| Tyre temp effect on pace               | Sector time vs tyre surface/inner temp                        | Multiple stints across conditions      |
+| Weather effect on pace                 | Sector time deltas across weather changes                     | Sessions with weather variation        |
+| Car damage effect on pace              | Sector time vs damage levels (wing, floor, engine)            | Sessions with damage incidents         |
+| Damage-triggered pit/retirement prob   | Pit stops and retirements correlated with damage levels       | Multiple sessions with damage events   |
 
 ### Historical context for the simulation
 

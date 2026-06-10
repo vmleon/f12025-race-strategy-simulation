@@ -8,7 +8,7 @@ The project is a POC/TFG with 3 future components that scale differently:
 2. **Calibration** — Offline batch regression after each session (infrequent, CPU-bound)
 3. **Monte Carlo** — On-demand simulation, 1K-10K iterations (burst, CPU-bound)
 
-Current state: ~350 lines of plain Java, only header parsing done. 0/7 DB tables, no payload parsing yet.
+State at the time of this analysis (project start): ~350 lines of plain Java, only header parsing done, no DB tables yet. The decision below was adopted and the system built on it; the schema has since grown to 12 tables.
 
 ---
 
@@ -19,7 +19,7 @@ Current state: ~350 lines of plain Java, only header parsing done. 0/7 DB tables
 - Keep plain Java structure
 - Add **Oracle UCP** ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-ucp)) (Universal Connection Pool) for connection pooling
 - Add **Oracle JDBC driver** (required regardless)
-- Use raw JDBC with prepared statements (the 10 tables are well-defined, ORM is overkill)
+- Use raw JDBC with prepared statements (the 12 tables are well-defined, ORM is overkill)
 - 3 independent Gradle submodules sharing a `common` module:
   ```
   common/       — PacketHeader, PacketType, DB schema constants, Oracle UCP connection factory
@@ -56,7 +56,7 @@ Current state: ~350 lines of plain Java, only header parsing done. 0/7 DB tables
 
 ## Chosen: Raw JDBC (Prepared Statements)
 
-The schema has 10 tables with well-defined, stable structures. Raw JDBC with prepared statements is the right fit for this workload.
+The schema has 12 tables with well-defined, stable structures. Raw JDBC with prepared statements is the right fit for this workload.
 
 ```java
 // Example: insert sector snapshot (~5 lines of setup, explicit SQL)
