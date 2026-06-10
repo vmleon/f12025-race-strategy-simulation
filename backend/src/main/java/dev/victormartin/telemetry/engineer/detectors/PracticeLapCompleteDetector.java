@@ -85,9 +85,19 @@ public class PracticeLapCompleteDetector implements RadioDetector {
         }
         int timeLeft = tick.state().has("sessionTimeLeft")
                 ? tick.state().get("sessionTimeLeft").asInt() : 0;
-        String timeLeftStr = EngineerMessageHelpers.formatSessionTimeLeft(timeLeft);
-        if (!timeLeftStr.isEmpty()) {
-            text.append(' ').append(EngineerMessageHelpers.capitalize(timeLeftStr)).append('.');
+        // The F1 clock stops counting down once the session timer hits zero and the
+        // reported sessionTimeLeft is no longer monotonic (it can reset back up).
+        // Latch on the first non-decreasing reading so we never announce a fresh
+        // "X minutes left" on the chequered lap.
+        if (timeLeft > 0 && s.lastSessionTimeLeft >= 0 && timeLeft >= s.lastSessionTimeLeft) {
+            s.sessionClockExpired = true;
+        }
+        if (timeLeft > 0) s.lastSessionTimeLeft = timeLeft;
+        if (!s.sessionClockExpired) {
+            String timeLeftStr = EngineerMessageHelpers.formatSessionTimeLeft(timeLeft);
+            if (!timeLeftStr.isEmpty()) {
+                text.append(' ').append(EngineerMessageHelpers.capitalize(timeLeftStr)).append('.');
+            }
         }
 
         return Optional.of(new EngineerMessage(
@@ -147,6 +157,8 @@ public class PracticeLapCompleteDetector implements RadioDetector {
         int lastFiredLap = 0;
         long lastReportedLapMs = 0;
         long bestLapMs = 0;
+        int lastSessionTimeLeft = -1;
+        boolean sessionClockExpired = false;
         final Map<Integer, Long> bestByCarIdx = new HashMap<>();
     }
 }
