@@ -31,6 +31,9 @@ public class StrategySummaryDetector implements RadioDetector {
     /** Through this lap the standing-start scramble makes strategy chatter pointless. */
     private static final int OPENING_LAP = 1;
 
+    /** Only announce a planned stop once it's within this many laps of now. */
+    private static final int LOOKAHEAD_LAPS = 2;
+
     /**
      * Quiet window after the player rejoins from a pit stop. The gap-to-leader (and
      * thus the seeded race time) is transiently distorted by the pit-lane loss, so a
@@ -79,6 +82,18 @@ public class StrategySummaryDetector implements RadioDetector {
         RankedStrategy r2 = eval.strategies().size() > 1 ? eval.strategies().get(1) : null;
         Plan p1 = nextStop(r1, tick.currentLap());
         Plan p2 = r2 != null ? nextStop(r2, tick.currentLap()) : null;
+
+        // Lookahead gate: talk boxes only when actionable. A "stay out to the end"
+        // recommendation (p1 == null) is announced once via the signature. Otherwise
+        // stay quiet until the nearest planned stop among the top two is within
+        // LOOKAHEAD laps — the optimal box lap drifts ~1/lap, so announcing a stop
+        // many laps out is just noise that never arrives. Returning before touching
+        // lastSignature means it still announces once it enters the window.
+        if (p1 != null) {
+            int nearest = p1.lap();
+            if (p2 != null) nearest = Math.min(nearest, p2.lap());
+            if (nearest - tick.currentLap() > LOOKAHEAD_LAPS) return Optional.empty();
+        }
 
         String signature = sig(p1) + "|" + (r2 == null ? "none" : sig(p2));
         if (signature.equals(s.lastSignature)) return Optional.empty();

@@ -58,11 +58,21 @@ class StrategySummaryDetectorTest {
                 ranked(1, "1-stop M", new PitStop(20, 17)),
                 ranked(2, "1-stop H", new PitStop(22, 18))));
 
-        var msg = detector.evaluate(tickAtLap(8, "S"));
+        // Within the lookahead window (box L20, now L18) so it's actionable.
+        var msg = detector.evaluate(tickAtLap(18, "S"));
         assertTrue(msg.isPresent());
         assertEquals(EngineerMessage.Priority.NORMAL, msg.get().priority());
         assertEquals("Current plan: box lap 20 for Mediums. Next best: box lap 22 for Hards.",
                 msg.get().text());
+    }
+
+    @Test
+    void suppressedUntilStopWithinLookahead() {
+        detector.setEvaluation(SESSION_UID, eval(ranked(1, "1-stop M", new PitStop(20, 17))));
+        // Far out — the optimal box lap keeps drifting, so stay quiet.
+        assertTrue(detector.evaluate(tickAtLap(10, "S")).isEmpty());
+        // Within the lookahead window — now announce (signature wasn't consumed while quiet).
+        assertTrue(detector.evaluate(tickAtLap(18, "S")).isPresent());
     }
 
     @Test
@@ -74,21 +84,21 @@ class StrategySummaryDetectorTest {
     @Test
     void doesNotRepeatWhilePlanIsStable() {
         detector.setEvaluation(SESSION_UID, eval(ranked(1, "1-stop M", new PitStop(20, 17))));
-        assertTrue(detector.evaluate(tickAtLap(8, "S")).isPresent());
-        // Same plan a few laps later — no repeat.
-        assertTrue(detector.evaluate(tickAtLap(10, "S")).isEmpty());
+        assertTrue(detector.evaluate(tickAtLap(18, "S")).isPresent());
+        // Same plan a lap later — no repeat.
+        assertTrue(detector.evaluate(tickAtLap(19, "S")).isEmpty());
     }
 
     @Test
     void reAnnouncesWhenPlanMateriallyChanges() {
         detector.setEvaluation(SESSION_UID, eval(ranked(1, "1-stop M", new PitStop(20, 17))));
-        assertTrue(detector.evaluate(tickAtLap(8, "S")).isPresent());
+        assertTrue(detector.evaluate(tickAtLap(18, "S")).isPresent());
 
-        // New recommendation: different pit lap + compound.
-        detector.setEvaluation(SESSION_UID, eval(ranked(1, "1-stop H", new PitStop(25, 18))));
-        var msg = detector.evaluate(tickAtLap(9, "S"));
+        // New recommendation: different pit lap + compound, still within lookahead.
+        detector.setEvaluation(SESSION_UID, eval(ranked(1, "1-stop H", new PitStop(21, 18))));
+        var msg = detector.evaluate(tickAtLap(19, "S"));
         assertTrue(msg.isPresent());
-        assertEquals("Current plan: box lap 25 for Hards.", msg.get().text());
+        assertEquals("Current plan: box lap 21 for Hards.", msg.get().text());
     }
 
     @Test
