@@ -238,17 +238,15 @@ def _fit_pit_stop_duration(
 
     arr = np.array(time_losses, dtype=float)
     m = mean(arr)
-    sd = sqrt(variance(arr))
 
-    # Non-regression knobs: sample_count carries meaning, R²/SE do not (stay NULL).
+    # Pit-lane time loss is deterministic per track (lane length + speed limit), so we
+    # persist only the mean — the engine adds it straight onto race time, no stddev.
+    # Non-regression knob: sample_count carries meaning, R²/SE do not (stay NULL).
     db.insert_calibration_coefficient(
         conn, track_id, "pit_stop_time_loss", regime, None, "mean",
         m, 0, now, sample_count=len(time_losses))
-    db.insert_calibration_coefficient(
-        conn, track_id, "pit_stop_time_loss_stddev", regime, None, "stddev",
-        sd, 0, now, sample_count=len(time_losses))
 
-    print(f"  pit_stop_time_loss: mean={m:.0f}ms, sd={sd:.0f}ms, n={len(time_losses)}")
+    print(f"  pit_stop_time_loss: mean={m:.0f}ms, n={len(time_losses)}")
 
 
 MIN_SECTOR_BASELINE_SAMPLES = 3   # sectors give ~3× the data; gate kept low for sparse FP

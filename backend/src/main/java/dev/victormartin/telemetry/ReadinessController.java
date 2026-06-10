@@ -403,9 +403,13 @@ public class ReadinessController {
     }
 
     private String calibrationLastRanAt(int trackId) {
+        // When calibration last produced a real fit for this track. Keyed off
+        // calibration_coefficients (any regime, fitted only — is_default = 0) so the
+        // indicator reflects that calibration ran, not whether one specific table
+        // (PLAYER sector-pace baselines) happened to get enough clean laps to fit.
         List<String> ts = jdbc.queryForList(
-                "SELECT TO_CHAR(MAX(last_fitted_at), 'YYYY-MM-DD\"T\"HH24:MI:SS') "
-                + "FROM sector_pace_baselines WHERE track_id = ? AND regime = 'PLAYER'",
+                "SELECT TO_CHAR(MAX(trained_at), 'YYYY-MM-DD\"T\"HH24:MI:SS') "
+                + "FROM calibration_coefficients WHERE track_id = ? AND is_default = 0",
                 String.class, trackId);
         return ts.isEmpty() ? null : ts.get(0);
     }

@@ -260,15 +260,13 @@ class MonteCarloEngine:
     def _execute_pit_stop(
         self, car: CarState, new_compound: int, repair_front_wing: bool = False
     ) -> None:
-        pit_mean = self.coefficients.get("pit_stop_time_loss", car.regime)
-        if pit_mean <= 0:
-            pit_mean = PIT_STOP_TIME_MS
-        pit_sd = self.coefficients.get("pit_stop_time_loss_stddev", car.regime)
-        if pit_sd > 0:
-            pit_time = self.rng.gauss(pit_mean, pit_sd)
-            pit_time = max(pit_time, pit_mean * 0.5)
-        else:
-            pit_time = pit_mean
+        # Pit-lane time loss is deterministic per track (fixed lane length + speed
+        # limit), so we use the calibrated mean directly — no Gaussian noise. The
+        # variable part of a stop's outcome (rejoining into traffic) is modelled
+        # downstream by the race sim, not by pit-time jitter.
+        pit_time = self.coefficients.get("pit_stop_time_loss", car.regime)
+        if pit_time <= 0:
+            pit_time = PIT_STOP_TIME_MS
         if repair_front_wing:
             pit_time += REPAIR_TIME_MS
             car.front_wing_damage = 0
