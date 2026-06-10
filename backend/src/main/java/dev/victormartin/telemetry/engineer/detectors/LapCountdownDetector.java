@@ -14,7 +14,9 @@ import dev.victormartin.telemetry.engineer.SessionKind;
 
 /**
  * "10 laps remaining" / "3 laps to go" / "Last lap". Race only. Fires on the
- * lap-up tick where laps remaining == 10, 3, or 1.
+ * lap-up tick where laps remaining == 10, 3, or 1. The 10-lap line is NORMAL
+ * (safe-zone gated); the closing laps are HIGH. IMMEDIATE is reserved for
+ * safety-critical messages.
  */
 public class LapCountdownDetector implements RadioDetector {
 
@@ -44,8 +46,12 @@ public class LapCountdownDetector implements RadioDetector {
             default -> null;
         };
         if (text == null) return Optional.empty();
+        // IMMEDIATE is reserved for safety-critical calls (safety car / damage). The
+        // 10-lap line is generic filler → NORMAL (deliver in a safe zone); the closing
+        // laps are notable but still not safety-critical → HIGH.
+        Priority priority = remaining == 10 ? Priority.NORMAL : Priority.HIGH;
         return Optional.of(new EngineerMessage(
-                Priority.IMMEDIATE, text,
+                priority, text,
                 tick.wallClockMs(), currentLap, 1));
     }
 
