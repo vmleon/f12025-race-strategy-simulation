@@ -164,6 +164,9 @@ _SELECT_PIT_STOP_SECTORS = """
       AND ss.lap_number > 1
       AND ss.safety_car_status = 0
       AND ss.penalties_sec = 0
+      -- Races only: in FP/Quali a "pit stop" is a garage return (car parks for an
+      -- arbitrary time), which is not a real race pit-lane time loss.
+      AND s.session_type IN (10, 11, 12, 15, 16, 17)
     ORDER BY ss.car_index, ss.lap_number, ss.sector_number
 """
 

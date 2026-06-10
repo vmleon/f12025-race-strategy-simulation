@@ -28,6 +28,11 @@ class TestConstants:
         assert MIN_FUEL_SAMPLES == 5
         assert MIN_PIT_STOP_SAMPLES == 3
 
+    def test_pit_stop_query_is_races_only(self):
+        # Pit time loss must come from real race pit stops, not FP/Quali garage
+        # returns (BACKLOG item 1). Race session types are 10-12 / 15-17.
+        assert "session_type IN (10, 11, 12, 15, 16, 17)" in db._SELECT_PIT_STOP_SECTORS
+
 
 def _make_pit_sector(session_uid=1, car_index=0, lap_number=10, sector_number=2,
                      sector_time_ms=45000, pit_status=1, tyre_compound_actual=16,
