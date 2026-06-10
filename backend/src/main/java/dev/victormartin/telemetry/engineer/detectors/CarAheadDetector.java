@@ -17,7 +17,8 @@ import dev.victormartin.telemetry.engineer.SessionKind;
 
 /**
  * "You have DRS. Attack." — race only, fires when player drops below 1.0s of
- * the car ahead (DRS range). Suppressed when DRS assist is on.
+ * the car ahead (DRS range). Suppressed when DRS assist is on, and only fires
+ * when DRS is genuinely available (the game's {@code drsAllowed} flag is set).
  */
 public class CarAheadDetector implements RadioDetector {
 
@@ -38,6 +39,14 @@ public class CarAheadDetector implements RadioDetector {
     public Optional<EngineerMessage> evaluate(EngineerTick tick) {
         int drsAssist = tick.state().has("drsAssist") ? tick.state().get("drsAssist").asInt() : 0;
         if (drsAssist != 0) return Optional.empty();
+        // DRS is disabled at a standing start (first 2 racing laps) and whenever the
+        // game hasn't enabled it; never claim "you have DRS" unless it's genuinely
+        // allowed. Same field DrsDetector reads.
+        int drsAllowed = tick.playerCar().has("drsAllowed") ? tick.playerCar().get("drsAllowed").asInt() : 0;
+        if (drsAllowed <= 0) {
+            previousGapByUid.put(tick.sessionUid(), -1f);
+            return Optional.empty();
+        }
         if (tick.playerPos() <= 1) {
             previousGapByUid.put(tick.sessionUid(), -1f);
             return Optional.empty();
