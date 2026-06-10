@@ -19,6 +19,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import dev.victormartin.telemetry.engineer.RaceEngineerService;
+import dev.victormartin.telemetry.engineer.SessionKind;
 import dev.victormartin.telemetry.simulation.RaceSnapshot;
 import dev.victormartin.telemetry.simulation.SectorBaselineLookup;
 import dev.victormartin.telemetry.simulation.StrategyEvaluation;
@@ -28,6 +29,7 @@ public class StrategyOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(StrategyOrchestrator.class);
     private static final long DEBOUNCE_MS = 3_000;
+    private static final long IDLE_FLOOR_MS = 5_000;   // re-run if nothing else has for this long
 
     private final QueueService queueService;
     private final JdbcTemplate jdbc;
@@ -53,6 +55,10 @@ public class StrategyOrchestrator {
     private int previousSafetyCarStatus = 0;
     private int previousWeather = -1;
     private final int[] previousPitCounts = new int[22];
+    private int previousPlayerSector = -1;
+    private int previousPlayerPos = -1;
+    private int previousPlayerPitStatus = 0;
+    private volatile long lastRunAtMs = 0;
 
     // Per-lap throttle. NORMAL triggers (AI pit cascades) are capped per player
     // lap so a single race can't spam the simulator with 10+ evaluations per
@@ -80,6 +86,8 @@ public class StrategyOrchestrator {
         this.jdbc = jdbc;
         this.raceWebSocketHandler = raceWebSocketHandler;
         this.raceEngineerService = raceEngineerService;
+        scheduler.scheduleAtFixedRate(
+                this::idleFloorCheck, IDLE_FLOOR_MS, IDLE_FLOOR_MS, TimeUnit.MILLISECONDS);
     }
 
     public void onStateUpdate(String json) {
@@ -185,6 +193,10 @@ public class StrategyOrchestrator {
         previousSafetyCarStatus = 0;
         previousWeather = -1;
         for (int i = 0; i < previousPitCounts.length; i++) previousPitCounts[i] = 0;
+        previousPlayerSector = -1;
+        previousPlayerPos = -1;
+        previousPlayerPitStatus = 0;
+        lastRunAtMs = 0;
         throttleLap = -1;
         normalRunsThisLap = 0;
         latestState = null;
@@ -222,6 +234,17 @@ public class StrategyOrchestrator {
                         critical = true; // player completed a lap
                     }
                     previousPlayerLap = lap;
+                    // Player sector / position change → NORMAL (throttled); own pit
+                    // completion (back on track) → CRITICAL, the plan genuinely changes.
+                    int sector = car.has("sector") ? car.get("sector").asInt() : -1;
+                    int pos = car.has("pos") ? car.get("pos").asInt() : -1;
+                    int pit = car.has("pitStatus") ? car.get("pitStatus").asInt() : 0;
+                    if (previousPlayerSector >= 0 && sector != previousPlayerSector) normal = true;
+                    if (previousPlayerPos >= 0 && pos != previousPlayerPos) normal = true;
+                    if (previousPlayerPitStatus > 0 && pit == 0) critical = true;
+                    previousPlayerSector = sector;
+                    previousPlayerPos = pos;
+                    previousPlayerPitStatus = pit;
                     break;
                 }
             }
@@ -268,9 +291,36 @@ public class StrategyOrchestrator {
         pendingRun = scheduler.schedule(this::enqueueStrategyRequest, DEBOUNCE_MS, TimeUnit.MILLISECONDS);
     }
 
+    private static boolean isRace(JsonNode state) {
+        if (state == null) return false;
+        int sessionType = state.has("sessionType") ? state.get("sessionType").asInt() : 0;
+        return SessionKind.fromSessionType(sessionType) == SessionKind.RACE;
+    }
+
+    /** Freshness floor: if no strategy run has happened for IDLE_FLOOR_MS during a live
+     * race (and the player has enough data to project), kick one off so the plan stays
+     * current between lap-driven triggers. Bypasses the per-lap NORMAL throttle because
+     * it only fires when nothing else has run. */
+    private void idleFloorCheck() {
+        try {
+            JsonNode state = latestState;
+            if (!isRace(state)) return;
+            if (System.currentTimeMillis() - lastRunAtMs < IDLE_FLOOR_MS) return;
+            int playerIdx = currentPlayerIdx(state);
+            if (playerIdx < 0 || !state.has("trackId")) return;
+            if (sectorHistoryLookup.lapsRecorded(state.get("trackId").asInt(), playerIdx) < 2
+                    && !playerHasBaseline(state, playerIdx)) return;
+            log.debug("StrategyOrchestrator: idle floor trigger");
+            scheduleDebouncedRun();
+        } catch (Exception e) {
+            log.warn("StrategyOrchestrator: idle floor check failed: {}", e.getMessage());
+        }
+    }
+
     private void enqueueStrategyRequest() {
         JsonNode state = latestState;
         if (state == null) return;
+        lastRunAtMs = System.currentTimeMillis();
 
         try {
             RaceSnapshot snapshot = assembleSnapshotWithTyreSets(state);

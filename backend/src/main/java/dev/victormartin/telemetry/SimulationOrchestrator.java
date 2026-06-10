@@ -34,6 +34,7 @@ public class SimulationOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(SimulationOrchestrator.class);
     private static final long DEBOUNCE_MS = 3_000;
+    private static final long IDLE_FLOOR_MS = 5_000;   // re-run if nothing else has for this long
     private static final int MAX_STORED_RESULTS = 50;
 
     private final QueueService queueService;
@@ -60,6 +61,10 @@ public class SimulationOrchestrator {
     private int previousLeaderLap = -1;
     private int previousSafetyCarStatus = 0;
     private final int[] previousPitStatus = new int[22];
+    private int previousPlayerSector = -1;
+    private int previousPlayerPos = -1;
+    private int previousPlayerPitStatus = 0;
+    private volatile long lastRunAtMs = 0;
 
     public SimulationOrchestrator(QueueService queueService,
                                   SectorHistoryLookup sectorHistoryLookup,
@@ -71,6 +76,8 @@ public class SimulationOrchestrator {
         this.sectorBaselineLookup = sectorBaselineLookup;
         this.simulationRunLog = simulationRunLog;
         this.simulationIoLog = simulationIoLog;
+        scheduler.scheduleAtFixedRate(
+                this::idleFloorCheck, IDLE_FLOOR_MS, IDLE_FLOOR_MS, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -138,6 +145,10 @@ public class SimulationOrchestrator {
         previousLeaderLap = -1;
         previousSafetyCarStatus = 0;
         for (int i = 0; i < previousPitStatus.length; i++) previousPitStatus[i] = 0;
+        previousPlayerSector = -1;
+        previousPlayerPos = -1;
+        previousPlayerPitStatus = 0;
+        lastRunAtMs = 0;
         latestState = null;
     }
 
@@ -207,6 +218,22 @@ public class SimulationOrchestrator {
                     previousPitStatus[idx] = pitStatus;
                 }
             }
+
+            // 4. Player sector change, position change, or own pit completion.
+            for (JsonNode car : cars) {
+                boolean ai = !car.has("ai") || car.get("ai").asBoolean();
+                if (ai) continue;
+                int sector = car.has("sector") ? car.get("sector").asInt() : -1;
+                int pos = car.has("pos") ? car.get("pos").asInt() : -1;
+                int pit = car.has("pitStatus") ? car.get("pitStatus").asInt() : 0;
+                if (previousPlayerSector >= 0 && sector != previousPlayerSector) triggered = true;
+                if (previousPlayerPos >= 0 && pos != previousPlayerPos) triggered = true;
+                if (previousPlayerPitStatus > 0 && pit == 0) triggered = true; // rejoined from own stop
+                previousPlayerSector = sector;
+                previousPlayerPos = pos;
+                previousPlayerPitStatus = pit;
+                break;
+            }
         }
 
         // 3. Safety car status change
@@ -235,9 +262,25 @@ public class SimulationOrchestrator {
         executeSimulation(state);
     }
 
+    /** Freshness floor: if no simulation has run for IDLE_FLOOR_MS during a live race,
+     * kick one off so the projection doesn't go stale between lap-driven triggers. */
+    private void idleFloorCheck() {
+        try {
+            JsonNode state = latestState;
+            if (!isRace(state)) return;
+            if (System.currentTimeMillis() - lastRunAtMs >= IDLE_FLOOR_MS) {
+                log.debug("SimulationOrchestrator: idle floor trigger");
+                scheduleDebouncedRun();
+            }
+        } catch (Exception e) {
+            log.warn("SimulationOrchestrator: idle floor check failed: {}", e.getMessage());
+        }
+    }
+
     private String executeSimulation(JsonNode state) {
         String jobId = UUID.randomUUID().toString().substring(0, 8);
         long startedAt = System.currentTimeMillis();
+        lastRunAtMs = startedAt;
         jobs.put(jobId, new SimulationJob(jobId, startedAt, -1, null));
         String sessionUid = state.has("sessionUid") ? state.get("sessionUid").asText() : "-";
         try {
