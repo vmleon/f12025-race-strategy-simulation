@@ -20,7 +20,7 @@ public class DrivingEventDetector {
     private static final double THROTTLE_GATE = 0.50;   // wheelspin requires throttle
     private static final double SPIN_RATIO = 1.10;      // wheel > 110% of forward speed = spinning
     private static final double YAW_GATE_RAD = 0.10;    // ~5.7° sideslip = sliding
-    private static final double BRAKE_ONSET = 0.15;     // braking-point open threshold
+    private static final double BRAKE_ONSET = 0.15;     // braking-point open threshold (independent of BRAKE_GATE; equal value is coincidental)
     private static final double BRAKE_RELEASE = 0.05;   // braking-point close threshold
     private static final long MIN_EVENT_MS = 50;        // discard flicker
 
@@ -113,9 +113,12 @@ public class DrivingEventDetector {
         if (e != null) out.add(e);
     }
 
-    /** Reset all trackers (e.g. on session change). */
+    /** Reset all detector state (e.g. on session change). Drops any in-progress excursions. */
     public void reset() {
-        // trackers self-reset on next open; clearing the braking latch is enough
+        lockup.reset();
+        wheelspin.reset();
+        slide.reset();
+        braking.reset();
         brakingIsOpen = false;
     }
 }

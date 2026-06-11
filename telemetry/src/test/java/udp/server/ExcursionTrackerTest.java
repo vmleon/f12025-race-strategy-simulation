@@ -53,4 +53,21 @@ class ExcursionTrackerTest {
         ExcursionTracker t = new ExcursionTracker("SLIDE", "wheel_slip_angle", 50);
         assertNull(t.update(false, 0.0, null, frame(1000, 100, 0, 0, 0, 200, 3, 0, 10)));
     }
+
+    @Test
+    void resetDiscardsOpenExcursionWithoutEmitting() {
+        ExcursionTracker t = new ExcursionTracker("LOCKUP", "wheel_slip_ratio", 50);
+        // open an excursion
+        assertNull(t.update(true, 0.5, "FL", frame(1000, 100, 0.6, 0, 0, 200, 3, 0, 10)));
+        // reset discards it
+        t.reset();
+        // a close frame after reset must NOT emit (the excursion was discarded)
+        assertNull(t.update(false, 0.0, "FL", frame(1100, 110, 0, 0, 0, 200, 3, 0, 11)));
+        // a fresh excursion after reset still works and uses the new frame's context
+        assertNull(t.update(true, 0.9, "FL", frame(2000, 200, 0.9, 0, 0, 200, 4, 1, 20)));
+        DrivingEvent e = t.update(false, 0.0, "FL", frame(2100, 210, 0, 0, 0, 200, 4, 1, 21));
+        assertNotNull(e);
+        assertEquals(4, e.lapNumber());
+        assertEquals(1, e.sectorNumber());
+    }
 }

@@ -86,4 +86,9 @@ public class ExcursionTracker {
                 brakePeak, throttlePeak, steerAbsPeak,
                 brakeAtPeak, throttleAtPeak, steerAtPeak, f.frameIdentifier());
     }
+
+    /** Discard any in-progress excursion without emitting (e.g. on session change). */
+    public void reset() {
+        open = false;
+    }
 }
