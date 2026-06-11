@@ -351,7 +351,7 @@ public class DbWriter {
             """;
 
     /**
-     * Delete sector_snapshots and session_events recorded after the given
+     * Delete sector_snapshots, session_events and driving_events recorded after the given
      * flashback frame, so replayed data can be re-inserted cleanly.
      * Returns the total number of deleted rows.
      */
