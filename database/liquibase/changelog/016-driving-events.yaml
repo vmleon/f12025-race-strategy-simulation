@@ -1,0 +1,53 @@
+databaseChangeLog:
+  - changeSet:
+      id: 016-01-seq-driving-events
+      author: victormartin
+      changes:
+        - sql:
+            sql: CREATE SEQUENCE seq_driving_events START WITH 1 INCREMENT BY 1
+
+  - changeSet:
+      id: 016-02-driving-events
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE driving_events (
+                  event_id           NUMBER(12)    NOT NULL,
+                  session_uid        NUMBER(20)    NOT NULL,
+                  car_index          NUMBER(2)     NOT NULL,
+                  track_id           NUMBER(3),
+                  session_type       NUMBER(2)     NOT NULL,
+                  lap_number         NUMBER(3)     NOT NULL,
+                  sector_number      NUMBER(1)     NOT NULL,
+                  lap_distance_m      NUMBER(10,2) NOT NULL,
+                  lap_distance_end_m  NUMBER(10,2),
+                  event_type         VARCHAR2(16)  NOT NULL,
+                  location_detail    VARCHAR2(8),
+                  peak_intensity     NUMBER,
+                  intensity_signal   VARCHAR2(24),
+                  duration_ms        NUMBER(10),
+                  entry_speed_kmh    NUMBER(5,1),
+                  brake_peak         NUMBER(4,3),
+                  throttle_peak      NUMBER(4,3),
+                  steer_abs_peak     NUMBER(5,3),
+                  brake_at_peak      NUMBER(4,3),
+                  throttle_at_peak   NUMBER(4,3),
+                  steer_at_peak      NUMBER(5,3),
+                  frame_identifier   NUMBER(10),
+                  created_at         TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+                  CONSTRAINT pk_driving_events PRIMARY KEY (event_id),
+                  CONSTRAINT fk_devent_session FOREIGN KEY (session_uid)
+                      REFERENCES sessions (session_uid),
+                  CONSTRAINT chk_devent_type
+                      CHECK (event_type IN ('LOCKUP','WHEELSPIN','SLIDE','BRAKING')),
+                  CONSTRAINT chk_devent_sector
+                      CHECK (sector_number IN (0,1,2))
+              )
+
+  - changeSet:
+      id: 016-03-ix-driving-events-sector
+      author: victormartin
+      changes:
+        - sql:
+            sql: CREATE INDEX ix_devent_sector ON driving_events (session_uid, lap_number, sector_number)
