@@ -279,6 +279,60 @@ public class DbWriter {
         }
     }
 
+    // ── driving_events ──────────────────────────────────────────────────
+
+    private static final String INSERT_DRIVING_EVENT = """
+            INSERT INTO driving_events (
+                event_id, session_uid, car_index, track_id, session_type,
+                lap_number, sector_number, lap_distance_m, lap_distance_end_m,
+                event_type, location_detail, peak_intensity, intensity_signal,
+                duration_ms, entry_speed_kmh,
+                brake_peak, throttle_peak, steer_abs_peak,
+                brake_at_peak, throttle_at_peak, steer_at_peak,
+                frame_identifier
+            ) VALUES (seq_driving_events.NEXTVAL, ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """;
+
+    public record DrivingEventRow(
+            long sessionUid, int carIndex, Integer trackId, int sessionType,
+            int lapNumber, int sectorNumber, double lapDistanceM, Double lapDistanceEndM,
+            String eventType, String locationDetail, double peakIntensity, String intensitySignal,
+            long durationMs, double entrySpeedKmh,
+            double brakePeak, double throttlePeak, double steerAbsPeak,
+            double brakeAtPeak, double throttleAtPeak, double steerAtPeak,
+            long frameIdentifier) {}
+
+    public void insertDrivingEvents(Connection conn, List<DrivingEventRow> events) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(INSERT_DRIVING_EVENT)) {
+            for (DrivingEventRow e : events) {
+                int i = 1;
+                ps.setLong(i++, e.sessionUid());
+                ps.setInt(i++, e.carIndex());
+                setNullableInt(ps, i++, e.trackId());
+                ps.setInt(i++, e.sessionType());
+                ps.setInt(i++, e.lapNumber());
+                ps.setInt(i++, e.sectorNumber());
+                ps.setDouble(i++, e.lapDistanceM());
+                setNullableDouble(ps, i++, e.lapDistanceEndM());
+                ps.setString(i++, e.eventType());
+                ps.setString(i++, e.locationDetail());
+                ps.setDouble(i++, e.peakIntensity());
+                ps.setString(i++, e.intensitySignal());
+                ps.setLong(i++, e.durationMs());
+                ps.setDouble(i++, e.entrySpeedKmh());
+                ps.setDouble(i++, e.brakePeak());
+                ps.setDouble(i++, e.throttlePeak());
+                ps.setDouble(i++, e.steerAbsPeak());
+                ps.setDouble(i++, e.brakeAtPeak());
+                ps.setDouble(i++, e.throttleAtPeak());
+                ps.setDouble(i++, e.steerAtPeak());
+                ps.setLong(i, e.frameIdentifier());
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        }
+    }
+
     // ── flashback cleanup ────────────────────────────────────────────────
 
     private static final String DELETE_SECTORS_AFTER_FRAME = """
@@ -288,6 +342,11 @@ public class DbWriter {
 
     private static final String DELETE_EVENTS_AFTER_FRAME = """
             DELETE FROM session_events
+            WHERE session_uid = ? AND frame_identifier > ?
+            """;
+
+    private static final String DELETE_DRIVING_EVENTS_AFTER_FRAME = """
+            DELETE FROM driving_events
             WHERE session_uid = ? AND frame_identifier > ?
             """;
 
@@ -304,6 +363,11 @@ public class DbWriter {
             deleted += ps.executeUpdate();
         }
         try (PreparedStatement ps = conn.prepareStatement(DELETE_EVENTS_AFTER_FRAME)) {
+            ps.setLong(1, sessionUid);
+            ps.setLong(2, flashbackFrameId);
+            deleted += ps.executeUpdate();
+        }
+        try (PreparedStatement ps = conn.prepareStatement(DELETE_DRIVING_EVENTS_AFTER_FRAME)) {
             ps.setLong(1, sessionUid);
             ps.setLong(2, flashbackFrameId);
             deleted += ps.executeUpdate();
