@@ -28,6 +28,17 @@ ENGINE_DNF_RATE_AT_100 = 4.0  # 100% engine damage -> 4x base per-sector DNF rat
 NOISE_SIGMA_MS = 150.0          # per-sector pace noise (was: residual_variance)
 OVERTAKE_PROB_DEFAULT = 0.30    # was: overtake_probability per regime/sector
 
+# AI pit modelling. The wear-cliff cap (~30 laps) is never reached in a short race,
+# so without a mandatory stop the simulated AI would run the whole race on one set
+# and never lose pit time — leaving the player projected to the back after their own
+# (correct) stop. Force one compound-change stop per dry race, spread across a window
+# so the field cycles through the pits instead of all stopping on the same lap.
+WET_WEATHER_THRESHOLD = 3        # F1 weather codes >= this are wet (two-compound rule waived)
+MIN_AI_STINT_LAPS = 3            # earliest the mandatory stop can land
+MIN_AI_FINAL_STINT_LAPS = 3      # leave at least this many laps after the stop
+AI_PIT_RACE_FRACTION = 0.50      # mandatory stops cluster around mid-race
+AI_PIT_SPREAD_LAPS = 7           # spread window (by car index) so they don't pit at once
+
 # Car-damage pace model (hardcoded — calibration does not fit damage).
 # loss_per_lap = scale * (DAMAGE_LINEAR_MS * d + DAMAGE_QUAD_MS * d**2), d in [0,100].
 DAMAGE_LINEAR_MS = 50.0          # ms/lap per damage-%
@@ -247,15 +258,33 @@ class MonteCarloEngine:
                     )
                     return
 
-        # AI heuristic: pit at the wear cliff — a data-driven stint cap from the
-        # calibrated wear-rate (cliffPct / wear-rate), falling back to the hardcoded
-        # lifespan when uncalibrated.
+        # AI heuristic: pit at the wear cliff (data-driven stint cap), OR make the
+        # mandatory compound-change stop if the car hasn't pitted yet in a dry race.
+        # The mandatory stop is essential in short races where the cliff is never
+        # reached: otherwise the AI field never pits, finishes on its starting set,
+        # and the player who correctly stops is wrongly projected to the back.
         if car.ai_controlled:
-            if car.tyre_age_laps >= stint_cap_laps(
+            cliff_due = car.tyre_age_laps >= stint_cap_laps(
                 car.tyre_compound, self.coefficients, car.regime
-            ):
+            )
+            mandatory_due = (
+                car.num_pit_stops == 0
+                and snapshot.weather < WET_WEATHER_THRESHOLD
+                and lap >= self._ai_pit_lap(car.car_index, snapshot.total_laps)
+            )
+            if cliff_due or mandatory_due:
                 new_compound = 18 if car.tyre_compound == 16 else 17
                 self._execute_pit_stop(car, new_compound)
+
+    @staticmethod
+    def _ai_pit_lap(car_index: int, total_laps: int) -> int:
+        """Deterministic per-car lap for the mandatory AI stop, clustered around
+        mid-race and spread by car index so the field cycles through the pits over a
+        window rather than all stopping on the same lap."""
+        base = round(total_laps * AI_PIT_RACE_FRACTION)
+        spread = (car_index % AI_PIT_SPREAD_LAPS) - AI_PIT_SPREAD_LAPS // 2
+        latest = max(MIN_AI_STINT_LAPS, total_laps - MIN_AI_FINAL_STINT_LAPS)
+        return max(MIN_AI_STINT_LAPS, min(base + spread, latest))
 
     def _execute_pit_stop(
         self, car: CarState, new_compound: int, repair_front_wing: bool = False

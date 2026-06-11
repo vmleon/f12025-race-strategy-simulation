@@ -308,7 +308,9 @@ def test_ai_pits_at_exactly_soft_lifespan_30():
     from simulator.car_state import CarState
 
     engine = MonteCarloEngine(Coefficients(), seed=42)
-    snapshot = _make_snapshot()
+    # Wet snapshot waives the mandatory compound-change stop, isolating the wear-cliff
+    # behaviour this test targets (the cliff trigger is weather-independent).
+    snapshot = _make_snapshot().model_copy(update={"weather": 4})
 
     # Age 29: should NOT pit (under lifespan 30)
     car_young = CarState(
@@ -463,3 +465,49 @@ class TestPerSectorPace:
         car.perfect_sector_ms = [29_999_000.0, 29_999_000.0, 29_999_000.0]  # absurd floor
         t = engine._predict_sector_time(car, 0, False, [])
         assert t == 29_999_000.0
+
+
+class TestAiMandatoryPit:
+    """AI must make their compound-change stop even in short races where the wear
+    cliff is never reached — otherwise the field never pits and the player who
+    correctly stops is projected to the back."""
+
+    def _ai_car_state(self, **kw):
+        snap = _make_car(0, ai_controlled=True, **kw)
+        return snap, CarState.from_snapshot(snap, current_lap=kw.get("tyre_age_laps", 0), track_id=4)
+
+    def test_ai_pit_lap_within_window_and_spread(self):
+        from simulator.engine import MIN_AI_STINT_LAPS, MIN_AI_FINAL_STINT_LAPS
+        laps = [MonteCarloEngine._ai_pit_lap(i, 17) for i in range(20)]
+        assert all(MIN_AI_STINT_LAPS <= lap_ <= 17 - MIN_AI_FINAL_STINT_LAPS for lap_ in laps)
+        assert len(set(laps)) > 1  # the field is spread across a window, not one lap
+
+    def test_ai_makes_mandatory_stop_in_short_dry_race(self):
+        engine = MonteCarloEngine(Coefficients.defaults(), seed=1)
+        snap, car = self._ai_car_state(tyre_compound=16, tyre_age_laps=10, num_pit_stops=0)
+        snapshot = _make_snapshot(cars=[snap], total_laps=17, current_lap=10)
+        engine._check_pit_stop(car, lap=12, snapshot=snapshot)
+        assert car.num_pit_stops == 1
+        assert car.tyre_compound != 16
+
+    def test_ai_not_forced_in_the_wet(self):
+        engine = MonteCarloEngine(Coefficients.defaults(), seed=1)
+        snap, car = self._ai_car_state(tyre_compound=16, tyre_age_laps=10, num_pit_stops=0)
+        wet = _make_snapshot(cars=[snap], total_laps=17, current_lap=10).model_copy(
+            update={"weather": 4})
+        engine._check_pit_stop(car, lap=12, snapshot=wet)
+        assert car.num_pit_stops == 0
+
+    def test_ai_already_pitted_is_not_forced_again(self):
+        engine = MonteCarloEngine(Coefficients.defaults(), seed=1)
+        snap, car = self._ai_car_state(tyre_compound=18, tyre_age_laps=5, num_pit_stops=1)
+        snapshot = _make_snapshot(cars=[snap], total_laps=17, current_lap=10)
+        engine._check_pit_stop(car, lap=14, snapshot=snapshot)
+        assert car.num_pit_stops == 1
+
+    def test_ai_not_forced_before_its_window(self):
+        engine = MonteCarloEngine(Coefficients.defaults(), seed=1)
+        snap, car = self._ai_car_state(tyre_compound=16, tyre_age_laps=2, num_pit_stops=0)
+        snapshot = _make_snapshot(cars=[snap], total_laps=17, current_lap=2)
+        engine._check_pit_stop(car, lap=2, snapshot=snapshot)  # lap 2 < planned window
+        assert car.num_pit_stops == 0
