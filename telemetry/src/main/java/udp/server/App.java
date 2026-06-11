@@ -64,6 +64,7 @@ public class App {
         CarStateTracker carState = new CarStateTracker();
         SectorTransitionDetector sectorDetector = new SectorTransitionDetector();
         SessionHistoryBuffer historyBuffer = new SessionHistoryBuffer();
+        DrivingEventDetector drivingDetector = new DrivingEventDetector();
 
         ConnectionFactory connFactory = new ConnectionFactory(config);
         DbWriter dbWriter = new DbWriter();
@@ -112,6 +113,9 @@ public class App {
                             case 1 -> { // Session
                                 SessionData session = SessionData.parse(received.data(), received.length());
                                 if (session != null) {
+                                    if (!lifecycle.getSeenSessions().contains(header.sessionUID)) {
+                                        drivingDetector.reset();
+                                    }
                                     carState.updateSession(session);
                                     lifecycle.onSession(header.sessionUID, session);
                                     raceState.updateFromSession(header.sessionUID, session);
@@ -148,6 +152,7 @@ public class App {
                                 if (event != null) {
                                     if ("FLBK".equals(event.eventCode)) {
                                         lifecycle.onFlashback(header.sessionUID, header.frameIdentifier, event);
+                                        drivingDetector.reset();
                                     } else {
                                         lifecycle.onEvent(header.sessionUID, header.frameIdentifier, event);
                                     }
@@ -221,6 +226,40 @@ public class App {
                                 TyreSetData.TyreSetPacket tyrePacket = TyreSetData.parse(received.data(), received.length());
                                 if (tyrePacket != null) {
                                     lifecycle.onTyreSets(header.sessionUID, tyrePacket);
+                                }
+                            }
+                            case 13 -> { // MotionEx (player car only)
+                                MotionExData motion = MotionExData.parse(received.data(), received.length());
+                                int playerIdx = header.playerCarIndex;
+                                CarTelemetryData tel = carState.getTelemetry(playerIdx);
+                                LapData lap = carState.getLapData(playerIdx);
+                                SessionData session = carState.getSession();
+                                if (motion != null && tel != null && lap != null && session != null) {
+                                    DrivingEventDetector.FrameInput in = new DrivingEventDetector.FrameInput(
+                                            header.sessionTime * 1000.0, lap.lapDistance, lap.currentLapNum,
+                                            lap.sector, header.frameIdentifier,
+                                            tel.brake, tel.throttle, tel.steer,
+                                            motion.localVelocityX, motion.localVelocityY, motion.chassisYaw,
+                                            motion.wheelSpeed, motion.wheelSlipRatio, motion.wheelSlipAngle,
+                                            tel.speed);
+                                    List<DrivingEvent> detected = drivingDetector.onFrame(in);
+                                    if (!detected.isEmpty()) {
+                                        List<DbWriter.DrivingEventRow> rows = new ArrayList<>(detected.size());
+                                        for (DrivingEvent e : detected) {
+                                            rows.add(new DbWriter.DrivingEventRow(
+                                                    header.sessionUID, playerIdx, session.trackId, session.sessionType,
+                                                    e.lapNumber(), e.sectorNumber(), e.lapDistanceStartM(), e.lapDistanceEndM(),
+                                                    e.eventType(), e.locationDetail(), e.peakIntensity(), e.intensitySignal(),
+                                                    e.durationMs(), e.entrySpeedKmh(),
+                                                    e.brakePeak(), e.throttlePeak(), e.steerAbsPeak(),
+                                                    e.brakeAtPeak(), e.throttleAtPeak(), e.steerAtPeak(),
+                                                    e.frameIdentifier()));
+                                            log.info("DRIVING_EVENT {} sector={} dist={} detail={} peak={}",
+                                                    e.eventType(), e.sectorNumber(), e.lapDistanceStartM(),
+                                                    e.locationDetail(), e.peakIntensity());
+                                        }
+                                        lifecycle.onDrivingEvents(header.sessionUID, rows);
+                                    }
                                 }
                             }
                             default -> {}

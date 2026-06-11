@@ -44,3 +44,6 @@ databaseChangeLog:
   - include:
       file: 015-simulation-accuracy.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 016-driving-events.yaml
+      relativeToChangelogFile: true
