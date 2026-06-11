@@ -162,6 +162,22 @@ public class LifecycleDispatcher {
     }
 
     /**
+     * Write driving events detected on the player car. No deduplication —
+     * events are append-only. Guarded on a known session for the FK.
+     */
+    public void onDrivingEvents(long sessionUid, List<DbWriter.DrivingEventRow> events) {
+        if (events.isEmpty() || !seenSessions.contains(sessionUid)) {
+            return;
+        }
+        try (Connection conn = connectionFactory.getConnection()) {
+            dbWriter.insertDrivingEvents(conn, events);
+            conn.commit();
+        } catch (SQLException e) {
+            log.error("Failed to insert {} driving events: {}", events.size(), e.getMessage(), e);
+        }
+    }
+
+    /**
      * Write tyre sets on first TyreSets packet per session, or when a pit stop is detected.
      */
     public void onTyreSets(long sessionUid, TyreSetData.TyreSetPacket packet) {
