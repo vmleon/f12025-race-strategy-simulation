@@ -1,12 +1,92 @@
 from simulator.coefficients import Coefficients
 from simulator.engine import MonteCarloEngine
-from simulator.models import CarSnapshot, PitStop, RaceSnapshot, StrategyCandidate, TyreSetInfo
+from simulator.models import (
+    CarSnapshot,
+    PitStop,
+    RaceSnapshot,
+    RankedStrategy,
+    StrategyCandidate,
+    TyreSetInfo,
+)
 from simulator.strategy import (
+    RANK_NOISE_TOL,
     StrategyEvaluator,
     TyreSet,
+    _insufficient_calibration,
+    _rank_key,
     check_feasibility,
     expected_points,
 )
+
+
+def _ranked(label: str, mean_pos: float, stops: list[PitStop]) -> RankedStrategy:
+    return RankedStrategy(
+        rank=0,
+        candidate=StrategyCandidate(label=label, stops=stops),
+        mean_position=mean_pos,
+        position_std_dev=0.0,
+        ci95_low=0.0,
+        ci95_high=0.0,
+        dnf_probability=0.0,
+        top3_probability=0.0,
+        points_finish_probability=0.0,
+        expected_points=0.0,
+    )
+
+
+class TestRankKey:
+    """A: ranking is stable and conservative when candidates are within noise."""
+
+    def test_clearly_better_candidate_wins(self):
+        # 0.7 positions apart (> RANK_NOISE_TOL) — the better mean wins regardless of stops.
+        two = _ranked("2-stop", 2.0, [PitStop(on_lap=5, new_compound=17),
+                                      PitStop(on_lap=10, new_compound=18)])
+        nostop = _ranked("No stop", 2.7, [])
+        assert sorted([nostop, two], key=_rank_key)[0].candidate.label == "2-stop"
+
+    def test_tie_prefers_fewer_stops(self):
+        # All within noise -> the conservative (fewest stops) plan wins even if its
+        # mean is marginally worse than a 2-stop's.
+        nostop = _ranked("No stop", 3.1, [])
+        one = _ranked("1-stop L8", 3.0, [PitStop(on_lap=8, new_compound=18)])
+        two = _ranked("2-stop", 2.95, [PitStop(on_lap=6, new_compound=17),
+                                       PitStop(on_lap=11, new_compound=18)])
+        assert sorted([two, one, nostop], key=_rank_key)[0].candidate.label == "No stop"
+
+    def test_tie_prefers_later_first_stop(self):
+        early = _ranked("1-stop L4", 3.0, [PitStop(on_lap=4, new_compound=18)])
+        late = _ranked("1-stop L10", 3.1, [PitStop(on_lap=10, new_compound=18)])
+        assert sorted([early, late], key=_rank_key)[0].candidate.label == "1-stop L10"
+
+    def test_stable_under_subnoise_perturbation(self):
+        # Same candidates, tiny mean perturbations (< tol) -> identical rank-1.
+        a = [_ranked("No stop", 3.05, []),
+             _ranked("1-stop L9", 3.00, [PitStop(on_lap=9, new_compound=18)])]
+        b = [_ranked("No stop", 2.98, []),
+             _ranked("1-stop L9", 3.07, [PitStop(on_lap=9, new_compound=18)])]
+        assert sorted(a, key=_rank_key)[0].candidate.label == "No stop"
+        assert sorted(b, key=_rank_key)[0].candidate.label == "No stop"
+
+
+class TestInsufficientCalibration:
+    """B: honest insufficient-calibration flag."""
+
+    def test_no_baseline_for_current_compound_is_insufficient(self):
+        car = _make_car(0, ai_controlled=False)  # default sector_baseline_ms = [0,0,0]
+        assert _insufficient_calibration(car, "observed") is True
+
+    def test_circuit_default_pace_is_insufficient(self):
+        car = _make_car(0, ai_controlled=False)
+        car.sector_baseline_ms = [23000, 32000, 24000]
+        assert _insufficient_calibration(car, "circuit_default") is True
+
+    def test_fitted_baseline_with_observed_pace_is_sufficient(self):
+        car = _make_car(0, ai_controlled=False)
+        car.sector_baseline_ms = [23000, 32000, 24000]
+        assert _insufficient_calibration(car, "observed") is False
+
+    def test_missing_player_is_not_flagged(self):
+        assert _insufficient_calibration(None, "observed") is False
 
 
 def _make_car(

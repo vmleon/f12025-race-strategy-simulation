@@ -21,6 +21,40 @@ POINTS = [25.0, 18.0, 15.0, 12.0, 10.0, 8.0, 6.0, 4.0, 2.0, 1.0]
 
 COMPOUND_NAMES = {16: "Soft", 17: "Medium", 18: "Hard"}
 
+# Finishing-position spread below which two candidates are a statistical tie. Mean
+# position over ~1k Monte-Carlo iterations carries roughly this much run-to-run
+# noise, so anything closer than this must NOT decide the recommendation — else the
+# "best" strategy reshuffles every evaluation and the radio flaps. See A+B fix.
+RANK_NOISE_TOL = 0.5
+
+
+def _rank_key(r: "RankedStrategy"):
+    """Deterministic ranking key. Primary: mean finishing position bucketed to the
+    noise tolerance, so near-ties group together. Within a tie, prefer the
+    conservative plan — fewer stops, then a later first stop, then label — so the
+    recommendation is stable run-to-run and never commits to an early/extra stop
+    that isn't clearly better."""
+    stops = r.candidate.stops
+    first_stop_lap = stops[0].on_lap if stops else 0
+    return (
+        round(r.mean_position / RANK_NOISE_TOL),  # noise bucket — lower is better
+        len(stops),                               # fewer stops preferred on a tie
+        -first_stop_lap,                          # later first stop preferred on a tie
+        r.candidate.label,                        # final deterministic tiebreak
+    )
+
+
+def _insufficient_calibration(player_cs, player_pace_src: str | None) -> bool:
+    """True when the ranking can't be trusted because the player's pace isn't
+    really calibrated: it fell back to the generic circuit default, OR there is no
+    fitted sector-pace baseline for the compound the player is on (so the
+    projection rests on a handful of raw recent laps)."""
+    if player_pace_src == "circuit_default":
+        return True
+    if player_cs is not None and not any(b > 0 for b in player_cs.sector_baseline_ms):
+        return True
+    return False
+
 
 def expected_points(car_result: CarResult) -> float:
     pts = 0.0
@@ -126,8 +160,11 @@ class StrategyEvaluator:
                 )
             )
 
-        # Rank by mean position ascending (lower = better)
-        results.sort(key=lambda r: r.mean_position)
+        # Rank by mean position, but treat sub-noise differences as ties and break
+        # them conservatively (see _rank_key). A plain mean-position sort let
+        # Monte-Carlo float noise reorder near-identical candidates every run, which
+        # is what made the spoken plan flap between box laps lap-to-lap.
+        results.sort(key=_rank_key)
         ranked = [
             RankedStrategy(
                 rank=i + 1,
@@ -144,10 +181,21 @@ class StrategyEvaluator:
             for i, r in enumerate(results)
         ]
 
-        # Insufficient calibration: the player's pace fell back to the generic
-        # circuit default (no observed laps, no fitted baseline), so the ranked
-        # numbers are fake-precise. The panel surfaces this instead of the strategies.
-        insufficient_calibration = player_pace_src == "circuit_default"
+        # Insufficient calibration: the player's pace isn't really calibrated (fell
+        # back to the circuit default, or there's no fitted baseline for the compound
+        # it's on), so the ranked numbers are fake-precise. The panel surfaces this
+        # instead of the strategies, and it lets the radio layer hold rather than
+        # churn on noise.
+        insufficient_calibration = _insufficient_calibration(player_cs, player_pace_src)
+
+        # Top two within noise → the recommendation is a coin-flip; the conservative
+        # tie-break above keeps it stable, but log it for observability.
+        if len(ranked) >= 2 and (ranked[1].mean_position - ranked[0].mean_position) < RANK_NOISE_TOL:
+            logger.info(
+                "strategy.low_confidence: top-2 within %.2f positions (%.2f vs %.2f) — "
+                "recommendation is a statistical tie, held to the conservative option",
+                RANK_NOISE_TOL, ranked[0].mean_position, ranked[1].mean_position,
+            )
 
         # Anomaly: candidates all collapse to roughly the same outcome AND that
         # outcome doesn't match the player's actual current standing. A dominant
