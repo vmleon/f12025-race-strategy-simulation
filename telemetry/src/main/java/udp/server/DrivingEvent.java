@@ -3,7 +3,7 @@ package udp.server;
 /**
  * A completed driving event emitted by a detector. Carries dynamics + location
  * only; session/car/track context is added by the caller when building the DB row.
- * lapDistanceEndM may be null if the excursion never closed cleanly.
+ * lapDistanceEndM is the close-frame distance; typed nullable to match the database column.
  */
 public record DrivingEvent(
         String eventType,        // LOCKUP | WHEELSPIN | SLIDE | BRAKING

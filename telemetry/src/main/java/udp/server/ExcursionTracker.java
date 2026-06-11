@@ -36,10 +36,6 @@ public class ExcursionTracker {
     private double throttlePeak;
     private double steerAbsPeak;
 
-    private double lastDistanceM;
-    private double lastTimeMs;
-    private long lastFrameId;
-
     public ExcursionTracker(String eventType, String intensitySignal, long minDurationMs) {
         this.eventType = eventType;
         this.intensitySignal = intensitySignal;
@@ -72,9 +68,6 @@ public class ExcursionTracker {
                 throttleAtPeak = f.throttle();
                 steerAtPeak = f.steer();
             }
-            lastDistanceM = f.lapDistanceM();
-            lastTimeMs = f.sessionTimeMs();
-            lastFrameId = f.frameIdentifier();
             return null;
         }
 
