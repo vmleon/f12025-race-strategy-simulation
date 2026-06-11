@@ -152,6 +152,7 @@ public class App {
                                 if (event != null) {
                                     if ("FLBK".equals(event.eventCode)) {
                                         lifecycle.onFlashback(header.sessionUID, header.frameIdentifier, event);
+                                        drivingDetector.reset();
                                     } else {
                                         lifecycle.onEvent(header.sessionUID, header.frameIdentifier, event);
                                     }
