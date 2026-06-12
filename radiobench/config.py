@@ -39,6 +39,7 @@ class Sample:
 class JudgeCfg:
     dimensions: list[str]
     timeout_s: int
+    workers: int = 12
 
 
 @dataclass
@@ -72,5 +73,6 @@ def load_config(path: str) -> Config:
         candidates=[Candidate(**c) for c in raw["candidates"]],
         variants=[Variant(**v) for v in raw["variants"]],
         judges=[Judge(**jd) for jd in raw["judges"]],
-        judge=JudgeCfg(dimensions=j["dimensions"], timeout_s=j.get("timeout_s", 60)),
+        judge=JudgeCfg(dimensions=j["dimensions"], timeout_s=j.get("timeout_s", 60),
+                       workers=j.get("workers", 12)),
     )

@@ -2,9 +2,9 @@ dataset: database/exports/radio_dataset_20260612_131843.csv
 output_dir: radiobench/results
 
 sample:
-  size: 10
-  stratify_by: priority   # null = first-N; else proportional by this column
-  seed: 42
+  size: 99999
+  # stratify_by: priority   # null = first-N; else proportional by this column
+  # seed: 42
 
 candidates:
   - name: qwen72b
@@ -36,3 +36,4 @@ judges:
 judge:
   dimensions: [faithfulness, tone, concision, naturalness]
   timeout_s: 60
+  workers: 12          # judge CLIs run concurrently; raise/lower to taste
