@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """CLI for managing the F1 Strategy local development environment."""
 
+import csv
 import datetime
+import glob
+import json
 import os
 import secrets
 import shutil
@@ -27,6 +30,11 @@ GRANT_SCRIPT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "database", "scripts", "local_pdb_grant.sql"
 )
 BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database", "backups")
+EXPORTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database", "exports")
+CIRCUITS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "backend", "src", "main", "resources", "circuits",
+)
 
 _CONFIG_TEMPLATES = [
     (
@@ -88,6 +96,25 @@ _SEQUENCES = [
     ("seq_radio_messages", "radio_messages", "message_id"),
     ("seq_simulation_runs", "simulation_runs", "run_id"),
     ("seq_simulation_accuracy", "simulation_accuracy", "accuracy_id"),
+]
+
+# CSV output column order: traceability, render context, payload.
+_RADIO_CSV_HEADER = [
+    "message_id", "session_uid", "sent_at",
+    "priority", "session_type", "track_id", "circuit_name",
+    "lap_number", "total_laps", "player_position", "driver_name",
+    "tyre_compound", "tyre_age_laps", "sector",
+    "message_text", "best_strategies", "rendered_text",
+]
+
+# Columns selected from radio_messages (circuit_name and driver_name are resolved,
+# not selected). Order is the lookup key for rows passed to _radio_csv_row.
+_RADIO_DB_COLUMNS = [
+    "message_id", "session_uid", "sent_at",
+    "priority", "session_type", "track_id",
+    "lap_number", "total_laps", "player_position",
+    "tyre_compound", "tyre_age_laps", "sector",
+    "message_text", "best_strategies", "rendered_text",
 ]
 
 
@@ -211,6 +238,56 @@ def info():
         f"  localhost:1521/FREEPDB1   user: pdbadmin   password: {password_note}",
         title="F1 Strategy — Service Info",
     ))
+
+
+def _build_circuit_names():
+    """Map track_id -> circuit name from the backend circuit resource files.
+
+    Each backend/src/main/resources/circuits/track_<id>_<slug>.json carries
+    {"trackId": int, "name": str}. Returns {} if the directory is absent; skips
+    any unreadable/malformed file (callers fall back to "Track <id>").
+    """
+    names = {}
+    if not os.path.isdir(CIRCUITS_DIR):
+        return names
+    for path in glob.glob(os.path.join(CIRCUITS_DIR, "track_*.json")):
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            track_id = data.get("trackId")
+            name = data.get("name")
+            if track_id is not None and name:
+                names[int(track_id)] = name
+        except (OSError, ValueError):
+            continue
+    return names
+
+
+def _radio_csv_row(row, circuit_names, driver_names):
+    """Map one radio_messages row (dict keyed by _RADIO_DB_COLUMNS) to a CSV row
+    in _RADIO_CSV_HEADER order. Resolves circuit_name (fallback "Track <id>") and
+    driver_name (empty when unknown); formats sent_at; renders NULLs as "".
+    """
+    def s(v):
+        return "" if v is None else str(v)
+
+    track_id = row["track_id"]
+    if track_id is None:
+        circuit = ""
+    else:
+        circuit = circuit_names.get(int(track_id), f"Track {track_id}")
+    driver = driver_names.get(row["session_uid"], "")
+    sent = row["sent_at"]
+    sent_str = (sent.strftime("%Y-%m-%d %H:%M:%S")
+                if isinstance(sent, datetime.datetime) else s(sent))
+
+    return [
+        s(row["message_id"]), s(row["session_uid"]), sent_str,
+        s(row["priority"]), s(row["session_type"]), s(track_id), circuit,
+        s(row["lap_number"]), s(row["total_laps"]), s(row["player_position"]), driver,
+        s(row["tyre_compound"]), s(row["tyre_age_laps"]), s(row["sector"]),
+        s(row["message_text"]), s(row["best_strategies"]), s(row["rendered_text"]),
+    ]
 
 
 @cli.group()
@@ -518,6 +595,64 @@ def import_cmd(backup_file):
     )
 
     console.print("[green]Import complete.[/green]")
+
+
+@local.command(name="export-radio")
+@click.option("--output", "output_path", default=None,
+              help="CSV output path (default: database/exports/radio_dataset_<timestamp>.csv).")
+def export_radio_cmd(output_path):
+    """Export radio messages with their full LLM render context to a CSV.
+
+    One row per radio message: traceability IDs, the render context the LLM
+    renderer receives (RadioRenderContext) with circuit and driver names resolved,
+    plus the original message_text and the current rendered_text baseline. For
+    offline testing of different models / custom instructions.
+    """
+    password = _get_password()
+    if not password:
+        console.print("[red]Error:[/red] No password in .env. Is the database set up?")
+        sys.exit(1)
+    if not _container_running():
+        console.print("[red]Error:[/red] Database container is not running.")
+        sys.exit(1)
+
+    if output_path is None:
+        os.makedirs(EXPORTS_DIR, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = os.path.join(EXPORTS_DIR, f"radio_dataset_{timestamp}.csv")
+    else:
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+
+    console.print("[bold]Resolving circuit names...[/bold]")
+    circuit_names = _build_circuit_names()
+
+    console.print("[bold]Connecting to database...[/bold]")
+    conn = _db_connect(password)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT session_uid, MAX(driver_name) FROM participants "
+        "WHERE ai_controlled = 0 AND TRIM(driver_name) IS NOT NULL "
+        "GROUP BY session_uid"
+    )
+    driver_names = {uid: name for uid, name in cursor.fetchall()}
+
+    cursor.execute(
+        "SELECT " + ", ".join(_RADIO_DB_COLUMNS) + " FROM radio_messages "
+        "ORDER BY session_uid, message_id"
+    )
+
+    count = 0
+    with open(output_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(_RADIO_CSV_HEADER)
+        for db_row in cursor:
+            row = dict(zip(_RADIO_DB_COLUMNS, db_row))
+            writer.writerow(_radio_csv_row(row, circuit_names, driver_names))
+            count += 1
+
+    conn.close()
+    console.print(f"\n[green]Radio export complete:[/green] {output_path} ({count} rows)")
 
 
 @local.command(name="repair-sectors")
