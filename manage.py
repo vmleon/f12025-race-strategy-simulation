@@ -597,6 +597,64 @@ def import_cmd(backup_file):
     console.print("[green]Import complete.[/green]")
 
 
+@local.command(name="export-radio")
+@click.option("--output", "output_path", default=None,
+              help="CSV output path (default: database/exports/radio_dataset_<timestamp>.csv).")
+def export_radio_cmd(output_path):
+    """Export radio messages with their full LLM render context to a CSV.
+
+    One row per radio message: traceability IDs, the render context the LLM
+    renderer receives (RadioRenderContext) with circuit and driver names resolved,
+    plus the original message_text and the current rendered_text baseline. For
+    offline testing of different models / custom instructions.
+    """
+    password = _get_password()
+    if not password:
+        console.print("[red]Error:[/red] No password in .env. Is the database set up?")
+        sys.exit(1)
+    if not _container_running():
+        console.print("[red]Error:[/red] Database container is not running.")
+        sys.exit(1)
+
+    if output_path is None:
+        os.makedirs(EXPORTS_DIR, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = os.path.join(EXPORTS_DIR, f"radio_dataset_{timestamp}.csv")
+    else:
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+
+    console.print("[bold]Resolving circuit names...[/bold]")
+    circuit_names = _build_circuit_names()
+
+    console.print("[bold]Connecting to database...[/bold]")
+    conn = _db_connect(password)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT session_uid, MAX(driver_name) FROM participants "
+        "WHERE ai_controlled = 0 AND TRIM(driver_name) IS NOT NULL "
+        "GROUP BY session_uid"
+    )
+    driver_names = {uid: name for uid, name in cursor.fetchall()}
+
+    cursor.execute(
+        "SELECT " + ", ".join(_RADIO_DB_COLUMNS) + " FROM radio_messages "
+        "ORDER BY session_uid, message_id"
+    )
+
+    count = 0
+    with open(output_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(_RADIO_CSV_HEADER)
+        for db_row in cursor:
+            row = dict(zip(_RADIO_DB_COLUMNS, db_row))
+            writer.writerow(_radio_csv_row(row, circuit_names, driver_names))
+            count += 1
+
+    conn.close()
+    console.print(f"\n[green]Radio export complete:[/green] {output_path} ({count} rows)")
+
+
 @local.command(name="repair-sectors")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Write the fixes. Without it, only previews what would change.")
