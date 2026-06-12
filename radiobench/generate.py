@@ -27,7 +27,8 @@ def generate_records(candidates: list[Candidate], variants: list[Variant], rows:
                 r = gen_fn(cand, system, user, timeout_s)
                 yield {
                     "row_id": row_id, "model": cand.name, "variant": variant.name,
-                    "prompt_system": system, "prompt_user": user, "output": r.output,
+                    "prompt_system": system, "prompt_user": user,
+                    "original": row.get("message_text", ""), "output": r.output,
                     "ttft_ms": round(r.ttft_ms, 1), "total_ms": round(r.total_ms, 1),
                     "completion_tokens": r.completion_tokens,
                     "tokens_per_sec": round(r.tokens_per_sec, 1), "error": r.error,

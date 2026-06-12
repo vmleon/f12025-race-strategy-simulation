@@ -83,7 +83,8 @@ def run_judge_phase(config: Config, runs_path: str, judgements_path: str, judge_
         if run.get("error") is not None or not run.get("output"):
             continue
         context = run.get("prompt_user", "")
-        prompt = build_judge_prompt(dims, context, context, run["output"])
+        original = run.get("original", context)  # fall back to context for older records
+        prompt = build_judge_prompt(dims, context, original, run["output"])
         for judge in config.judges:
             key = (run["row_id"], run["model"], run["variant"], judge.name)
             if key in done:

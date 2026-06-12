@@ -39,4 +39,5 @@ def test_generate_records_skips_done_and_calls_model():
     assert recs[0]["row_id"] == "2"
     assert recs[0]["model"] == "m" and recs[0]["variant"] == "v"
     assert recs[0]["output"] == "OUT" and recs[0]["total_ms"] == 20
+    assert recs[0]["original"] == "bye"   # raw message_text preserved for judging
     assert 'Say: "bye"' in calls[0]
