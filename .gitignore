@@ -30,6 +30,7 @@ xcuserdata/
 # Database
 database/db_data/
 database/backups/*.sql
+database/exports/*.csv
 
 # Python
 __pycache__/
