@@ -1,0 +1,38 @@
+dataset: database/exports/radio_dataset_20260612_131843.csv
+output_dir: radiobench/results
+
+sample:
+  size: 10
+  stratify_by: priority   # null = first-N; else proportional by this column
+  seed: 42
+
+candidates:
+  - name: qwen72b
+    base_url: http://spark-bc8a.local:8000/v1
+    model: Qwen/Qwen2.5-72B-Instruct-AWQ
+    temperature: 0.4
+    max_tokens: 200
+
+variants:
+  - name: calm_full
+    system: |
+      You are a calm, concise Formula 1 race engineer speaking to your driver on
+      team radio. Preserve every fact (laps, positions, gaps, tyres, strategy).
+      One or two short sentences. Never invent information.
+    user_template: |
+      Situation: lap {lap_number}/{total_laps}, P{player_position} at {circuit_name},
+      {tyre_compound} tyres {tyre_age_laps} laps old, sector {sector}.
+      Strategy: {strategy_summary}
+      Rewrite this for radio, natural and brief: "{message_text}"
+
+judges:
+  - name: claude
+    command: ["claude", "-p"]
+  - name: gemini
+    command: ["gemini", "-p"]
+  - name: grok
+    command: ["grok", "-p"]
+
+judge:
+  dimensions: [faithfulness, tone, concision, naturalness]
+  timeout_s: 60
