@@ -80,6 +80,27 @@ don't touch the GPU. So:
 - `charts/quality_vs_latency.png` — the balance chart (p95 latency × overall score).
 - `charts/score_breakdown.png` — scores by dimension.
 
+## Eyeballing the output
+
+To read each message's **template → LLM rewrite** (with latency) and get a feel for the
+model, reshape `runs.jsonl` with `jq`:
+
+```bash
+# paged side-by-side: input template vs LLM output
+jq -r '"[\(.row_id)] \(.total_ms)ms\n  TEMPLATE: \(.original // "—")\n  LLM     : \(.output)\n"' \
+  radiobench/results/runs.jsonl | less -R
+```
+
+`.original` is the raw input message; `.output` is the rewrite. Add `select(.model=="qwen72b" and .variant=="calm_full") |`
+before the string to focus on one model/variant when you've run several.
+
+Export a spreadsheet for side-by-side comparison:
+
+```bash
+jq -r '["row_id","ms","template","llm"], (select(.original) | [.row_id, .total_ms, .original, .output]) | @csv' \
+  radiobench/results/runs.jsonl > radiobench/results/compare.csv
+```
+
 ## Cost note
 
 Judging is the expensive part: `judge` makes one CLI call per output **per judge**
