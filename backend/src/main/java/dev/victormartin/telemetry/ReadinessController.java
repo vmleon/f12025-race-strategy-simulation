@@ -187,6 +187,22 @@ public class ReadinessController {
                 resolved);
     }
 
+    /**
+     * Latest fitted coefficient per (knob, regime, sector) for a track. Calibration
+     * runs append rather than supersede, so the table holds every historical fit;
+     * readers that want the live calibration must pick the most recent row per knob
+     * (mirrors the simulator's {@code load_coefficients_for_track}). The single
+     * {@code ?} binds track_id. Without this, readiness widgets show every run's rows
+     * stacked together (a huge fit list) and aggregate flags/samples across history.
+     */
+    private static final String LATEST_FITTED_COEFFS =
+            "SELECT knob_name, calibration_regime, sector_number, value, sample_count, r_squared, clamped "
+            + "FROM (SELECT knob_name, calibration_regime, sector_number, value, sample_count, r_squared, clamped, "
+            + "             ROW_NUMBER() OVER (PARTITION BY knob_name, calibration_regime, sector_number "
+            + "                                ORDER BY trained_at DESC) rn "
+            + "      FROM calibration_coefficients WHERE track_id = ? AND is_default = 0) "
+            + "WHERE rn = 1";
+
     public record RegimeDeg(int compound, String regime, double slopeMsPerLap, int samples) {}
 
     /** Fitted tyre-degradation slope per dry compound, PLAYER vs AI, aggregated across
@@ -197,9 +213,8 @@ public class ReadinessController {
         if (resolved < 0) return List.of();
         return jdbc.query(
                 "SELECT knob_name, calibration_regime, AVG(value) AS slope, SUM(sample_count) AS n "
-                + "FROM calibration_coefficients "
-                + "WHERE track_id = ? AND is_default = 0 "
-                + "  AND knob_name IN ('tyre_deg_soft','tyre_deg_medium','tyre_deg_hard') "
+                + "FROM (" + LATEST_FITTED_COEFFS + ") "
+                + "WHERE knob_name IN ('tyre_deg_soft','tyre_deg_medium','tyre_deg_hard') "
                 + "GROUP BY knob_name, calibration_regime",
                 (rs, i) -> new RegimeDeg(degKnobCompound(rs.getString("KNOB_NAME")),
                         rs.getString("CALIBRATION_REGIME"), rs.getDouble("SLOPE"), rs.getInt("N")),
@@ -347,7 +362,7 @@ public class ReadinessController {
         if (resolved < 0) return List.of();
         return jdbc.query(
                 "SELECT knob_name, calibration_regime, sector_number, sample_count, r_squared, clamped "
-                + "FROM calibration_coefficients WHERE track_id = ? AND is_default = 0 "
+                + "FROM (" + LATEST_FITTED_COEFFS + ") "
                 + "ORDER BY calibration_regime, knob_name, sector_number",
                 (rs, i) -> {
                     int sector = rs.getInt("SECTOR_NUMBER");
@@ -489,9 +504,8 @@ public class ReadinessController {
         Map<Integer, Boolean> clamped = new java.util.HashMap<>();
         Map<Integer, Double> worstR = new java.util.HashMap<>();
         jdbc.query(
-                "SELECT knob_name, sample_count, r_squared, clamped FROM calibration_coefficients "
-                + "WHERE track_id = ? AND is_default = 0 AND calibration_regime = 'PLAYER' "
-                + "  AND knob_name LIKE 'tyre_deg_%'",
+                "SELECT knob_name, sample_count, r_squared, clamped FROM (" + LATEST_FITTED_COEFFS + ") "
+                + "WHERE calibration_regime = 'PLAYER' AND knob_name LIKE 'tyre_deg_%'",
                 (RowCallbackHandler) rs -> {
                     Integer compound = switch (rs.getString("KNOB_NAME")) {
                         case "tyre_deg_soft" -> 16;

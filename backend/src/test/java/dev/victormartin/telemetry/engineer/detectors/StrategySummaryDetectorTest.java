@@ -108,4 +108,26 @@ class StrategySummaryDetectorTest {
         assertTrue(msg.isPresent());
         assertEquals("Current plan: stay out to the end on medium.", msg.get().text());
     }
+
+    @Test
+    void stayOutPlanSuppressesSpeculativeRunnerUp() {
+        // Leader is stay-out-to-the-end; a runner-up box-lap is Monte-Carlo noise.
+        detector.setEvaluation(SESSION_UID, eval(
+                ranked(1, "No stop"),
+                ranked(2, "1-stop H", new PitStop(9, 18))));
+        var msg = detector.evaluate(tickAtLap(8, "M"));
+        assertTrue(msg.isPresent());
+        assertEquals("Current plan: stay out to the end on medium.", msg.get().text());
+    }
+
+    @Test
+    void runnerUpIdenticalToLeaderIsSuppressed() {
+        // Rank-2 has the same next stop as rank-1 — adds nothing, so drop "Next best".
+        detector.setEvaluation(SESSION_UID, eval(
+                ranked(1, "1-stop M", new PitStop(20, 17)),
+                ranked(2, "1-stop M alt", new PitStop(20, 17))));
+        var msg = detector.evaluate(tickAtLap(18, "S"));
+        assertTrue(msg.isPresent());
+        assertEquals("Current plan: box lap 20 for Mediums.", msg.get().text());
+    }
 }

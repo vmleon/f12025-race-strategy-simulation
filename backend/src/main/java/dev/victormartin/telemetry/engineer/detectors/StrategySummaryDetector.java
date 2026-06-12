@@ -83,24 +83,32 @@ public class StrategySummaryDetector implements RadioDetector {
         Plan p1 = nextStop(r1, tick.currentLap());
         Plan p2 = r2 != null ? nextStop(r2, tick.currentLap()) : null;
 
+        // Speak a runner-up only when it's a meaningful, actionable alternative. When
+        // the current plan is to stay out to the end (p1 == null), a runner-up box-lap
+        // is Monte-Carlo noise: it carries no decision the driver can act on and it
+        // flaps run-to-run, which (via the signature below) spammed the radio with the
+        // same "stay out … Next best: box lap X" line several times a lap. A runner-up
+        // identical to the leader's plan likewise adds nothing.
+        boolean includeRunnerUp = r2 != null && p1 != null && !sig(p1).equals(sig(p2));
+
         // Lookahead gate: talk boxes only when actionable. A "stay out to the end"
         // recommendation (p1 == null) is announced once via the signature. Otherwise
-        // stay quiet until the nearest planned stop among the top two is within
+        // stay quiet until the nearest planned stop among the spoken plans is within
         // LOOKAHEAD laps — the optimal box lap drifts ~1/lap, so announcing a stop
         // many laps out is just noise that never arrives. Returning before touching
         // lastSignature means it still announces once it enters the window.
         if (p1 != null) {
             int nearest = p1.lap();
-            if (p2 != null) nearest = Math.min(nearest, p2.lap());
+            if (includeRunnerUp) nearest = Math.min(nearest, p2.lap());
             if (nearest - tick.currentLap() > LOOKAHEAD_LAPS) return Optional.empty();
         }
 
-        String signature = sig(p1) + "|" + (r2 == null ? "none" : sig(p2));
+        String signature = sig(p1) + "|" + (includeRunnerUp ? sig(p2) : "none");
         if (signature.equals(s.lastSignature)) return Optional.empty();
         s.lastSignature = signature;
 
         return Optional.of(new EngineerMessage(
-                Priority.NORMAL, render(p1, r2 != null, p2, tick),
+                Priority.NORMAL, render(p1, includeRunnerUp, p2, tick),
                 tick.wallClockMs(), tick.currentLap(), 2));
     }
 
