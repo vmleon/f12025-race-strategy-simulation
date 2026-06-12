@@ -98,6 +98,25 @@ _SEQUENCES = [
     ("seq_simulation_accuracy", "simulation_accuracy", "accuracy_id"),
 ]
 
+# CSV output column order: traceability, render context, payload.
+_RADIO_CSV_HEADER = [
+    "message_id", "session_uid", "sent_at",
+    "priority", "session_type", "track_id", "circuit_name",
+    "lap_number", "total_laps", "player_position", "driver_name",
+    "tyre_compound", "tyre_age_laps", "sector",
+    "message_text", "best_strategies", "rendered_text",
+]
+
+# Columns selected from radio_messages (circuit_name and driver_name are resolved,
+# not selected). Order is the lookup key for rows passed to _radio_csv_row.
+_RADIO_DB_COLUMNS = [
+    "message_id", "session_uid", "sent_at",
+    "priority", "session_type", "track_id",
+    "lap_number", "total_laps", "player_position",
+    "tyre_compound", "tyre_age_laps", "sector",
+    "message_text", "best_strategies", "rendered_text",
+]
+
 
 def _check_command(name):
     if shutil.which(name) is None:
@@ -242,6 +261,33 @@ def _build_circuit_names():
         except (OSError, ValueError):
             continue
     return names
+
+
+def _radio_csv_row(row, circuit_names, driver_names):
+    """Map one radio_messages row (dict keyed by _RADIO_DB_COLUMNS) to a CSV row
+    in _RADIO_CSV_HEADER order. Resolves circuit_name (fallback "Track <id>") and
+    driver_name (empty when unknown); formats sent_at; renders NULLs as "".
+    """
+    def s(v):
+        return "" if v is None else str(v)
+
+    track_id = row["track_id"]
+    if track_id is None:
+        circuit = ""
+    else:
+        circuit = circuit_names.get(int(track_id), f"Track {track_id}")
+    driver = driver_names.get(row["session_uid"], "")
+    sent = row["sent_at"]
+    sent_str = (sent.strftime("%Y-%m-%d %H:%M:%S")
+                if isinstance(sent, datetime.datetime) else s(sent))
+
+    return [
+        s(row["message_id"]), s(row["session_uid"]), sent_str,
+        s(row["priority"]), s(row["session_type"]), s(track_id), circuit,
+        s(row["lap_number"]), s(row["total_laps"]), s(row["player_position"]), driver,
+        s(row["tyre_compound"]), s(row["tyre_age_laps"]), s(row["sector"]),
+        s(row["message_text"]), s(row["best_strategies"]), s(row["rendered_text"]),
+    ]
 
 
 @cli.group()
