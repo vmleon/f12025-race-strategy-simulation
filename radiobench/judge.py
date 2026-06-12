@@ -5,7 +5,8 @@ import json
 import re
 import subprocess
 
-from radiobench.config import Judge
+from radiobench.config import Config, Judge
+from radiobench.jsonl import append_jsonl, read_jsonl, done_keys
 
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -65,3 +66,35 @@ def run_judge(judge: Judge, prompt: str, dimensions: list[str], timeout_s: int) 
     if scores is None:
         return {**null_scores, "rationale": "", "error": "unparseable"}
     return {**scores, "error": None}
+
+
+def run_judge_phase(config: Config, runs_path: str, judgements_path: str, judge_fn=None) -> int:
+    """For each run output and each judge not already recorded, score it once
+    (one retry on failure) and append to judgements_path. Returns count written.
+
+    `judge_fn(judge, prompt, dimensions, timeout_s) -> dict` is injectable for tests.
+    """
+    if judge_fn is None:
+        judge_fn = run_judge
+    dims = config.judge.dimensions
+    done = done_keys(judgements_path, ["row_id", "model", "variant", "judge"])
+    n = 0
+    for run in read_jsonl(runs_path):
+        if run.get("error") is not None or not run.get("output"):
+            continue
+        context = run.get("prompt_user", "")
+        prompt = build_judge_prompt(dims, context, context, run["output"])
+        for judge in config.judges:
+            key = (run["row_id"], run["model"], run["variant"], judge.name)
+            if key in done:
+                continue
+            res = judge_fn(judge, prompt, dims, config.judge.timeout_s)
+            if res.get("error") is not None:  # one retry
+                res = judge_fn(judge, prompt, dims, config.judge.timeout_s)
+            append_jsonl(judgements_path, {
+                "row_id": run["row_id"], "model": run["model"], "variant": run["variant"],
+                "judge": judge.name, **{d: res.get(d) for d in dims},
+                "rationale": res.get("rationale", ""), "error": res.get("error"),
+            })
+            n += 1
+    return n
