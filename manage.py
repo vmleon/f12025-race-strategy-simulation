@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """CLI for managing the F1 Strategy local development environment."""
 
+import csv
 import datetime
+import glob
+import json
 import os
 import secrets
 import shutil
@@ -27,6 +30,11 @@ GRANT_SCRIPT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "database", "scripts", "local_pdb_grant.sql"
 )
 BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database", "backups")
+EXPORTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database", "exports")
+CIRCUITS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "backend", "src", "main", "resources", "circuits",
+)
 
 _CONFIG_TEMPLATES = [
     (
@@ -211,6 +219,29 @@ def info():
         f"  localhost:1521/FREEPDB1   user: pdbadmin   password: {password_note}",
         title="F1 Strategy — Service Info",
     ))
+
+
+def _build_circuit_names():
+    """Map track_id -> circuit name from the backend circuit resource files.
+
+    Each backend/src/main/resources/circuits/track_<id>_<slug>.json carries
+    {"trackId": int, "name": str}. Returns {} if the directory is absent; skips
+    any unreadable/malformed file (callers fall back to "Track <id>").
+    """
+    names = {}
+    if not os.path.isdir(CIRCUITS_DIR):
+        return names
+    for path in glob.glob(os.path.join(CIRCUITS_DIR, "track_*.json")):
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            track_id = data.get("trackId")
+            name = data.get("name")
+            if track_id is not None and name:
+                names[int(track_id)] = name
+        except (OSError, ValueError):
+            continue
+    return names
 
 
 @cli.group()
