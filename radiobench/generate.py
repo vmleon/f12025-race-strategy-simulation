@@ -5,6 +5,7 @@ from radiobench.candidate import generate_once
 from radiobench.config import Candidate, Config, Variant
 from radiobench.dataset import load_rows, sample_rows
 from radiobench.jsonl import append_jsonl, done_keys
+from radiobench.progress import track
 from radiobench.prompt import build_prompt
 
 
@@ -40,8 +41,11 @@ def run_generate(config: Config, runs_path: str) -> int:
     rows = sample_rows(load_rows(config.dataset), config.sample.size,
                        config.sample.stratify_by, config.sample.seed)
     done = done_keys(runs_path, ["row_id", "model", "variant"])
+    pending = sum(1 for c in config.candidates for v in config.variants for r in rows
+                  if (r["message_id"], c.name, v.name) not in done)
+    records = generate_records(config.candidates, config.variants, rows, done)
     n = 0
-    for rec in generate_records(config.candidates, config.variants, rows, done):
+    for rec in track(records, total=pending, desc="generate"):
         append_jsonl(runs_path, rec)
         n += 1
     return n

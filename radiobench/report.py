@@ -62,6 +62,7 @@ def run_report(config: Config, runs_path: str, judgements_path: str) -> str:
     runs = read_jsonl(runs_path)
     judgements = read_jsonl(judgements_path)
     dims = config.judge.dimensions
+    print(f"report: aggregating {len(runs)} runs and {len(judgements)} judgements...")
     agg = aggregate(runs, judgements, dims)
 
     charts_dir = os.path.join(config.output_dir, "charts")

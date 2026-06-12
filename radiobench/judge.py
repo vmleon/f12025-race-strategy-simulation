@@ -4,9 +4,11 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from radiobench.config import Config, Judge
 from radiobench.jsonl import append_jsonl, read_jsonl, done_keys
+from radiobench.progress import track
 
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -68,34 +70,54 @@ def run_judge(judge: Judge, prompt: str, dimensions: list[str], timeout_s: int) 
     return {**scores, "error": None}
 
 
-def run_judge_phase(config: Config, runs_path: str, judgements_path: str, judge_fn=None) -> int:
-    """For each run output and each judge not already recorded, score it once
-    (one retry on failure) and append to judgements_path. Returns count written.
+def run_judge_phase(config: Config, runs_path: str, judgements_path: str,
+                    judge_fn=None, workers: int | None = None) -> int:
+    """Score every (run output, judge) pair not already recorded and append to
+    judgements_path. Returns the count written.
+
+    Each judge CLI is a slow subprocess, so the pairs run concurrently in a thread
+    pool (``config.judge.workers``); results are appended in the main thread as they
+    complete (thread-safe), with a live progress bar. Each pair is scored once with
+    one retry on failure.
 
     `judge_fn(judge, prompt, dimensions, timeout_s) -> dict` is injectable for tests.
     """
     if judge_fn is None:
         judge_fn = run_judge
+    if workers is None:
+        workers = config.judge.workers
     dims = config.judge.dimensions
     done = done_keys(judgements_path, ["row_id", "model", "variant", "judge"])
-    n = 0
+
+    tasks = []
     for run in read_jsonl(runs_path):
         if run.get("error") is not None or not run.get("output"):
             continue
+        for judge in config.judges:
+            if (run["row_id"], run["model"], run["variant"], judge.name) not in done:
+                tasks.append((run, judge))
+
+    if not tasks:
+        return 0
+
+    def score(task):
+        run, judge = task
         context = run.get("prompt_user", "")
         original = run.get("original", context)  # fall back to context for older records
         prompt = build_judge_prompt(dims, context, original, run["output"])
-        for judge in config.judges:
-            key = (run["row_id"], run["model"], run["variant"], judge.name)
-            if key in done:
-                continue
+        res = judge_fn(judge, prompt, dims, config.judge.timeout_s)
+        if res.get("error") is not None:  # one retry
             res = judge_fn(judge, prompt, dims, config.judge.timeout_s)
-            if res.get("error") is not None:  # one retry
-                res = judge_fn(judge, prompt, dims, config.judge.timeout_s)
-            append_jsonl(judgements_path, {
-                "row_id": run["row_id"], "model": run["model"], "variant": run["variant"],
-                "judge": judge.name, **{d: res.get(d) for d in dims},
-                "rationale": res.get("rationale", ""), "error": res.get("error"),
-            })
+        return {
+            "row_id": run["row_id"], "model": run["model"], "variant": run["variant"],
+            "judge": judge.name, **{d: res.get(d) for d in dims},
+            "rationale": res.get("rationale", ""), "error": res.get("error"),
+        }
+
+    n = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(score, t) for t in tasks]
+        for fut in track(as_completed(futures), total=len(tasks), desc="judge"):
+            append_jsonl(judgements_path, fut.result())
             n += 1
     return n

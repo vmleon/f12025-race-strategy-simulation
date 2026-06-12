@@ -40,8 +40,11 @@ radiobench/venv/bin/python -m radiobench generate --config path/to/other.yaml
 radiobench/venv/bin/python -m pytest radiobench/tests/ -v
 ```
 
-All phases are **append-only and resumable**: re-running skips work already in the
-result files, so you can Ctrl-C and continue, or run incrementally one model at a time.
+All phases show a **live progress bar** (count, %, rate, ETA) and are **append-only and
+resumable**: re-running skips work already in the result files, so you can Ctrl-C and
+continue, or run incrementally one model at a time. The `judge` phase runs the judge CLIs
+**concurrently** (`judge.workers` in the config, default 12), since each call is a slow
+subprocess.
 
 ## Configuration (`config.yaml`)
 
@@ -58,8 +61,8 @@ This is the iteration surface — edit it, then re-run; no code changes needed.
   and `{message_text}`. Add a variant to test a new tone/instruction; the bench runs the
   full `candidates × variants × rows` matrix.
 - **`judges`** — the judge CLIs (`name` + `command`, e.g. `["claude", "-p"]`).
-- **`judge`** — scoring `dimensions` (faithfulness, tone, concision, naturalness) and the
-  per-call `timeout_s`.
+- **`judge`** — scoring `dimensions` (faithfulness, tone, concision, naturalness), the
+  per-call `timeout_s`, and `workers` (how many judge CLIs run concurrently; default 12).
 
 ## Typical workflow (one model at a time)
 
