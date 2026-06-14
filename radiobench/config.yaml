@@ -7,9 +7,29 @@ sample:
   # seed: 42
 
 candidates:
-  - name: qwen72b
-    base_url: http://spark-bc8a.local:8000/v1
-    model: Qwen/Qwen2.5-72B-Instruct-AWQ
+  # - name: qwen72b
+  #   base_url: http://spark-bc8a.local:8000/v1
+  #   model: Qwen/Qwen2.5-72B-Instruct-AWQ
+  #   temperature: 0.4
+  #   max_tokens: 200
+  # - name: llama3.3-70b
+  #   base_url: http://spark-bc8a.local:8002/v1
+  #   model: nvidia/Llama-3.3-70B-Instruct-FP8
+  #   temperature: 0.4
+  #   max_tokens: 200
+  # - name: gemma-4
+  #   base_url: http://spark-bc8a.local:8002/v1
+  #   model: google/gemma-4-E4B-it
+  #   temperature: 0.4
+  #   max_tokens: 200
+  # - name: mistral119b
+  #   base_url: http://spark-bc8a.local:8002/v1
+  #   model: mistralai/Mistral-Small-4-119B-2603-NVFP4
+  #   temperature: 0.4
+  #   max_tokens: 200
+  - name: gpt-oss20b
+    base_url: http://spark-bc8a.local:8002/v1
+    model: openai/gpt-oss-20b
     temperature: 0.4
     max_tokens: 200
 
