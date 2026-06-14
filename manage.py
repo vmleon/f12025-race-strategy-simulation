@@ -420,6 +420,46 @@ def setup():
 
 
 @local.command()
+def build():
+    """Rebuild artifacts + container images (no cache), then restart the stack.
+
+    Run this after `setup`. `setup` rotates the DB password, regenerates configs,
+    and rebuilds the Gradle artifacts — but the password is baked into the images,
+    and `podman compose up --build` reuses cached COPY layers, so the running
+    containers keep the OLD password and every service fails with ORA-01017.
+    This forces a `--no-cache` image build so the fresh config is actually baked in.
+    """
+    _check_command("podman")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Java Containerfiles COPY these pre-built outputs; refresh them in case the
+    # source changed since the last `setup` (no-op/fast when already current).
+    console.print("[bold]Rebuilding Java artifacts...[/bold]")
+    console.print("  [dim]./gradlew installDist (telemetry)...[/dim]")
+    _run(["./gradlew", "installDist", "-q"], cwd=os.path.join(base_dir, "telemetry"))
+    console.print("  [dim]./gradlew bootJar (backend)...[/dim]")
+    _run(["./gradlew", "bootJar", "-q"], cwd=os.path.join(base_dir, "backend"))
+
+    # Force a clean image build — `up --build` caches stale layers and bakes the
+    # old password. --no-cache is the whole point of this command.
+    console.print("[bold]Building images (--no-cache, can take a few minutes)...[/bold]")
+    if subprocess.run(["podman", "compose", "build", "--no-cache"], cwd=base_dir).returncode != 0:
+        console.print("[red]Error:[/red] image build failed.")
+        sys.exit(1)
+
+    # `podman compose up -d` will NOT recreate already-running containers, so it
+    # leaves them on the OLD image. Tear them down first so `up` creates fresh
+    # containers from the rebuilt images. (Oracle is not in compose, so it stays up.)
+    console.print("[bold]Recreating containers from the new images...[/bold]")
+    subprocess.run(["podman", "compose", "down"], cwd=base_dir)
+    if subprocess.run(["podman", "compose", "up", "-d"], cwd=base_dir).returncode != 0:
+        console.print("[red]Error:[/red] compose up failed.")
+        sys.exit(1)
+
+    console.print("[green]Rebuild complete. Services restarted with current config.[/green]")
+
+
+@local.command()
 def clean():
     """Stop and remove the Oracle container, clear password from .env."""
     if _container_exists():

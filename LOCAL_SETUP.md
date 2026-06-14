@@ -10,39 +10,20 @@
 
 ## Quick start (everything in one go)
 
-From a clean clone, get the whole system up with the Oracle DB first, then the compose stack.
-
-Create the virtualenv and install dependencies (one-time):
+Run these in order from the project root, top to bottom. Works from any starting point.
 
 ```bash
+podman machine stop
+podman machine set --memory 8192
+podman machine start
 python -m venv venv
-source venv/bin/activate             # Windows: venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
-```
-
-Oracle container + Liquibase + generated configs + Java build (~5-6 min):
-
-```bash
+podman compose down
 python manage.py local setup
-```
-
-Restore the latest backup so the dataset keeps growing (skip on first run — no backup yet):
-
-```bash
 python manage.py local import
-```
-
-Build + start telemetry, backend, simulator, calibration, portal:
-
-```bash
-podman compose up --build -d
-```
-
-Check endpoints and container status.
-
-Consolidated endpoints + game setup info:
-
-```bash
+podman compose build --no-cache
+podman compose up -d
 python manage.py info
 ```
 
