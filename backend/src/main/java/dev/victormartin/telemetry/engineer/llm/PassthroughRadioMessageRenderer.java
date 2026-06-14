@@ -3,6 +3,7 @@ package dev.victormartin.telemetry.engineer.llm;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Component;
  * {@code todos/02-LLM-RADIO-MESSAGE-GENERATION.md}.
  */
 @Component
+@ConditionalOnProperty(name = "engineer.llm.enabled", havingValue = "false", matchIfMissing = true)
 public class PassthroughRadioMessageRenderer implements RadioMessageRenderer {
 
     private static final Logger log = LoggerFactory.getLogger(PassthroughRadioMessageRenderer.class);

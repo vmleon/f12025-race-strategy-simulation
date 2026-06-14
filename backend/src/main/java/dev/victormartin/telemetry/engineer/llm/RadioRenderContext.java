@@ -9,9 +9,11 @@ import dev.victormartin.telemetry.engineer.EngineerMessage.Priority;
  * passthrough placeholder ignores them. {@code circuitName} is resolved from
  * {@code trackId}; {@code driverName} is the player car's name (null if the
  * telemetry has not supplied one). {@code strategiesJson} is null when no
- * strategy evaluation exists yet (e.g. Practice).
+ * strategy evaluation exists yet (e.g. Practice). {@code sessionUid} identifies
+ * the session so the renderer can keep per-session rolling memory.
  */
 public record RadioRenderContext(
+        String sessionUid,
         String text,
         Priority priority,
         int sessionType,

@@ -476,8 +476,8 @@ public class RaceEngineerService {
         String circuitName = GameMappings.trackName(tick.trackId());
         String strategies = RadioStrategySummary.topThreeJson(mapper, session.latestEvaluation);
         return new RadioRenderContext(
-                original.text(), original.priority(), tick.sessionType(), tick.trackId(), circuitName,
-                tick.currentLap(), tick.totalLaps(), tick.playerPos(), driverName,
+                session.sessionUid, original.text(), original.priority(), tick.sessionType(), tick.trackId(),
+                circuitName, tick.currentLap(), tick.totalLaps(), tick.playerPos(), driverName,
                 tyre, tyreAge, sector, strategies);
     }
 

@@ -19,10 +19,14 @@ spring.datasource.oracleucp.validate-connection-on-borrow=true
 
 telemetry.tcp.port=9090
 
-# Race-engineer radio LLM (vLLM). Phase 1 ships a passthrough renderer that
-# ignores host/port/model and logs them at startup; timeout-ms bounds the
-# (future) render call and falls back to the templated text.
+# Race-engineer radio LLM (vLLM). When enabled, VllmRadioMessageRenderer rewords
+# each message via /v1/chat/completions; otherwise the passthrough renderer ships
+# the templated text. timeout-ms bounds the render call (must exceed the model's
+# p95 or every render falls back to the template) and memory-size is the per-session
+# rolling buffer of recent lines fed to the prompt.
+engineer.llm.enabled=true
 engineer.llm.host=localhost
 engineer.llm.port=8000
-engineer.llm.model=meta-llama/Llama-3.1-8B-Instruct
-engineer.llm.timeout-ms=500
+engineer.llm.model=google/gemma-4-E4B-it
+engineer.llm.timeout-ms=2500
+engineer.llm.memory-size=5

@@ -12,7 +12,7 @@ class PassthroughRadioMessageRendererTest {
         PassthroughRadioMessageRenderer renderer =
                 new PassthroughRadioMessageRenderer("localhost", 8000, "test-model");
         RadioRenderContext ctx = new RadioRenderContext(
-                "Box this lap", Priority.NORMAL, 15, 7, "Silverstone", 3, 58, 5, "VER", "Soft", 4, 1, null);
+                "test-session", "Box this lap", Priority.NORMAL, 15, 7, "Silverstone", 3, 58, 5, "VER", "Soft", 4, 1, null);
 
         assertEquals("Box this lap", renderer.render(ctx));
     }

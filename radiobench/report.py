@@ -94,6 +94,41 @@ def run_report(config: Config, runs_path: str, judgements_path: str) -> str:
     fig.savefig(os.path.join(charts_dir, "score_breakdown.png"), bbox_inches="tight")
     plt.close(fig)
 
+    # Faithfulness vs latency scatter (the faithfulness-first balance chart).
+    fig, ax = plt.subplots()
+    for (model, variant), a in agg.items():
+        if a.get("faithfulness") is not None:
+            ax.scatter(a["p95_total_ms"], a["faithfulness"])
+            ax.annotate(f"{model}/{variant}", (a["p95_total_ms"], a["faithfulness"]))
+    ax.set_xlabel("p95 total latency (ms)")
+    ax.set_ylabel("faithfulness judge score (1-5)")
+    ax.set_title("Faithfulness vs latency")
+    fig.savefig(os.path.join(charts_dir, "faithfulness_vs_latency.png"), bbox_inches="tight")
+    plt.close(fig)
+
+    # One ranked bar chart per metric (best at top), each its own PNG.
+    def ranked_bar(title, pairs, higher_is_better, filename, xlabel):
+        items = [(lbl, v) for lbl, v in pairs if v is not None]
+        items.sort(key=lambda t: t[1], reverse=higher_is_better)
+        fig, ax = plt.subplots()
+        labels = [lbl for lbl, _ in items]
+        vals = [v for _, v in items]
+        ax.barh(range(len(labels)), vals)
+        ax.set_yticks(range(len(labels)))
+        ax.set_yticklabels(labels)
+        ax.invert_yaxis()  # first (best) at top
+        ax.set_xlabel(xlabel)
+        ax.set_title(title)
+        fig.savefig(os.path.join(charts_dir, filename), bbox_inches="tight")
+        plt.close(fig)
+
+    for d in dims:
+        ranked_bar(d, [(f"{m}/{v}", agg[(m, v)][d]) for (m, v) in agg],
+                   higher_is_better=True, filename=f"dim_{d}.png", xlabel="score (1-5)")
+    ranked_bar("invented-fact rate (lower is better)",
+               [(f"{m}/{v}", agg[(m, v)]["fact_invented_rate"]) for (m, v) in agg],
+               higher_is_better=False, filename="dim_invented_rate.png", xlabel="invented rate")
+
     # Summary markdown table.
     lines = ["# Radio bench summary\n",
              "| model/variant | n | overall | " + " | ".join(dims)

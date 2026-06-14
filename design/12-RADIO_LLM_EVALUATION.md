@@ -96,13 +96,13 @@ The facts (lost place, P7, Hamilton ahead) survive; the phrasing becomes a spoke
 
 All candidates are open-weight models served through a **vLLM OpenAI-compatible endpoint** ([Kwon et al., 2023](10-REFERENCES.md#kwon2023)) on a local GPU host. The bench talks to them through the standard OpenAI Chat Completions streaming API, which lets it measure time-to-first-token separately from total latency. Five models were evaluated:
 
-| Candidate      | Model                      | Notes                   |
-| -------------- | -------------------------- | ----------------------- |
-| `qwen72b`      | Qwen2.5-72B-Instruct-AWQ   | Largest; AWQ-quantised  |
-| `llama3.3-70b` | Llama-3.3-70B-Instruct-FP8 | FP8-quantised           |
-| `gemma-4`      | gemma-4-E4B-it             | Small, efficient        |
-| `mistral119b`  | Mistral-Small-119B-NVFP4   | NVFP4-quantised         |
-| `gpt-oss20b`   | gpt-oss-20b                | 20B; eventual selection |
+| Candidate      | Model                      | Notes                      |
+| -------------- | -------------------------- | -------------------------- |
+| `qwen72b`      | Qwen2.5-72B-Instruct-AWQ   | Largest; AWQ-quantised     |
+| `llama3.3-70b` | Llama-3.3-70B-Instruct-FP8 | FP8-quantised              |
+| `gemma-4`      | gemma-4-E4B-it             | Small, efficient; selected |
+| `mistral119b`  | Mistral-Small-119B-NVFP4   | NVFP4-quantised            |
+| `gpt-oss20b`   | gpt-oss-20b                | 20B                        |
 
 Each candidate fixes `temperature: 0.4` (low, to favour faithful rewrites over creative ones) and `max_tokens: 200` (a radio line is short; this is a safety cap).
 
@@ -161,25 +161,29 @@ _(Bold marks the best value in each column. Scores are 1–5; higher is better. 
 - **qwen72b** wins on raw quality (4.50 overall, best tone and naturalness) but pays for it: a p95 tail of 6.8 s, and — notably — a **5.1% invented-fact rate**, the second-highest. The largest, most fluent model also takes the most liberties with facts.
 - **llama3.3-70b** is the clear loser: lowest overall (3.81), worst faithfulness (3.01), highest hallucination (9.3%), and the slowest by far (p95 10.3 s). A 70B model is not automatically a good one for this task.
 - **mistral119b** is the latency champion (p95 1.2 s) and most concise, but its weak faithfulness (3.45) and 7.6% invented rate make it untrustworthy for fact-bearing radio.
-- **gemma-4** is the safest small model — lowest hallucination (0.5%) and fast — but middling on every quality dimension.
-- **gpt-oss20b** is the balance winner. It nearly matches the 72B model on faithfulness (**4.25** vs 4.27) and overall (4.26 vs 4.50), at **one-quarter the parameters**. Critically, it has the **lowest invented-fact rate of any high-quality model (0.9%)** and the **tightest latency distribution** — its p50 and p95 are almost identical (3585 ms vs 3604 ms), meaning predictable delivery with no long tail. Its only soft spot is naturalness (3.81).
+- **gemma-4** is the faithfulness leader among the fast models. It is sub-2 s (p95 1965 ms), has the **lowest hallucination of any candidate (0.5%)**, and the **best faithfulness of the two sub-2 s models** (3.60 vs mistral119b's 3.45). Its judge dimensions are otherwise middling and its `overall` (3.93) is modest — but, as §7.2 explains, `overall` understates exactly the property that matters most here.
+- **gpt-oss20b** is the quality/faithfulness balance among the _slow_ models. It nearly matches the 72B model on faithfulness (**4.25** vs 4.27) and overall (4.26 vs 4.50) at one-quarter the parameters, with a low 0.9% invented rate and a tight, predictable latency distribution (p50 3585 ms ≈ p95 3604 ms). But that ~3.6 s floor needs a 4 s delivery budget — outside the live window — so it loses to gemma-4 once latency is binding.
 
-### 7.2 The quality–latency trade-off
+### 7.2 Why `overall` is the wrong sort key
 
-The two decisions the bench is built to inform are visualised in `results/charts/`:
+`overall` is the **flat mean of four equally-weighted dimensions** (faithfulness, tone, concision, naturalness), so faithfulness contributes only a quarter of it. A model can therefore rank higher on `overall` while being _less_ faithful, as long as it makes up the gap elsewhere. mistral119b is exactly this case: it outranks gemma-4 on `overall` (4.05 vs 3.93) almost entirely on **concision** (4.83 vs 4.11) — and concision rewards brevity, which says nothing about whether the words are _correct_. mistral119b is terse **and** loose with facts (faithfulness 3.45, 7.6% invented); gemma-4 is slightly wordier but keeps facts straight (3.60, 0.5% invented). For fact-bearing radio, the right sort key is **faithfulness + invented-rate**, with `overall` only a tiebreak.
 
-- **`quality_vs_latency.png`** — overall judge score against p95 latency. The desirable region is top-left (high quality, low latency). `gpt-oss20b` sits there; `qwen72b` is higher but further right (slower tail), and `llama3.3-70b` is bottom-right (the worst of both).
-- **`score_breakdown.png`** — the four dimensions side by side per model, exposing trade-offs the single overall score hides (e.g. mistral119b's high concision masking low faithfulness).
+The decisions the bench informs are visualised in `results/charts/`:
+
+- **`faithfulness_vs_latency.png`** — faithfulness against p95 latency, the chart that actually drives the choice. The desirable region is top-left (faithful, low latency); among the sub-2 s models gemma-4 sits above mistral119b.
+- **`dim_faithfulness.png`** / **`dim_invented_rate.png`** — per-metric model rankings on the two fact-preservation measures, where gemma-4 leads the fast field.
+- **`quality_vs_latency.png`** — overall judge score against p95 latency. Useful, but inherits the averaging problem above, so it visually flatters mistral119b; read it alongside the faithfulness chart, not instead of it.
+- **`score_breakdown.png`** and the per-dimension **`dim_*.png`** charts — the four dimensions per model, exposing trade-offs the single overall score hides (e.g. mistral119b's high concision masking low faithfulness).
 
 ### 7.3 Selection
 
-The production renderer was set to **`gpt-oss20b`**. The reasoning the bench makes explicit:
+The production renderer was set to **`gemma-4`**. Latency is the binding constraint — a rewrite that misses its safe-zone window is useless regardless of quality — which narrows the field to the two sub-2 s-p95 models, gemma-4 (1965 ms) and mistral119b (1220 ms). Between those two the reasoning the bench makes explicit:
 
-1. **Faithfulness is the hard constraint**, and gpt-oss20b ties the best model on it while inventing facts 5–10× less often than qwen72b, mistral119b, or llama.
-2. **Predictable latency** matters more than peak speed for live delivery; gpt-oss20b's near-flat p50/p95 keeps every message inside its window, whereas qwen72b's 6.8 s tail risks missing it.
-3. **A 20B model frees GPU headroom** on the shared host and is cheaper to serve, with only a ~0.24-point overall-quality concession versus the 72B model — most of which is naturalness, the least safety-critical dimension.
+1. **Faithfulness is the hard constraint**, and among the fast models gemma-4 wins it: faithfulness 3.60 vs mistral119b's 3.45, and a **0.5% invented-fact rate vs 7.6%** — roughly 15× fewer hallucinated facts. For radio that carries positions, laps, and gaps, that gap is decisive.
+2. **`overall` does not overturn this.** mistral119b's higher `overall` comes from concision, not correctness (§7.2); ranked by the metrics that preserve facts, gemma-4 is ahead.
+3. **Sub-2 s keeps every message in its window**, and gemma-4's E4B footprint frees GPU headroom on the shared host. The ~0.7 s of extra tail over mistral119b buys back the faithfulness that makes the rewrite trustworthy.
 
-qwen72b remains the quality ceiling if footprint and latency were free; they are not.
+gpt-oss20b and qwen72b score higher on `overall`, but both need a 4–7 s delivery budget that violates the live-radio latency constraint; they remain the quality ceiling if latency were free, which it is not.
 
 ## 8. Threats to Validity
 
