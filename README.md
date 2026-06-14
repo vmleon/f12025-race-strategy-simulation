@@ -14,6 +14,7 @@ graph LR
     Simulator["Simulator<br/><i>FastAPI, port 8081</i>"]
     Portal["Web Portal<br/><i>Angular 21</i>"]
     Client["iOS Client<br/><i>SwiftUI</i>"]
+    LLM["vLLM<br/><i>gemma-4, radio rewrite</i>"]
 
     Game -- "UDP packets<br/>~20 Hz" --> Ingest
     Ingest -- "sector snapshots<br/>events, sessions" --> DB
@@ -23,6 +24,7 @@ graph LR
     DB -- "TxEventQ" --> Simulator
     DB -- "coefficients +<br/>race state" --> Backend
     Backend -- "REST + WebSocket<br/>port 8080" --> Portal
+    Backend -- "HTTP /v1/chat/completions<br/>radio rewrite (template fallback)" --> LLM
     Backend -- "WebSocket" --> Client
 ```
 
@@ -38,7 +40,7 @@ The system operates as five connected pipelines:
 
 **4. Presentation** — The backend broadcasts simulation results, calibration status, and live race state to the portal via WebSocket. The portal provides two views: a live Race dashboard (race table, tyres, weather, damage, penalties, and an inline strategy widget) and a System observability dashboard (data-coverage matrix, calibration confidence per knob, tyre-wear and per-regime degradation curves, predicted-vs-actual finish accuracy, and a pit-loss histogram).
 
-**5. Race Engineer** — The iOS client connects to the backend via WebSocket, receives race engineer messages (strategy advice, warnings, status updates), and speaks them aloud using text-to-speech — acting as a real-time voice assistant for the driver.
+**5. Race Engineer** — Each templated radio message is reworded in natural race-engineer voice by an external **vLLM** server (gemma-4, OpenAI-compatible `/v1/chat/completions`; gated by `engineer.llm.enabled`, with the templated text as fallback on timeout/error). The iOS client connects to the backend via WebSocket, receives the messages (strategy advice, warnings, status updates), and speaks them aloud using text-to-speech — acting as a real-time voice assistant for the driver.
 
 ```mermaid
 graph TD
@@ -73,9 +75,11 @@ graph TD
         WS["WebSocket<br/><i>/ws/race</i>"]
         REST["REST API<br/><i>/api/*</i>"]
         Views["Portal Views<br/><i>Race · System</i>"]
+        LLM["vLLM<br/><i>gemma-4 radio rewrite</i>"]
         iOS["iOS Client<br/><i>WebSocket + TTS</i>"]
         WS --> Views
-        WS --> iOS
+        WS -- "radio text" --> LLM
+        LLM -- "reworded<br/>(template on failure)" --> iOS
         REST --> Views
     end
 

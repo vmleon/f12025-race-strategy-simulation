@@ -127,6 +127,7 @@ sequenceDiagram
     participant Eng as RaceEngineerService
     participant SafeZone as CircuitSafeZoneService
     participant StratOrch as StrategyOrchestrator
+    participant LLM as vLLM (gemma-4)
     participant iOS as iOS Client (SwiftUI)
 
     Note over Eng: Session start
@@ -155,6 +156,8 @@ sequenceDiagram
     Eng->>SafeZone: Is player in safe zone?<br/>(boundaries shifted earlier by<br/>speed × 1.5s for reaction latency)
     SafeZone-->>Eng: Yes (straight / low-demand section)
     Note over Eng: Check per-zone budget:<br/>IMMEDIATE/HIGH bypass budget,<br/>NORMAL capped at 2/zone
+    Eng->>LLM: POST /v1/chat/completions<br/>(reword templated text in voice)
+    LLM-->>Eng: reworded line<br/>(template kept on timeout/error/down)
     Eng->>iOS: WebSocket: raceEngineer<br/>{priority, text, timestamp}
     Note over iOS: AVSpeechSynthesizer<br/>English (GB), rate 0.48<br/>IMMEDIATE interrupts current speech<br/>HIGH/NORMAL queued
 
@@ -162,6 +165,7 @@ sequenceDiagram
     Telemetry->>Backend: TCP {"type":"event", event:"SCAR"}
     Backend->>Eng: onEvent(event)
     Eng->>Eng: Enqueue "Safety car deployed.<br/>Bunch up." (IMMEDIATE)
+    Note over Eng,LLM: also LLM-reworded before delivery<br/>(template on failure)
     Eng->>iOS: WebSocket: raceEngineer<br/>(bypasses safe zone check)
 ```
 
@@ -304,51 +308,52 @@ Things the virtual race engineer must never do:
 
 ## 6. LLM Prompt Context
 
-> **Status (PoC):** radio messages currently ship as their raw templates — the only renderer wired is `PassthroughRadioMessageRenderer`, which returns the template unchanged (no `/v1/chat/completions` call yet; the real `VllmRadioMessageRenderer` is phase 2). A `VllmHealthCheck` circuit breaker polls the vLLM `/health` endpoint and, when the server is unhealthy, skips the render path entirely (no 500 ms wait) and ships the template immediately. The prompt block below is the **planned** system prompt for that future renderer; it does not drive message generation today.
+> **Status (PoC):** the `VllmRadioMessageRenderer` is implemented. When `engineer.llm.enabled=true` it rewrites each templated message through a vLLM `/v1/chat/completions` call — model `google/gemma-4-E4B-it`, selected in [Chapter 12](12-RADIO_LLM_EVALUATION.md) — before delivery; otherwise the `PassthroughRadioMessageRenderer` ships the template unchanged. A `VllmHealthCheck` circuit breaker polls the vLLM `/health` endpoint and, when the server is unhealthy, skips the render path entirely and ships the template immediately. The render call is bounded by `engineer.llm.timeout-ms` (2500 ms); any error or timeout falls back to the original templated text, so a fact-correct line is always delivered.
 
-The following block can be included in an LLM system prompt to guide race engineer message generation:
+The renderer **rewords an already-emitted templated message** — it never originates content. The model receives the live race situation as background context and the finished templated line as the single thing to reword. The two prompts below are the ones actually sent.
+
+**System prompt:**
 
 ```
-You are a Formula 1 race engineer communicating with your driver over team radio.
-
-VOICE:
-- Calm, professional, concise. Never emotional during the race.
-- Sentences are 3–10 words. Maximum 20 words for complex strategy instructions.
-- Directive tone. Give facts and instructions, not suggestions or opinions.
-- Repeat critical values: "Target 33.0. 33.0." / "Box, box."
-- One message at a time. Never combine unrelated topics.
-
-VOCABULARY:
-- "Box, box" = pit this lap. "Stay out" = do not pit.
-- "Copy" / "Understood" = acknowledged.
-- "Affirm" = yes. "Negative" = no.
-- "Delta positive" = stay above Safety Car minimum time.
-- "Push now" = drive at maximum pace.
-- "Strat {n}" = engine/ERS mode setting.
-- "Management" = deliberately saving tyres.
-- Compounds: soft, medium, hard, inter, wet.
-- Use driver surnames only: "Norris", "Verstappen", not first names.
-
-STRUCTURE:
-- Lead with the fact or instruction. Context comes after, if needed.
-- Good: "5 second penalty. We'll serve at the next stop."
-- Bad: "So unfortunately we've been given a penalty of 5 seconds which we think is unfair but we'll deal with it at the next pit stop."
-
-WHAT NOT TO DO:
-- Never speculate ("He might be on a two-stop").
-- Never give information that isn't actionable right now.
-- Never use filler words, hedging, or qualifiers.
-- Never sound panicked, frustrated, or overly excited.
-- Never combine multiple topics in one message.
-- Never refer to yourself or use first person ("I think...").
-- Never give motivational speeches.
-
-PRIORITY CONTEXT:
-When generating messages, assign one of three priority levels:
-- IMMEDIATE: Time-critical (safety car, unserved penalties, position gained, lap countdowns, race finish, track limits). Delivered instantly regardless of track position.
-- HIGH: Time-sensitive (time penalties, critical tyre degradation, car damage, pit exit, car closing, DRS attack). Delivered at next safe zone, no budget limit.
-- NORMAL: Routine information (tyre age, DRS enabled, ERS mode, weather, strategy, retirements). Delivered at safe zone within per-zone budget.
+You are a Formula 1 race engineer speaking to your driver on team radio. Calm,
+professional, concise. One short sentence, 3-10 words. Never address your own
+driver by name. Keep any driver surname that the message contains. Never introduce
+a driver name and never replace a generic reference such as 'leader' or 'car ahead'
+with a name. Never invent facts and never drop facts: keep every position, place,
+gap, lap number and name from the message, and add nothing that is not in it.
 ```
+
+**User prompt** (fields from `RadioRenderContext`; the bracketed lines appear only when present):
+
+```
+CONTEXT (background only — do NOT read this back and do NOT turn it into new facts):
+lap {lap}/{total_laps}, P{position}, {tyre} tyres {tyre_age} laps old, sector {sector}.
+[strategy: {strategies_json}]
+[recently said (vary your wording): {last_n_rendered}]
+
+Rewrite ONLY the message below as one short, natural radio call. Keep every fact it
+contains and add nothing that is not in it. Output just the radio line, nothing else.
+MESSAGE: "{templated_text}"
+```
+
+The `recently said` line carries the last _N_ delivered messages — a per-session rolling memory (`engineer.llm.memory-size`, default 5) — so the engineer varies phrasing instead of repeating itself.
+
+### 6.1 Why the prompt is tightened, not the full voice block
+
+An earlier version of the renderer used the rich VOICE / VOCABULARY / STRUCTURE block that the rest of this chapter describes. Tested against the live gemma-4 endpoint, it produced two recurring faithfulness defects:
+
+- **It addressed the driver by name.** The "use driver surnames only" rule was applied to the _driver_, so the model invented a name to call them ("Box this lap, Hamilton") even when no name appeared in the message.
+- **It swapped generic references for invented names** ("gap to leader" → "gap to Verstappen") and **read the situation context back** as spoken content ("…Lap fifteen. Silverstone. Sector one.").
+
+The implemented prompt is a distillation that keeps the calm, terse voice but adds the explicit guards that eliminated those defects: never name the driver, keep names that are present but never introduce new ones, never convert a generic reference to a name, and treat the situation strictly as background. The **circuit name is deliberately omitted** from the context — it is fixed and known to both driver and engineer, so it adds no phrasing value and only invites situational read-back. Sections §1–§5 of this chapter remain the authoritative description of the intended voice; this prompt is the operational subset that a small instruct model follows reliably. Faithfulness is the binding constraint (see [Chapter 12, §7](12-RADIO_LLM_EVALUATION.md)), which is why every added rule defends against inventing or dropping facts.
+
+### 6.2 Message priority
+
+Priority is **not** assigned by the model. The detection and delivery layer tags each message IMMEDIATE / HIGH / NORMAL before it reaches the renderer; the renderer rewords only the text, and the priority is preserved end to end. For reference, the levels are:
+
+- **IMMEDIATE:** Time-critical (safety car, unserved penalties, position gained, lap countdowns, race finish, track limits). Delivered instantly regardless of track position.
+- **HIGH:** Time-sensitive (time penalties, critical tyre degradation, car damage, pit exit, car closing, DRS attack). Delivered at next safe zone, no budget limit.
+- **NORMAL:** Routine information (tyre age, DRS enabled, ERS mode, weather, strategy, retirements). Delivered at safe zone within per-zone budget.
 
 ---
 

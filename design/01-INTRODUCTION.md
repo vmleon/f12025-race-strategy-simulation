@@ -12,7 +12,7 @@ This is a proof-of-concept (PoC) built as a final-year thesis project (TFG) for 
 
 ## System at a Glance
 
-Six components work together:
+Six components work together, plus two external dependencies — the Oracle database and a vLLM inference server:
 
 | Component       | Tech              | Role                                                                                                                                                          |
 | --------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -23,6 +23,7 @@ Six components work together:
 | **Simulator**   | Python / FastAPI  | Monte Carlo engine: 1K-10K iterations at per-sector granularity, produces position probability distributions                                                  |
 | **Portal**      | Angular 21        | Live Race dashboard, plus a System observability dashboard (data-coverage, calibration confidence, predicted-vs-actual accuracy, diagnostics)                 |
 | **iOS Client**  | SwiftUI           | Receives race engineer messages via WebSocket, speaks them aloud with priority-based TTS                                                                      |
+| **vLLM server** | vLLM (OpenAI API) | External inference host; rewrites each race-engineer message into natural radio voice (gemma-4) via `/v1/chat/completions`, with template fallback            |
 
 ```mermaid
 graph LR
@@ -35,6 +36,7 @@ graph LR
     DB -- JDBC --> Calibration["Calibration<br/>(batch, post-session)"]
     Calibration -- JDBC --> DB
     Backend -- WebSocket --> Portal
+    Backend -- "HTTP (radio rewrite,<br/>template fallback)" --> vLLM["vLLM (gemma-4)"]
     Backend -- WebSocket --> iOS["iOS Client"]
 ```
 

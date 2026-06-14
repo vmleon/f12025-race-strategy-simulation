@@ -9,20 +9,22 @@ table, WebSocket channels, REST API, shared DB, interface versioning, and the TC
 
 ## Actors and transports
 
-| Actor            | Tech             | Role in the flows                                                                   |
-| ---------------- | ---------------- | ----------------------------------------------------------------------------------- |
-| **F1 2025 Game** | —                | Emits UDP telemetry packets at 20 Hz                                                |
-| **Telemetry**    | Plain Java       | Parses UDP, persists to Oracle, pushes live state to Backend over TCP               |
-| **Oracle DB**    | Oracle 26ai      | Shared store + TxEventQ message broker for all async work                           |
-| **Backend**      | Spring Boot      | REST/WebSocket API; orchestrates calibration, simulation, strategy; generates radio |
-| **Calibration**  | Python service   | Fits model coefficients from historical laps (consumes `CALIBRATION_REQUEST`)       |
-| **Simulator**    | Python / FastAPI | Runs Monte Carlo race simulations + strategy evaluation (consumes `*_REQUEST`)      |
-| **Portal**       | Angular          | Live race dashboard + strategy leaderboard (WebSocket `/ws/race`)                   |
-| **iOS Client**   | SwiftUI          | Speaks race engineer messages via TTS (WebSocket `/ws/race-engineer`)               |
+| Actor            | Tech              | Role in the flows                                                                                            |
+| ---------------- | ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| **F1 2025 Game** | —                 | Emits UDP telemetry packets at 20 Hz                                                                         |
+| **Telemetry**    | Plain Java        | Parses UDP, persists to Oracle, pushes live state to Backend over TCP                                        |
+| **Oracle DB**    | Oracle 26ai       | Shared store + TxEventQ message broker for all async work                                                    |
+| **Backend**      | Spring Boot       | REST/WebSocket API; orchestrates calibration, simulation, strategy; generates radio                          |
+| **Calibration**  | Python service    | Fits model coefficients from historical laps (consumes `CALIBRATION_REQUEST`)                                |
+| **Simulator**    | Python / FastAPI  | Runs Monte Carlo race simulations + strategy evaluation (consumes `*_REQUEST`)                               |
+| **Portal**       | Angular           | Live race dashboard + strategy leaderboard (WebSocket `/ws/race`)                                            |
+| **iOS Client**   | SwiftUI           | Speaks race engineer messages via TTS (WebSocket `/ws/race-engineer`)                                        |
+| **vLLM server**  | vLLM (OpenAI API) | Rewrites race-engineer radio in natural voice; Backend calls `/v1/chat/completions` (gemma-4), external host |
 
 **Transports:** UDP (game → telemetry, 20 Hz), JDBC + Oracle UCP ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-ucp))
 (telemetry/backend ↔ Oracle), TCP newline-delimited JSON (telemetry → backend, port 9090, ~1 Hz),
-WebSocket (backend → portal/iOS), Oracle **TxEventQ** ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-txeventq))
+WebSocket (backend → portal/iOS), HTTP/JSON OpenAI chat-completions (backend → vLLM, per radio message),
+Oracle **TxEventQ** ([Oracle Corporation, 2025](10-REFERENCES.md#oracle-txeventq))
 queues (async work between backend and the Python workers).
 
 **Queues (Oracle TxEventQ, `PDBADMIN.*`):** `CALIBRATION_REQUEST`, `SIMULATION_REQUEST`,
@@ -43,6 +45,7 @@ graph LR
     Tele -- "TCP ~1Hz\nlive state + events" --> BE["Backend"]
 
     BE -- "WebSocket /ws/race" --> Portal["Portal"]
+    BE -- "HTTP /v1/chat/completions\n(radio rewrite, fallback to template)" --> VLLM["vLLM (gemma-4)"]
     BE -- "WebSocket /ws/race-engineer" --> iOS["iOS Client"]
 
     BE -- "CALIBRATION_REQUEST\n(on session end)" --> DB
@@ -150,11 +153,14 @@ sequenceDiagram
     participant BE as Backend
     participant Eng as RaceEngineerService
     participant Portal as Portal
+    participant LLM as vLLM (gemma-4)
     participant iOS as iOS Client
 
     Tele->>BE: TCP {"type":"event", event:"SCAR"}
     BE->>Portal: WebSocket (type: "event")
     BE->>Eng: onEvent("SCAR")
+    Eng->>LLM: POST /v1/chat/completions (reword)
+    LLM-->>Eng: reworded (template on timeout/error/down)
     Eng->>iOS: WebSocket raceEngineer<br/>"Safety car deployed. Bunch up." (IMMEDIATE)
     Note over iOS: IMMEDIATE bypasses safe-zone gate<br/>and interrupts current speech
 ```
@@ -307,6 +313,7 @@ sequenceDiagram
     Orch->>Portal: WebSocket strategyEvaluation (stale=false, ranked)
     Cons->>Eng: onStrategyEvaluation(lap, evaluation)
     Note over Eng: PitWindowMessagesDetector.setRecommendation()
+    Note over Eng,iOS: text LLM-reworded (vLLM, gemma-4) before delivery —<br/>template on timeout/error/down (see Flow 7)
     Eng->>iOS: WebSocket raceEngineer<br/>"Box window opens in N laps. Medium ready."
 ```
 
@@ -322,8 +329,13 @@ safe-zone check before being spoken.
 - **Queues:** none for delivery — an **in-memory priority queue** in the backend, gated by
   `CircuitSafeZoneService`, TTL, and per-zone budget, then WebSocket.
 - **Path:** Telemetry → **TCP state** → Backend `RaceEngineerService` → detectors
-  (`CarBehindDetector` here) → priority queue → safe-zone + TTL + budget gate → WebSocket
-  `/ws/race-engineer` → iOS ([AVSpeechSynthesizer](10-REFERENCES.md#apple-tts) TTS).
+  (`CarBehindDetector` here) → priority queue → safe-zone + TTL + budget gate → **LLM rewrite**
+  (`VllmRadioMessageRenderer` → vLLM `/v1/chat/completions`, gemma-4; off the telemetry thread,
+  `timeout-ms` bounded, falls back to the templated text on timeout/error or when `VllmHealthCheck`
+  reports the server down) → WebSocket `/ws/race-engineer` → iOS
+  ([AVSpeechSynthesizer](10-REFERENCES.md#apple-tts) TTS). The renderer is gated by
+  `engineer.llm.enabled`; when off, the templated text is delivered unchanged. Full prompt and model
+  rationale: `08-RACE_ENGINEER_VOICE.md` §6 and `12-RADIO_LLM_EVALUATION.md`.
 
 ```mermaid
 sequenceDiagram
@@ -331,6 +343,7 @@ sequenceDiagram
     participant Eng as RaceEngineerService
     participant Det as Detectors (~30)
     participant SZ as CircuitSafeZoneService
+    participant LLM as vLLM (gemma-4)
     participant iOS as iOS Client
 
     Tele->>Eng: TCP state update (~1Hz)
@@ -341,6 +354,8 @@ sequenceDiagram
     Eng->>SZ: In safe zone? (boundary shifted<br/>earlier by speed × 1.5s)
     SZ-->>Eng: Yes (straight / low-demand)
     Note over Eng: HIGH bypasses NORMAL budget —<br/>NORMAL capped 2/zone
+    Eng->>LLM: POST /v1/chat/completions (reword in voice)
+    LLM-->>Eng: rendered line<br/>(timeout/error/down → keep template)
     Eng->>iOS: WebSocket raceEngineer {priority, text, timestamp}
     Note over iOS: TTS — English (GB), rate 0.48
 ```
@@ -368,20 +383,21 @@ laps_ (HIGH), _DRS range ahead < 1.0 s_ (HIGH), _penalty received_ (HIGH/IMMEDIA
 
 ## Protocol summary
 
-| From      | To          | Protocol   | Direction                | Data Format          | Frequency      | Queue Name              |
-| --------- | ----------- | ---------- | ------------------------ | -------------------- | -------------- | ----------------------- |
-| F1 Game   | Telemetry   | UDP        | Game → Telemetry         | Binary (game spec)   | 20Hz           | —                       |
-| Telemetry | Oracle DB   | JDBC       | Telemetry → DB           | SQL (prepared stmts) | ~60 rows/lap   | —                       |
-| Telemetry | Backend     | TCP socket | Telemetry → Backend      | JSON-lines           | ~1Hz           | —                       |
-| Backend   | Oracle DB   | JDBC       | Backend ↔ DB             | SQL                  | On demand      | —                       |
-| Backend   | Portal      | WebSocket  | Backend → Portal         | JSON                 | ~1Hz (live)    | — (`/ws/race`)          |
-| Portal    | Backend     | HTTP REST  | Portal → Backend         | JSON                 | On demand      | —                       |
-| Backend   | Simulator   | TxEventQ   | Backend → DB → Simulator | JSON (queue)         | On trigger     | SIMULATION_REQUEST      |
-| Simulator | Backend     | TxEventQ   | Simulator → DB → Backend | JSON (queue)         | On completion  | SIMULATION_RESULT       |
-| Backend   | Simulator   | TxEventQ   | Backend → DB → Simulator | JSON (queue)         | On trigger     | STRATEGY_REQUEST        |
-| Simulator | Backend     | TxEventQ   | Simulator → DB → Backend | JSON (queue)         | On completion  | STRATEGY_RESULT         |
-| Backend   | Calibration | TxEventQ   | Backend → DB → Consumer  | JSON (queue)         | On session end | CALIBRATION_REQUEST     |
-| Backend   | iOS Client  | WebSocket  | Backend → iOS            | JSON                 | Event-driven   | — (`/ws/race-engineer`) |
+| From      | To          | Protocol   | Direction                | Data Format          | Frequency      | Queue Name                 |
+| --------- | ----------- | ---------- | ------------------------ | -------------------- | -------------- | -------------------------- |
+| F1 Game   | Telemetry   | UDP        | Game → Telemetry         | Binary (game spec)   | 20Hz           | —                          |
+| Telemetry | Oracle DB   | JDBC       | Telemetry → DB           | SQL (prepared stmts) | ~60 rows/lap   | —                          |
+| Telemetry | Backend     | TCP socket | Telemetry → Backend      | JSON-lines           | ~1Hz           | —                          |
+| Backend   | Oracle DB   | JDBC       | Backend ↔ DB             | SQL                  | On demand      | —                          |
+| Backend   | Portal      | WebSocket  | Backend → Portal         | JSON                 | ~1Hz (live)    | — (`/ws/race`)             |
+| Portal    | Backend     | HTTP REST  | Portal → Backend         | JSON                 | On demand      | —                          |
+| Backend   | Simulator   | TxEventQ   | Backend → DB → Simulator | JSON (queue)         | On trigger     | SIMULATION_REQUEST         |
+| Simulator | Backend     | TxEventQ   | Simulator → DB → Backend | JSON (queue)         | On completion  | SIMULATION_RESULT          |
+| Backend   | Simulator   | TxEventQ   | Backend → DB → Simulator | JSON (queue)         | On trigger     | STRATEGY_REQUEST           |
+| Simulator | Backend     | TxEventQ   | Simulator → DB → Backend | JSON (queue)         | On completion  | STRATEGY_RESULT            |
+| Backend   | Calibration | TxEventQ   | Backend → DB → Consumer  | JSON (queue)         | On session end | CALIBRATION_REQUEST        |
+| Backend   | iOS Client  | WebSocket  | Backend → iOS            | JSON                 | Event-driven   | — (`/ws/race-engineer`)    |
+| Backend   | vLLM server | HTTP REST  | Backend → vLLM           | JSON (OpenAI chat)   | Per radio msg  | — (`/v1/chat/completions`) |
 
 ## WebSocket channels & message types
 
