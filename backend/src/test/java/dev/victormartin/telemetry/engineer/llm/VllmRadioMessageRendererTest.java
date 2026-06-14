@@ -76,8 +76,8 @@ class VllmRadioMessageRendererTest {
     void includesSituationAndOriginalInPrompt() {
         respondWith(200, "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}");
         renderer(5).render(ctx("Box this lap"));
-        assertTrue(lastRequestBody.contains("Silverstone"));
-        assertTrue(lastRequestBody.contains("Box this lap"));
+        assertTrue(lastRequestBody.contains("P5"));          // context position (circuit is intentionally omitted)
+        assertTrue(lastRequestBody.contains("Box this lap")); // the message to reword
     }
 
     @Test

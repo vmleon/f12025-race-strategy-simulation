@@ -36,41 +36,19 @@ public class VllmRadioMessageRenderer implements RadioMessageRenderer {
 
     private static final Logger log = LoggerFactory.getLogger(VllmRadioMessageRenderer.class);
 
+    // Tightened against the live gemma-4 endpoint (see design/08 §6). The earlier
+    // verbatim voice block caused two faithfulness defects: the model addressed the
+    // driver by name and swapped generic references ("leader") for invented surnames.
+    // These rules fix both while keeping the calm, concise voice.
     private static final String SYSTEM_PROMPT = """
-            You are a Formula 1 race engineer communicating with your driver over team radio.
-
-            VOICE:
-            - Calm, professional, concise. Never emotional during the race.
-            - Sentences are 3–10 words. Maximum 20 words for complex strategy instructions.
-            - Directive tone. Give facts and instructions, not suggestions or opinions.
-            - Repeat critical values: "Target 33.0. 33.0." / "Box, box."
-            - One message at a time. Never combine unrelated topics.
-
-            VOCABULARY:
-            - "Box, box" = pit this lap. "Stay out" = do not pit.
-            - "Copy" / "Understood" = acknowledged.
-            - "Affirm" = yes. "Negative" = no.
-            - "Delta positive" = stay above Safety Car minimum time.
-            - "Push now" = drive at maximum pace.
-            - "Strat {n}" = engine/ERS mode setting.
-            - "Management" = deliberately saving tyres.
-            - Compounds: soft, medium, hard, inter, wet.
-            - Use driver surnames only: "Norris", "Verstappen", not first names.
-
-            STRUCTURE:
-            - Lead with the fact or instruction. Context comes after, if needed.
-            - Good: "5 second penalty. We'll serve at the next stop."
-            - Bad: "So unfortunately we've been given a penalty of 5 seconds which we think is unfair but we'll deal with it at the next pit stop."
-
-            WHAT NOT TO DO:
-            - Never speculate ("He might be on a two-stop").
-            - Never give information that isn't actionable right now.
-            - Never use filler words, hedging, or qualifiers.
-            - Never sound panicked, frustrated, or overly excited.
-            - Never combine multiple topics in one message.
-            - Never refer to yourself or use first person ("I think...").
-            - Never give motivational speeches.
-            """;
+            You are a Formula 1 race engineer speaking to your driver on team radio. \
+            Calm, professional, concise. One short sentence, 3-10 words. \
+            Never address your own driver by name. \
+            Keep any driver surname that the message contains. \
+            Never introduce a driver name and never replace a generic reference such \
+            as 'leader' or 'car ahead' with a name. \
+            Never invent facts and never drop facts: keep every position, place, gap, \
+            lap number and name from the message, and add nothing that is not in it.""";
 
     private final String endpoint;
     private final String model;
@@ -152,24 +130,30 @@ public class VllmRadioMessageRenderer implements RadioMessageRenderer {
 
     private String buildUserPrompt(RadioRenderContext ctx) {
         StringBuilder sb = new StringBuilder();
-        sb.append("Situation: lap ").append(ctx.currentLap()).append('/').append(ctx.totalLaps())
-          .append(", P").append(ctx.playerPos()).append(" at ").append(ctx.circuitName())
+        // Circuit name is intentionally omitted: it is fixed and common knowledge to
+        // both driver and engineer, adds no phrasing value, and only risks the model
+        // reading it back as situational chatter.
+        sb.append("CONTEXT (background only — do NOT read this back and do NOT turn it into new facts):\n");
+        sb.append("lap ").append(ctx.currentLap()).append('/').append(ctx.totalLaps())
+          .append(", P").append(ctx.playerPos())
           .append(", ").append(ctx.tyre()).append(" tyres ").append(ctx.tyreAge())
           .append(" laps old, sector ").append(ctx.sector()).append(".\n");
         if (ctx.strategiesJson() != null && !ctx.strategiesJson().isBlank()) {
-            sb.append("Strategy: ").append(ctx.strategiesJson()).append('\n');
+            sb.append("strategy: ").append(ctx.strategiesJson()).append('\n');
         }
         Deque<String> buf = memory.get(ctx.sessionUid());
         if (buf != null) {
             synchronized (buf) {
                 if (!buf.isEmpty()) {
-                    sb.append("Recent radio (do not repeat phrasing): ")
+                    sb.append("recently said (vary your wording): ")
                       .append(String.join(" / ", buf)).append('\n');
                 }
             }
         }
-        sb.append("Rewrite this for radio, natural and brief, preserve every fact, invent nothing: \"")
-          .append(ctx.text()).append('"');
+        sb.append("\nRewrite ONLY the message below as one short, natural radio call. ")
+          .append("Keep every fact it contains and add nothing that is not in it. ")
+          .append("Output just the radio line, nothing else.\n")
+          .append("MESSAGE: \"").append(ctx.text()).append('"');
         return sb.toString();
     }
 }
