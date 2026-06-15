@@ -1,0 +1,22 @@
+databaseChangeLog:
+  - changeSet:
+      id: 017-01-tyre-age-pace-offsets
+      author: victormartin
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE tyre_age_pace_offsets (
+                  track_id          NUMBER(3)    NOT NULL,
+                  compound          NUMBER(2)    NOT NULL,
+                  regime            VARCHAR2(8)  NOT NULL,
+                  sector_number     NUMBER(1)    NOT NULL,
+                  tyre_age_laps     NUMBER(3)    NOT NULL,
+                  offset_ms         NUMBER(8)    NOT NULL,
+                  stddev_ms         NUMBER(8),
+                  sample_count      NUMBER(6)    NOT NULL,
+                  is_extrapolation  NUMBER(1)    DEFAULT 0 NOT NULL,
+                  last_fitted_at    TIMESTAMP    NOT NULL,
+                  CONSTRAINT pk_tyre_age_pace PRIMARY KEY (track_id, compound, regime, sector_number, tyre_age_laps),
+                  CONSTRAINT chk_tyre_age_regime CHECK (regime IN ('PLAYER','AI')),
+                  CONSTRAINT chk_tyre_age_compound CHECK (compound IN (7,8,16,17,18))
+              )

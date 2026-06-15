@@ -47,3 +47,6 @@ databaseChangeLog:
   - include:
       file: 016-driving-events.yaml
       relativeToChangelogFile: true
+  - include:
+      file: 017-tyre-age-pace-offsets.yaml
+      relativeToChangelogFile: true
