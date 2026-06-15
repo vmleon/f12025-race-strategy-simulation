@@ -20,10 +20,22 @@ def test_interpolate_gaps_fills_interior_ages_linearly():
 
 def test_tail_slope_is_nonnegative_and_from_late_bins():
     ages = {1: 80.0, 2: 0.0, 3: -10.0, 4: 0.0, 5: 20.0}
-    slope = _tail_slope(ages, warmup_end=3, prior=20.0, max_slope=300.0)
+    slope, clamped, r2 = _tail_slope(ages, warmup_end=3, prior=20.0, max_slope=300.0)
     assert slope > 0.0
 
 
 def test_tail_slope_falls_back_to_prior_when_too_few_late_bins():
     ages = {1: 80.0, 2: 0.0}
-    assert _tail_slope(ages, warmup_end=3, prior=20.0, max_slope=300.0) == 20.0
+    slope, clamped, r2 = _tail_slope(ages, warmup_end=3, prior=20.0, max_slope=300.0)
+    assert slope == 20.0
+    assert clamped == 1
+
+
+def test_interpolate_gaps_returns_empty_when_no_interior_gaps():
+    assert _interpolate_gaps({1: 50.0, 2: 40.0}) == {}
+
+
+def test_bin_age_residuals_drops_none_age():
+    bins = _bin_age_residuals([(18, 1, None, 12.0), (18, 1, 2, -5.0)])
+    assert (18, 1, None) not in bins
+    assert bins[(18, 1, 2)] == [-5.0]

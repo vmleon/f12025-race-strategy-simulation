@@ -294,21 +294,25 @@ def _interpolate_gaps(ages: dict[int, float]) -> dict[int, float]:
     return filled
 
 
-def _tail_slope(ages: dict[int, float], warmup_end: int, prior: float, max_slope: float) -> float:
-    """Deg-phase slope (ms/lap) from age >= warmup_end bins, clamped to [0, max_slope].
-    Falls back to the cold-start prior when there are < 2 late bins."""
+def _tail_slope(ages: dict[int, float], warmup_end: int, prior: float,
+                max_slope: float) -> tuple[float, int, float | None]:
+    """Deg-phase slope (ms/lap) from age >= warmup_end bins, clamped to
+    [0, max_slope]. Returns (slope, clamped, r_squared). Falls back to the
+    cold-start prior (clamped=1) when there are < 2 late bins."""
     late = sorted(a for a in ages if a >= warmup_end)
     if len(late) < 2:
-        return prior
+        return prior, 1, None
     xs = np.array(late, dtype=float)
     ys = np.array([ages[a] for a in late], dtype=float)
-    slope = float(np.polyfit(xs, ys, 1)[0])
-    return min(max(slope, 0.0), max_slope)
+    reg = linear_regression(xs, ys)
+    slope = min(max(reg.slope, 0.0), max_slope)
+    clamped = 0 if slope == reg.slope else 1
+    return slope, clamped, reg.r_squared
 
 
 def _fit_tyre_age_profile(
-    conn, data: list[tuple], track_id: int, regime: str,
-    baselines: dict[tuple, float], now,
+    conn: oracledb.Connection, data: list[tuple], track_id: int, regime: str,
+    baselines: dict[tuple, float], now: datetime,
 ) -> None:
     """Per-(compound, sector, age) pace offset vs the sector_pace_baseline. Keeps
     ALL stint laps (warm-up included); only age 0 (out-lap) is excluded. Writes the
@@ -333,7 +337,7 @@ def _fit_tyre_age_profile(
     bins = _bin_age_residuals(rows)
     fitted: dict[tuple, dict[int, float]] = defaultdict(dict)   # (comp, sector) -> {age: offset}
     for (comp, sector, age), resid in bins.items():
-        filt = _mad_filter([int(v) for v in resid])
+        filt = _mad_filter([round(v) for v in resid])
         if len(filt) < MIN_AGE_BIN_SAMPLES:
             continue
         arr = np.array(filt, dtype=float)
@@ -344,11 +348,14 @@ def _fit_tyre_age_profile(
     for (comp, sector), ages in fitted.items():
         for age, off in _interpolate_gaps(ages).items():
             db.upsert_tyre_age_offset(conn, track_id, comp, regime, sector, age, off, None, 0, 1, now)
-        slope = _tail_slope(ages, WARMUP_END_AGE, _PRIOR.get(COMPOUND_KNOB_NAMES[comp], 30.0),
-                            MAX_TYRE_DEG_MS_PER_LAP)
+        slope, clamped, r2 = _tail_slope(
+            ages, WARMUP_END_AGE, _PRIOR.get(COMPOUND_KNOB_NAMES[comp], 30.0),
+            MAX_TYRE_DEG_MS_PER_LAP)
         db.insert_calibration_coefficient(
             conn, track_id, COMPOUND_KNOB_NAMES[comp], regime, sector, "tail_slope",
-            slope, 0, now, sample_count=sum(1 for a in ages if a >= WARMUP_END_AGE))
+            slope, 0, now,
+            sample_count=sum(1 for a in ages if a >= WARMUP_END_AGE),  # bins, not laps
+            r_squared=r2, clamped=clamped)
 
 
 def _mad_filter(times: list[int]) -> list[int]:
