@@ -8,7 +8,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 
 from simulator.coefficients import Coefficients
-from simulator.db import close_pool, get_pool, load_coefficients_for_track
+from simulator.db import close_pool, get_pool, load_coefficients_for_track, load_tyre_curves_for_track
+from simulator.tyre_curve import TyreCurves
 from simulator.engine import MonteCarloEngine
 from simulator.candidate_generator import generate_candidates
 from simulator.models import (
@@ -72,6 +73,15 @@ def _load_coefficients(track_id: int) -> Coefficients:
     return Coefficients.defaults()
 
 
+def _load_tyre_curves(track_id: int) -> TyreCurves:
+    if _use_db:
+        try:
+            return load_tyre_curves_for_track(track_id)
+        except Exception:
+            logger.warning("DB unavailable, tyre curves will be empty", exc_info=True)
+    return TyreCurves()
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -80,7 +90,8 @@ def health() -> dict[str, str]:
 @app.post("/simulate", response_model_by_alias=True)
 def simulate(snapshot: RaceSnapshot) -> SimulationResult:
     coefficients = _load_coefficients(snapshot.track_id)
-    engine = MonteCarloEngine(coefficients)
+    curve = _load_tyre_curves(snapshot.track_id)
+    engine = MonteCarloEngine(coefficients, curve=curve)
     return engine.simulate(snapshot)
 
 
@@ -89,7 +100,8 @@ def evaluate_strategies(request: StrategyEvaluationRequest) -> StrategyEvaluatio
     if not request.candidates:
         raise HTTPException(status_code=400, detail="No candidates provided")
     coefficients = _load_coefficients(request.snapshot.track_id)
-    engine = MonteCarloEngine(coefficients)
+    curve = _load_tyre_curves(request.snapshot.track_id)
+    engine = MonteCarloEngine(coefficients, curve=curve)
     evaluator = StrategyEvaluator(engine)
     return evaluator.evaluate(
         request.snapshot, request.player_car_index, request.candidates
@@ -106,7 +118,8 @@ def auto_evaluate_strategies(request: AutoStrategyRequest) -> StrategyEvaluation
         return StrategyEvaluation(
             player_car_index=request.player_car_index, strategies=[]
         )
-    engine = MonteCarloEngine(coefficients)
+    curve = _load_tyre_curves(request.snapshot.track_id)
+    engine = MonteCarloEngine(coefficients, curve=curve)
     evaluator = StrategyEvaluator(engine)
     return evaluator.evaluate(
         request.snapshot, request.player_car_index, candidates

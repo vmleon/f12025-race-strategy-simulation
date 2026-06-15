@@ -7,6 +7,7 @@ import oracledb
 
 from simulator.coefficients import Coefficients
 from simulator.strategy import TyreSet
+from simulator.tyre_curve import TyreCurves
 
 _pool: oracledb.ConnectionPool | None = None
 
@@ -102,6 +103,22 @@ def load_coefficients_for_track(track_id: int) -> Coefficients:
         coefficients.put("pit_stop_time_loss", "PLAYER", -1, pit_loss_value["AI"])
 
     return coefficients
+
+
+_SELECT_TYRE_CURVES = """
+    SELECT compound, regime, sector_number, tyre_age_laps, offset_ms
+    FROM tyre_age_pace_offsets WHERE track_id = :1
+"""
+
+
+def load_tyre_curves_for_track(track_id: int) -> TyreCurves:
+    curves = TyreCurves()
+    pool = get_pool()
+    with pool.acquire() as conn, conn.cursor() as cur:
+        cur.execute(_SELECT_TYRE_CURVES, [track_id])
+        for compound, regime, sector, age, offset_ms in cur:
+            curves.put(int(compound), regime, int(sector), int(age), float(offset_ms))
+    return curves
 
 
 def load_available_tyre_sets(session_uid: int, car_index: int) -> list[TyreSet]:
