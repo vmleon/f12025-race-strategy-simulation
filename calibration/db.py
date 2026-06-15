@@ -284,6 +284,56 @@ def get_calibration_data(conn: oracledb.Connection, track_id: int, regime: str) 
         return cur.fetchall()
 
 
+# ── tyre-age pace offsets ────────────────────────────────────────────
+
+_SELECT_SECTOR_BASELINES = """
+    SELECT sector_number, compound, regime, fuel_bucket_kg, weather,
+           track_temp_bucket_c, mean_sector_ms
+    FROM sector_pace_baselines WHERE track_id = :1
+"""
+
+
+def get_sector_baselines(conn: oracledb.Connection, track_id: int) -> dict[tuple, float]:
+    """{(sector, compound, regime, fuel_bucket_kg, weather, temp_bucket_c): mean_sector_ms}."""
+    with conn.cursor() as cur:
+        cur.execute(_SELECT_SECTOR_BASELINES, [track_id])
+        return {
+            (row[0], row[1], row[2], row[3], row[4], row[5]): float(row[6])
+            for row in cur
+        }
+
+
+_MERGE_TYRE_AGE_OFFSET = """
+    MERGE INTO tyre_age_pace_offsets t
+    USING (SELECT :track_id track_id, :compound compound, :regime regime,
+                  :sector_number sector_number, :tyre_age_laps tyre_age_laps FROM dual) s
+    ON (t.track_id=s.track_id AND t.compound=s.compound AND t.regime=s.regime
+        AND t.sector_number=s.sector_number AND t.tyre_age_laps=s.tyre_age_laps)
+    WHEN MATCHED THEN UPDATE SET offset_ms=:offset_ms, stddev_ms=:stddev_ms,
+        sample_count=:sample_count, is_extrapolation=:is_extrapolation, last_fitted_at=:last_fitted_at
+    WHEN NOT MATCHED THEN INSERT
+        (track_id, compound, regime, sector_number, tyre_age_laps, offset_ms,
+         stddev_ms, sample_count, is_extrapolation, last_fitted_at)
+        VALUES (:track_id, :compound, :regime, :sector_number, :tyre_age_laps,
+                :offset_ms, :stddev_ms, :sample_count, :is_extrapolation, :last_fitted_at)
+"""
+
+
+def upsert_tyre_age_offset(
+    conn, track_id, compound, regime, sector_number, tyre_age_laps,
+    offset_ms, stddev_ms, sample_count, is_extrapolation, fitted_at,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(_MERGE_TYRE_AGE_OFFSET, {
+            "track_id": track_id, "compound": compound, "regime": regime,
+            "sector_number": sector_number, "tyre_age_laps": tyre_age_laps,
+            "offset_ms": int(round(offset_ms)),
+            "stddev_ms": None if stddev_ms is None else int(round(stddev_ms)),
+            "sample_count": sample_count, "is_extrapolation": is_extrapolation,
+            "last_fitted_at": fitted_at,
+        })
+
+
 # ── coefficient insert ───────────────────────────────────────────────
 
 _INSERT_COEFFICIENT = """
