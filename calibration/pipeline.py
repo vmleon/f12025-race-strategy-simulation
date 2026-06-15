@@ -54,23 +54,23 @@ def run(conn: oracledb.Connection, track_id: int) -> None:
     conn.commit()
     print(f"Outlier detection: {len(outliers)} flagged out of {len(entries)} sectors")
 
-    # Step 2: fit each regime
+    # Step 2: pace baselines first (the age-profile fit subtracts them)
+    _fit_sector_baselines(conn, track_id)
+    baselines = db.get_sector_baselines(conn, track_id)
+
+    # Step 3: fit each regime
     for regime in ["PLAYER", "AI"]:
         data = db.get_calibration_data(conn, track_id, regime)
         if not data:
             print(f"No data for regime {regime}, skipping")
             continue
-
         now = datetime.now()
         print(f"Regime {regime}: {len(data)} data points")
-
-        _fit_tyre_degradation(conn, data, track_id, regime, now)
+        _fit_tyre_age_profile(conn, data, track_id, regime, baselines, now)
         _fit_tyre_wear_rate(conn, data, track_id, regime, now)
         _fit_fuel_effect(conn, data, track_id, regime, now)
         _fit_pit_stop_duration(conn, track_id, regime, now)
-
-    # Pace baselines aggregate across regimes inside the function — single call.
-    _fit_sector_baselines(conn, track_id)
+    conn.commit()
 
 
 # ── tyre degradation ─────────────────────────────────────────────────
@@ -242,6 +242,8 @@ MIN_SECTOR_BASELINE_SAMPLES = 3   # sectors give ~3× the data; gate kept low fo
 FUEL_BUCKET_KG = 20      # round to nearest 20 kg
 TEMP_BUCKET_C = 10       # round to nearest 10 °C
 MAD_OUTLIER_FACTOR = 2.5
+MIN_AGE_BIN_SAMPLES = 5
+WARMUP_END_AGE = 3   # tail deg slope is fitted from this stint age onward
 
 # Visual compound codes: 16=soft, 17=medium, 18=hard, 7=inter, 8=wet.
 # Matches CHK_SECTOR_BASELINE_COMPOUND; excludes 0 garbage and out-of-range codes.
@@ -306,6 +308,91 @@ def _fit_sector_baselines(conn: oracledb.Connection, track_id: int) -> None:
     # bad row) rolls back the whole fit instead of leaving a half-finished one.
     conn.commit()
 
+
+
+def _bin_age_residuals(rows: list[tuple]) -> dict[tuple, list[float]]:
+    """Group (compound, sector, age, residual_ms) rows by (compound, sector, age),
+    dropping age 0 (out-lap, owned by the pit-loss model)."""
+    bins: dict[tuple, list[float]] = defaultdict(list)
+    for compound, sector, age, residual in rows:
+        if age is None or age < 1:
+            continue
+        bins[(compound, sector, age)].append(residual)
+    return bins
+
+
+def _interpolate_gaps(ages: dict[int, float]) -> dict[int, float]:
+    """Linearly fill interior missing ages between min and max. Returns only the
+    newly interpolated ages (callers persist them with is_extrapolation=1)."""
+    if len(ages) < 2:
+        return {}
+    lo, hi = min(ages), max(ages)
+    filled: dict[int, float] = {}
+    for a in range(lo + 1, hi):
+        if a in ages:
+            continue
+        below = max(k for k in ages if k < a)
+        above = min(k for k in ages if k > a)
+        t = (a - below) / (above - below)
+        filled[a] = ages[below] + t * (ages[above] - ages[below])
+    return filled
+
+
+def _tail_slope(ages: dict[int, float], warmup_end: int, prior: float, max_slope: float) -> float:
+    """Deg-phase slope (ms/lap) from age >= warmup_end bins, clamped to [0, max_slope].
+    Falls back to the cold-start prior when there are < 2 late bins."""
+    late = sorted(a for a in ages if a >= warmup_end)
+    if len(late) < 2:
+        return prior
+    xs = np.array(late, dtype=float)
+    ys = np.array([ages[a] for a in late], dtype=float)
+    slope = float(np.polyfit(xs, ys, 1)[0])
+    return min(max(slope, 0.0), max_slope)
+
+
+def _fit_tyre_age_profile(
+    conn, data: list[tuple], track_id: int, regime: str,
+    baselines: dict[tuple, float], now,
+) -> None:
+    """Per-(compound, sector, age) pace offset vs the sector_pace_baseline. Keeps
+    ALL stint laps (warm-up included); only age 0 (out-lap) is excluded. Writes the
+    offset table and the tail deg slope (into tyre_deg_*) for extrapolation."""
+    rows: list[tuple] = []
+    for r in data:
+        comp = r[db._COL_TYRE_COMPOUND]
+        if comp not in COMPOUND_KNOB_NAMES:
+            continue
+        fuel, weather, temp = r[db._COL_FUEL], r[db._COL_WEATHER], r[db._COL_TRACK_TEMP]
+        if fuel is None or weather is None or temp is None:
+            continue
+        key = (r[db._COL_SECTOR_NUMBER], comp, regime,
+               int(round(float(fuel) / FUEL_BUCKET_KG) * FUEL_BUCKET_KG),
+               int(weather),
+               int(round(float(temp) / TEMP_BUCKET_C) * TEMP_BUCKET_C))
+        base = baselines.get(key)
+        if base is None:
+            continue
+        rows.append((comp, r[db._COL_SECTOR_NUMBER], r[db._COL_TYRE_AGE], r[db._COL_SECTOR_TIME_MS] - base))
+
+    bins = _bin_age_residuals(rows)
+    fitted: dict[tuple, dict[int, float]] = defaultdict(dict)   # (comp, sector) -> {age: offset}
+    for (comp, sector, age), resid in bins.items():
+        filt = _mad_filter([int(v) for v in resid])
+        if len(filt) < MIN_AGE_BIN_SAMPLES:
+            continue
+        arr = np.array(filt, dtype=float)
+        db.upsert_tyre_age_offset(conn, track_id, comp, regime, sector, age,
+                                  float(arr.mean()), float(arr.std()), len(filt), 0, now)
+        fitted[(comp, sector)][age] = float(arr.mean())
+
+    for (comp, sector), ages in fitted.items():
+        for age, off in _interpolate_gaps(ages).items():
+            db.upsert_tyre_age_offset(conn, track_id, comp, regime, sector, age, off, None, 0, 1, now)
+        slope = _tail_slope(ages, WARMUP_END_AGE, _PRIOR.get(COMPOUND_KNOB_NAMES[comp], 30.0),
+                            MAX_TYRE_DEG_MS_PER_LAP)
+        db.insert_calibration_coefficient(
+            conn, track_id, COMPOUND_KNOB_NAMES[comp], regime, sector, "tail_slope",
+            slope, 0, now, sample_count=sum(1 for a in ages if a >= WARMUP_END_AGE))
 
 
 def _mad_filter(times: list[int]) -> list[int]:
