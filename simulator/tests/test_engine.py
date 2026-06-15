@@ -4,6 +4,7 @@ from simulator.car_state import CarState
 from simulator.coefficients import Coefficients
 from simulator.engine import MonteCarloEngine
 from simulator.models import CarSnapshot, Penalty, PitStop, PitStrategy, RaceSnapshot
+from simulator.tyre_curve import TyreCurves
 
 
 def _make_car(
@@ -511,3 +512,37 @@ class TestAiMandatoryPit:
         snapshot = _make_snapshot(cars=[snap], total_laps=17, current_lap=2)
         engine._check_pit_stop(car, lap=2, snapshot=snapshot)  # lap 2 < planned window
         assert car.num_pit_stops == 0
+
+
+def _deg_knob_curve():
+    c = TyreCurves()
+    # hard, sector 1: warm-up at age 1 (+80) -> plateau age 5 (-40)
+    for age, off in {1: 80.0, 5: -40.0}.items():
+        c.put(18, "AI", 1, age, off)
+    return c
+
+
+def test_curve_delta_prices_warmup_relative_to_age_ref():
+    coeffs = Coefficients.defaults()
+    eng = MonteCarloEngine(coeffs, curve=_deg_knob_curve(), seed=1)
+    car = CarState.from_snapshot(_make_car(0, tyre_compound=18, tyre_age_laps=1), 1, track_id=4)
+    car.age_ref = 5.0                       # base pace was observed at the plateau
+    # at age 1 the tyre is in warm-up: delta = offset(1) - offset(5) = 80 - (-40) = +120
+    assert eng._tyre_curve_delta(car, "AI", 1) == 120.0
+
+
+def test_curve_delta_extrapolates_above_max_age_with_deg_knob():
+    coeffs = Coefficients.defaults()        # tyre_deg_hard default = 20 ms/lap/sector
+    eng = MonteCarloEngine(coeffs, curve=_deg_knob_curve(), seed=1)
+    car = CarState.from_snapshot(_make_car(0, tyre_compound=18, tyre_age_laps=8), 1, track_id=4)
+    car.age_ref = 5.0
+    # age 8 > max bin 5: offset(8) = offset(5) + 20*(8-5) = -40 + 60 = 20; delta = 20 - (-40) = 60
+    assert eng._tyre_curve_delta(car, "AI", 1) == 60.0
+
+
+def test_curve_delta_falls_back_to_linear_when_no_curve():
+    coeffs = Coefficients.defaults()        # tyre_deg_hard default = 20
+    eng = MonteCarloEngine(coeffs, curve=TyreCurves(), seed=1)   # empty curve
+    car = CarState.from_snapshot(_make_car(0, tyre_compound=18, tyre_age_laps=8), 1, track_id=4)
+    car.age_ref = 5.0
+    assert eng._tyre_curve_delta(car, "AI", 1) == 20.0 * (8 - 5)

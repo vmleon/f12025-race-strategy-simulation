@@ -9,6 +9,7 @@ import numpy as np
 from simulator.car_state import CarState
 from simulator.coefficients import Coefficients
 from simulator.models import Penalty
+from simulator.tyre_curve import TyreCurves
 from simulator.tyre_lifespan import stint_cap_laps
 from simulator.models import CarResult, RaceSnapshot, SimulationResult
 
@@ -55,8 +56,10 @@ class MonteCarloEngine:
     producing position probability distributions for each car.
     """
 
-    def __init__(self, coefficients: Coefficients, seed: int | None = None) -> None:
+    def __init__(self, coefficients: Coefficients, curve: TyreCurves | None = None,
+                 seed: int | None = None) -> None:
         self.coefficients = coefficients
+        self.curve = curve if curve is not None else TyreCurves()
         self.rng = Random(seed)
 
     def simulate(
@@ -186,7 +189,7 @@ class MonteCarloEngine:
             return base_sector_pace * 1.4
 
         noise = self.rng.gauss(0, NOISE_SIGMA_MS)
-        tyre_deg = self._tyre_degradation(car, regime, sector)
+        tyre_deg = self._tyre_curve_delta(car, regime, sector)
         # Fuel effect as a delta from the reference fuel the base pace was measured
         # at — the base already embeds that fuel load, so applying absolute fuel here
         # would double-count it. As fuel burns below fuel_ref, this term goes negative
@@ -217,18 +220,33 @@ class MonteCarloEngine:
         )
         return total_per_lap / SECTORS_PER_LAP
 
-    def _tyre_degradation(self, car: CarState, regime: str, sector: int) -> float:
-        knob = {
-            16: "tyre_deg_soft",
-            17: "tyre_deg_medium",
-            18: "tyre_deg_hard",
-            7: "tyre_deg_intermediate",
-            8: "tyre_deg_wet",
-        }.get(car.tyre_compound, "tyre_deg_medium")
-        deg_per_lap = self.coefficients.get(knob, regime, sector)
-        # Delta from the stint's reference age (the age the base pace was observed at),
-        # so deg isn't double-counted on top of a base that already embeds it.
-        return deg_per_lap * (car.tyre_age_laps - car.age_ref)
+    _DEG_KNOB = {
+        16: "tyre_deg_soft", 17: "tyre_deg_medium", 18: "tyre_deg_hard",
+        7: "tyre_deg_intermediate", 8: "tyre_deg_wet",
+    }
+
+    def _tyre_curve_delta(self, car: CarState, regime: str, sector: int) -> float:
+        """Pace delta (ms) of the current tyre age vs the reference age the base
+        pace was observed at. Uses the calibrated curve; extrapolates above the
+        last bin with the deg knob; falls back to the pure linear model when no
+        curve exists for this compound/sector."""
+        cur = self._curve_or_extrapolate(car.tyre_compound, regime, sector, car.tyre_age_laps)
+        ref = self._curve_or_extrapolate(car.tyre_compound, regime, sector, car.age_ref)
+        if cur is None or ref is None:
+            knob = self._DEG_KNOB.get(car.tyre_compound, "tyre_deg_medium")
+            return self.coefficients.get(knob, regime, sector) * (car.tyre_age_laps - car.age_ref)
+        return cur - ref
+
+    def _curve_or_extrapolate(self, compound: int, regime: str, sector: int, age: float):
+        off = self.curve.offset(compound, regime, sector, age)
+        if off is not None:
+            return off
+        max_age = self.curve.max_age(compound, regime, sector)
+        if max_age is None:
+            return None                       # no curve at all -> caller uses linear fallback
+        base = self.curve.offset(compound, regime, sector, max_age)
+        knob = self._DEG_KNOB.get(compound, "tyre_deg_medium")
+        return base + self.coefficients.get(knob, regime, sector) * (age - max_age)
 
     # ── sub-models ───────────────────────────────────────────────────────
 
