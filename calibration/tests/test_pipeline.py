@@ -225,64 +225,6 @@ class TestFitSlopeClamping:
     """Thin/early FP data can produce absurd or negative fitted slopes; those must
     fall back to the cold-start prior rather than poison the simulator."""
 
-    def _deg_rows(self, compound, slope, n=12, base=24_000.0):
-        rows = []
-        for age in range(n):
-            r = [0] * 21
-            r[db._COL_TYRE_COMPOUND] = compound
-            r[db._COL_SECTOR_NUMBER] = 1
-            r[db._COL_TYRE_AGE] = age
-            r[db._COL_SECTOR_TIME_MS] = base + slope * age
-            rows.append(tuple(r))
-        return rows
-
-    def _run_deg(self, monkeypatch, rows):
-        from datetime import datetime as _dt
-        from calibration.pipeline import _fit_tyre_degradation
-        captured = []
-        monkeypatch.setattr(
-            db, "insert_calibration_coefficient",
-            lambda conn, t, knob, reg, sec, m, val, isd, now, *a, **k: captured.append((knob, val)))
-        _fit_tyre_degradation(None, rows, track_id=4, regime="PLAYER", now=_dt.now())
-        return captured
-
-    def test_absurd_deg_slope_falls_back_to_prior(self, monkeypatch):
-        # ~2000 ms/lap (≈6 s/lap) is implausible — fall back to the soft prior (50).
-        captured = self._run_deg(monkeypatch, self._deg_rows(16, slope=2000.0))
-        assert captured and captured[0][1] == pytest.approx(50.0)
-
-    def test_negative_deg_slope_falls_back_to_prior(self, monkeypatch):
-        # A tyre can't get faster with age at constant fuel — fall back (medium=30).
-        captured = self._run_deg(monkeypatch, self._deg_rows(17, slope=-120.0))
-        assert captured and captured[0][1] == pytest.approx(30.0)
-
-    def test_plausible_deg_slope_is_kept(self, monkeypatch):
-        # 35 ms/lap is within bounds and must be kept (hard prior would be 20).
-        captured = self._run_deg(monkeypatch, self._deg_rows(18, slope=35.0))
-        assert captured and captured[0][1] == pytest.approx(35.0, abs=1.0)
-
-    def _run_deg_diag(self, monkeypatch, rows):
-        """Capture the diagnostic kwargs (sample_count, r_squared, clamped) of the fit."""
-        from datetime import datetime as _dt
-        from calibration.pipeline import _fit_tyre_degradation
-        captured = []
-        monkeypatch.setattr(
-            db, "insert_calibration_coefficient",
-            lambda conn, t, knob, reg, sec, m, val, isd, now, **k: captured.append(k))
-        _fit_tyre_degradation(None, rows, track_id=4, regime="PLAYER", now=_dt.now())
-        return captured
-
-    def test_clamped_fit_records_clamped_flag_and_diagnostics(self, monkeypatch):
-        kw = self._run_deg_diag(monkeypatch, self._deg_rows(17, slope=-120.0))
-        assert kw and kw[0]["clamped"] == 1
-        assert kw[0]["sample_count"] == 12          # n passed through
-        assert kw[0]["r_squared"] is not None       # regression diagnostics retained
-
-    def test_plausible_fit_is_not_clamped(self, monkeypatch):
-        kw = self._run_deg_diag(monkeypatch, self._deg_rows(18, slope=35.0))
-        assert kw and kw[0]["clamped"] == 0
-        assert kw[0]["r_squared"] == pytest.approx(1.0, abs=1e-6)  # perfectly linear synthetic data
-
     def test_negative_fuel_slope_falls_back_to_prior(self, monkeypatch):
         from datetime import datetime as _dt
         from calibration.pipeline import _fit_fuel_effect

@@ -73,50 +73,6 @@ def run(conn: oracledb.Connection, track_id: int) -> None:
     conn.commit()
 
 
-# ── tyre degradation ─────────────────────────────────────────────────
-
-
-def _fit_tyre_degradation(
-    conn: oracledb.Connection, data: list[tuple], track_id: int, regime: str,
-    now: datetime,
-) -> None:
-    groups: dict[str, list[tuple]] = defaultdict(list)
-    for r in data:
-        knob_name = COMPOUND_KNOB_NAMES.get(r[db._COL_TYRE_COMPOUND])
-        if knob_name is None:
-            continue
-        key = f"{r[db._COL_SECTOR_NUMBER]}|{knob_name}"
-        groups[key].append(r)
-
-    for group_key, group in groups.items():
-        sector_str, knob_name = group_key.split("|")
-        sector = int(sector_str)
-
-        if len(group) < MIN_TYRE_DEG_SAMPLES:
-            print(f"  {knob_name} sector {sector}: insufficient data ({len(group)}), skipping")
-            continue
-
-        x = np.array([r[db._COL_TYRE_AGE] for r in group], dtype=float)
-        y = np.array([r[db._COL_SECTOR_TIME_MS] for r in group], dtype=float)
-        reg = linear_regression(x, y)
-
-        slope = reg.slope
-        clamped = 0
-        if not (0.0 <= slope <= MAX_TYRE_DEG_MS_PER_LAP):
-            prior = _PRIOR.get(knob_name, 30.0)
-            print(f"  {knob_name} sector {sector}: implausible slope {slope:.1f} ms/lap "
-                  f"(n={reg.n}) — falling back to prior {prior}")
-            slope = prior
-            clamped = 1
-
-        db.insert_calibration_coefficient(
-            conn, track_id, knob_name, regime, sector, "linear_regression",
-            slope, 0, now, sample_count=reg.n, r_squared=reg.r_squared,
-            slope_std_error=reg.slope_std_error, clamped=clamped)
-
-        print(f"  {knob_name} sector {sector}: slope={slope:.2f} ms/lap, n={reg.n}")
-
-
 # ── tyre wear rate ───────────────────────────────────────────────────
 
 
