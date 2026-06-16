@@ -14,6 +14,7 @@ import {
 import { ReadinessSectionComponent } from './readiness-section.component';
 import { ReadinessScatterComponent } from './readiness-scatter.component';
 import { CoverageChartsComponent } from './coverage-charts.component';
+import { FitConfidenceComponent } from './fit-confidence.component';
 
 @Component({
   selector: 'app-system',
@@ -24,6 +25,7 @@ import { CoverageChartsComponent } from './coverage-charts.component';
     ReadinessSectionComponent,
     ReadinessScatterComponent,
     CoverageChartsComponent,
+    FitConfidenceComponent,
   ],
   template: `
     <section class="system">
@@ -98,6 +100,9 @@ import { CoverageChartsComponent } from './coverage-charts.component';
           <canvas baseChart type="line" [data]="calibPerDay()" [options]="lineOpts"></canvas>
         </div>
       </div>
+
+      <!-- Most technical/noisy panel last: per-knob fit confidence. -->
+      <app-fit-confidence [trackId]="readinessTrackId"></app-fit-confidence>
     </section>
   `,
   styles: [

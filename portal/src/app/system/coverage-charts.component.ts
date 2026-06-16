@@ -7,7 +7,6 @@ import {
   ReadinessService,
   CoverageCell,
   WearCompound,
-  FitConfidence,
   AccuracyPoint,
   SectorTimePoint,
   PitLossPoint,
@@ -119,27 +118,6 @@ interface MatrixRegime {
           </div>
           <p class="empty" *ngIf="!hasPitLoss()">No race pit stops yet.</p>
         </div>
-
-        <!-- Fit confidence -->
-        <div class="panel">
-          <h4>Fit confidence per knob</h4>
-          <table class="fit" *ngIf="fit().length > 0">
-            <thead>
-              <tr><th>knob</th><th>regime</th><th>sec</th><th>n</th><th>R²</th><th></th></tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let f of fit()">
-                <td>{{ f.knob }}</td>
-                <td>{{ f.regime }}</td>
-                <td>{{ f.sector == null ? '—' : f.sector + 1 }}</td>
-                <td>{{ f.samples ?? '—' }}</td>
-                <td>{{ f.rSquared == null ? 'n/a' : (f.rSquared | number: '1.2-2') }}</td>
-                <td><span class="flag" *ngIf="f.clamped">prior</span></td>
-              </tr>
-            </tbody>
-          </table>
-          <p class="empty" *ngIf="fit().length === 0">No fitted coefficients yet.</p>
-        </div>
       </div>
     </div>
   `,
@@ -166,10 +144,6 @@ interface MatrixRegime {
       .k.thin { background: #b8860b; }
       .k.low { background: #7a2e2e; }
       .chart { height: 220px; }
-      .fit { font-size: 0.74rem; }
-      .fit td { border: none; border-bottom: 1px solid #2a2a2a; text-align: left; padding: 0.2rem 0.4rem; }
-      .fit th { text-align: left; }
-      .flag { font-size: 0.68rem; background: #d9534f; color: #fff; border-radius: 3px; padding: 0 0.3rem; }
       .empty { color: var(--gray-500, #999); font-size: 0.82rem; }
     `,
   ],
@@ -184,7 +158,6 @@ export class CoverageChartsComponent implements OnChanges, OnInit, OnDestroy {
   wear = signal<ChartConfiguration['data']>({ datasets: [] });
   accuracy = signal<ChartConfiguration['data']>({ datasets: [] });
   hasAccuracy = signal(false);
-  fit = signal<FitConfidence[]>([]);
   sectorHist = signal<ChartConfiguration['data']>({ datasets: [] });
   hasSectorTimes = signal(false);
   regimeDeg = signal<ChartConfiguration['data']>({ datasets: [] });
@@ -287,7 +260,6 @@ export class CoverageChartsComponent implements OnChanges, OnInit, OnDestroy {
     if (this.trackId == null) return;
     this.svc.coverage(this.trackId).subscribe((cells) => this.matrix.set(this.buildMatrix(cells)));
     this.svc.wearScatter(this.trackId).subscribe((cs) => this.wear.set(this.buildWear(cs)));
-    this.svc.fitConfidence(this.trackId).subscribe((f) => this.fit.set(f));
     this.svc.accuracy().subscribe((pts) => {
       this.hasAccuracy.set(pts.length > 0);
       this.accuracy.set(this.buildAccuracy(pts));
