@@ -69,6 +69,7 @@ public class VllmRadioMessageRenderer implements RadioMessageRenderer {
         this.timeoutMs = timeoutMs;
         this.memorySize = memorySize;
         this.client = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1) // vLLM/uvicorn 400s on the h2c upgrade
                 .connectTimeout(Duration.ofMillis(timeoutMs))
                 .build();
         log.info("Radio LLM renderer = vLLM. endpoint={} model={} timeoutMs={} memorySize={}",
