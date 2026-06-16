@@ -10,20 +10,80 @@
 
 ## Quick start (everything in one go)
 
-Run these in order from the project root, top to bottom. Works from any starting point.
+Run these in order from the project root, top to bottom. Works from any starting point. Each
+command is its own snippet so it's easy to copy and paste one at a time.
+
+Give the Podman VM 8 GiB (the `--no-cache` build of all 5 services OOMs otherwise):
 
 ```bash
 podman machine stop
+```
+
+```bash
 podman machine set --memory 8192
+```
+
+```bash
 podman machine start
+```
+
+Create and activate the Python virtualenv, install deps:
+
+```bash
 python -m venv venv
+```
+
+```bash
 source venv/bin/activate
+```
+
+```bash
 pip install -r requirements.txt
+```
+
+Tear down any running stack:
+
+```bash
 podman compose down
+```
+
+Start Oracle + run Liquibase migrations (rotates the DB password):
+
+```bash
 python manage.py local setup
+```
+
+Restore the latest backup (accumulated telemetry — calibration needs it for sample size):
+
+```bash
 python manage.py local import
+```
+
+Rebuild all 5 service images with the fresh config baked in:
+
+```bash
 podman compose build --no-cache
+```
+
+Start the 5 services:
+
+```bash
 podman compose up -d
+```
+
+Seed the calibration model for the track from the imported data. `4` is the **track id**
+(4 = Catalunya / Circuit de Barcelona-Catalunya); pass the id of whatever circuit you'll
+drive. This populates `calibration_coefficients`, `sector_pace_baselines` and the per-age
+`tyre_age_pace_offsets` curve so the simulator has a tyre model immediately (otherwise it
+waits for the first Free Practice session to trigger calibration):
+
+```bash
+python -m calibration run 4
+```
+
+Show consolidated service info + health:
+
+```bash
 python manage.py info
 ```
 
