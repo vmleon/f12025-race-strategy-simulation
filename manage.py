@@ -86,6 +86,8 @@ _EXPORT_TABLES = [
     ("calibration_coefficients", ["coefficient_id"]),
     ("sector_pace_baselines",
      ["track_id", "sector_number", "compound", "regime", "fuel_bucket_kg", "weather", "track_temp_bucket_c"]),
+    ("tyre_age_pace_offsets",
+     ["track_id", "compound", "regime", "sector_number", "tyre_age_laps"]),
     ("radio_messages", ["message_id"]),
     ("simulation_runs", ["run_id"]),
     ("simulation_accuracy", ["accuracy_id"]),
