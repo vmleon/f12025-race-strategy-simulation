@@ -35,6 +35,7 @@ CIRCUITS_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "backend", "src", "main", "resources", "circuits",
 )
+COMPOSE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "compose.yaml")
 
 _CONFIG_TEMPLATES = [
     (
@@ -173,6 +174,52 @@ def _get_host_ip():
         s.close()
 
 
+def _probe_http(url, timeout=2.5):
+    """GET url and report health as rich-markup. 200 = up, other status =
+    degraded, connection error/timeout = down."""
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            code = r.status
+    except urllib.error.HTTPError as e:
+        code = e.code
+    except Exception as e:
+        return f"[red]down[/red] ({type(e).__name__})"
+    if code == 200:
+        return "[green]up[/green]"
+    return f"[yellow]degraded[/yellow] (HTTP {code})"
+
+
+def _parse_vllm_target():
+    """Read ENGINEER_LLM_HOST/PORT from compose.yaml (the running config). Falls
+    back to the application.properties defaults if absent."""
+    host, port = "localhost", "8000"
+    try:
+        with open(COMPOSE_FILE) as f:
+            for line in f:
+                line = line.strip().lstrip("- ")
+                if line.startswith("ENGINEER_LLM_HOST="):
+                    host = line.split("=", 1)[1].strip()
+                elif line.startswith("ENGINEER_LLM_PORT="):
+                    port = line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return host, port
+
+
+def _service_running(keyword):
+    """Report whether a running container's name contains keyword (for services
+    with no HTTP endpoint, e.g. telemetry/calibration)."""
+    result = subprocess.run(
+        ["podman", "ps", "--format", "{{.Names}}"], capture_output=True, text=True
+    )
+    if result.returncode == 0 and any(keyword in n for n in result.stdout.split()):
+        return "[green]running[/green] (container)"
+    return "[red]not running[/red]"
+
+
 def _format_sql_value(val):
     """Format a Python value as an Oracle SQL literal."""
     if val is None:
@@ -217,22 +264,39 @@ def info():
     password = _get_password()
     password_note = "(set)" if password else "(not set)"
 
+    # Probe component health: HTTP for services that expose an endpoint, a
+    # container check for telemetry/calibration (UDP-only / no port).
+    console.print("[dim]Probing component health...[/dim]")
+    telemetry_status = _service_running("telemetry")
+    portal_status = _probe_http("http://localhost:4200")
+    backend_status = _probe_http("http://localhost:8080/api/health")
+    simulator_status = _probe_http("http://localhost:8081/health")
+    calibration_status = _service_running("calibration")
+    vllm_host, vllm_port = _parse_vllm_target()
+    vllm_status = _probe_http(f"http://{vllm_host}:{vllm_port}/health")
+
     console.print(Panel(
-        f"[bold]F1 2025 game → Telemetry[/bold]\n"
+        f"[bold]F1 2025 game → Telemetry[/bold]  {telemetry_status}\n"
         f"  IP:     {host_ip}  (use 127.0.0.1 if the game runs on this machine)\n"
         f"  UDP:    20777\n"
         f"  Format: 2025   Broadcast: off\n"
         f"\n"
-        f"[bold]Portal[/bold]\n"
+        f"[bold]Portal[/bold]  {portal_status}\n"
         f"  http://localhost:4200\n"
         f"\n"
-        f"[bold]Backend[/bold]\n"
+        f"[bold]Backend[/bold]  {backend_status}\n"
         f"  REST:      http://localhost:8080\n"
         f"  WebSocket: ws://localhost:8080/ws/race\n"
         f"  TCP in:    localhost:9090  (from telemetry)\n"
         f"\n"
-        f"[bold]Simulator[/bold]\n"
+        f"[bold]Simulator[/bold]  {simulator_status}\n"
         f"  http://localhost:8081\n"
+        f"\n"
+        f"[bold]Calibration[/bold]  {calibration_status}\n"
+        f"  worker (no HTTP endpoint)\n"
+        f"\n"
+        f"[bold]vLLM[/bold]  {vllm_status}\n"
+        f"  http://{vllm_host}:{vllm_port}\n"
         f"\n"
         f"[bold]Database[/bold]  {db_status}\n"
         f"  localhost:1521/FREEPDB1   user: pdbadmin   password: {password_note}",
