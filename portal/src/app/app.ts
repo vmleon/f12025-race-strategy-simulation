@@ -8,7 +8,7 @@ import { HealthService } from './health.service';
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
     <header>
-      <h1>F1 Strategy Portal</h1>
+      <h1>Telemetry Portal</h1>
       <nav>
         <a routerLink="/race" routerLinkActive="active">Race</a>
         <a routerLink="/system" routerLinkActive="active">System</a>
