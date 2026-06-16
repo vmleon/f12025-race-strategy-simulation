@@ -42,6 +42,10 @@ services:
       - ORACLE_HOST=host.containers.internal
       - ORACLE_PORT=1521
       - SIMULATOR_URL=http://simulator:8081
+      - ENGINEER_LLM_HOST=spark-bc8a.local
+      - ENGINEER_LLM_PORT=8002
+    extra_hosts:
+      - "spark-bc8a.local:192.168.1.146"   # mDNS .local not resolvable inside container
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8080/api/health"]
       interval: 15s
