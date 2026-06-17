@@ -217,18 +217,6 @@ python manage.py local import
 python manage.py local import database/backups/export_20250101_120000.sql
 ```
 
-### Oracle MCP Server (optional)
-
-Enables Claude Code to query the database directly via SQLcl's MCP server.
-
-Create the SQLcl saved connection (f1strategy_local):
-
-```bash
-python manage.py mcp setup
-```
-
-The project includes a `.mcp.json` that configures the SQLcl MCP server. After running the setup, restart Claude Code to pick up the connection.
-
 ### Troubleshooting
 
 - **Backend or telemetry container exits immediately after `podman compose up`.** The Java images bundle `application.properties` / `config.properties` at build time. If the jars were built before `manage.py local setup` generated those configs (or after a subsequent setup regenerated the password), the bundled configs are stale. Re-run the setup — it rebuilds the Java artifacts at the end — then compose up again with `--build`:
