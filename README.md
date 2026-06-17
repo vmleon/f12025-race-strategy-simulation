@@ -313,3 +313,11 @@ Xcode project in `client/Virtual Race Engineer/`. Open in Xcode and run on a dev
 
 - `design/` — Architecture decisions, database schema, calibration pipeline, Monte Carlo simulation design
 - `docs/` — F1 25 telemetry UDP specification and packet structures
+
+## License
+
+Source code is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution and third-party notices.
+
+## Disclaimer
+
+This is an independent academic project (Trabajo de Fin de Grado) and is not affiliated with, endorsed by, or sponsored by Formula 1, EA Sports, or Codemasters. "F1" and related names are trademarks of their respective owners. The telemetry packet format is based on community documentation of the F1 25 game's UDP output.

@@ -1,0 +1,16 @@
+F1 2025 Race Strategy Simulation
+Copyright 2026 Victor Martin Alvarez
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This project is an independent academic work (Trabajo de Fin de Grado) and is
+not affiliated with, endorsed by, or sponsored by Formula 1, Formula One World
+Championship Limited, EA Sports, or Codemasters. "F1" and related names are
+trademarks of their respective owners. The UDP telemetry packet format consumed
+by this project is based on community documentation of the F1 25 game's
+telemetry output.
+
+This project depends on Oracle JDBC and Oracle Universal Connection Pool (UCP),
+which Oracle distributes under the Oracle Technology Network (OTN) license.
+Those libraries are referenced as build dependencies and are not redistributed
+as part of this repository.
