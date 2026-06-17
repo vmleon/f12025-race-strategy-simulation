@@ -61,3 +61,6 @@ logs/
 # Radio LLM test bench
 radiobench/venv/
 radiobench/results/
+
+# Calibration R² eval output
+calibration/r2_eval_out/
