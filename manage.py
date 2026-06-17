@@ -839,39 +839,5 @@ def repair_sectors_cmd(apply_changes):
                   + "  ".join(f"python -m calibration run {t}" for t in sorted(tracks)))
 
 
-@cli.group()
-def mcp():
-    """Manage Oracle MCP server connections."""
-
-
-@mcp.command()
-def setup():
-    """Create a SQLcl saved connection for the local database."""
-    _check_command("sql")
-
-    password = _get_password()
-    if not password:
-        console.print("[red]Error:[/red] No password in .env. Is the database set up?")
-        sys.exit(1)
-
-    import tempfile
-
-    conn_name = "f1strategy_local"
-    conn_str = f"pdbadmin/{password}@localhost:1521/FREEPDB1"
-
-    console.print(f"[bold]Creating saved connection:[/bold] {conn_name}")
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".sql", delete=False) as f:
-        f.write(f"conn -save {conn_name} -replace -savepwd {conn_str}\n")
-        f.write("exit\n")
-        temp_file = f.name
-
-    try:
-        subprocess.run(["sql", "/nolog", f"@{temp_file}"], check=False)
-    finally:
-        os.remove(temp_file)
-
-    console.print(f"[green]MCP setup complete.[/green] Test with: sql -name {conn_name}")
-
-
 if __name__ == "__main__":
     cli()
